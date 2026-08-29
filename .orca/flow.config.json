@@ -14,12 +14,25 @@
   },
   "pipeline": [
     {
+      "id": "grill",
+      "title": "Grill Me (requirements interview)",
+      "enabled": false,
+      "agent": "claude",
+      "writes": "BRAINSTORM.md",
+      "reads": [],
+      "timeoutMs": 3600000,
+      "hardTimeoutMs": 5400000,
+      "spec": "You are running an interactive REQUIREMENTS INTERVIEW (\"grill me\") for the objective above. Your job: interrogate the user IN THIS TERMINAL until the idea is concrete enough to design and plan. Interview protocol - follow exactly: (1) Ask ONE question at a time and WAIT for the user's answer in this terminal before asking the next. Never batch questions. (2) Prefer multiple choice (a/b/c/...) over open-ended; open-ended only when options would bias the answer. (3) Cover, in roughly this order: purpose and success criteria; scope (explicitly in/out); users and UX expectations; technical and business constraints; edge cases; risks; open decisions that planning cannot make alone. (4) After each answer, restate your understanding in one short line so the user can correct you early. (5) When you have enough information, present a numbered DECISIONS list (each: decision + rationale) and ask the user to confirm or edit each one; do not proceed until every line is confirmed. (6) This phase is REQUIREMENTS ONLY - do not write code, tests, or detailed technical design. When all decisions are confirmed, write the result to {out} with exactly these sections:\n# Brainstorm\n## Objective (refined) - 1-3 sentences agreed with the user\n## Decisions - numbered; each with rationale and marked \"confirmed by user\"\n## Scope - two lists: In / Out\n## Constraints & assumptions\n## Open questions - only if any remain; each with why it blocks nothing\nThen finish and report success."
+    },
+    {
       "id": "planning",
       "title": "Planning",
       "enabled": true,
       "agent": "claude",
       "writes": "PLAN.md",
-      "reads": [],
+      "reads": [
+        "grill"
+      ],
       "spec": "You are a product planning agent. Analyze the objective and the current repo. Write to {out}: context, scope (in/out of scope), functional and non-functional requirements, risks, and acceptance criteria. Do NOT do technical design and do NOT write code."
     },
     {
