@@ -24,6 +24,11 @@
 // Run a DIFFERENT pipeline config (e.g. the bug-fix flow in fixbug.config.json):
 //   node .orca/flow.mjs --config fixbug.config.json "<bug description>"
 //
+// Opt-in requirements interview before planning (step id "grill" in config):
+//   node .orca/flow.mjs --grill-me "..."
+// Disable it for this run when it is enabled in config:
+//   node .orca/flow.mjs --no-grill-me "..."
+//
 // Step timeouts: `timeoutMs` = max worker SILENCE (no terminal output, no
 // heartbeat) before the step is considered hung; `hardTimeoutMs` (default 4x
 // timeoutMs) = absolute cap — on hit the worker's terminal is left open and
@@ -42,13 +47,17 @@ const die = (m) => { console.error("[orca-flow] ERROR:", m); process.exit(1); };
 
 // --- Parse argv: flags + objective ---
 const argv = process.argv.slice(2);
-const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {} };
+const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined };
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--from") opt.from = argv[++i];
   else if (a === "--only") opt.only = argv[++i].split(",").map((s) => s.trim());
   else if (a === "--dry-run") opt.dryRun = true;
+  else if (a === "--grill-me" || a === "--no-grill-me") {
+    if (opt.grillMe !== undefined) die("--grill-me and --no-grill-me are mutually exclusive.");
+    opt.grillMe = a === "--grill-me";
+  }
   else if (a === "--config") opt.config = argv[++i];
   else if (a === "--agent") {
     const [step, ag] = argv[++i].split("=");
@@ -64,6 +73,15 @@ const CONFIG_FILE = opt.config || "flow.config.json";
 let cfg;
 try { cfg = JSON.parse(readFileSync(join(HERE, CONFIG_FILE), "utf8")); }
 catch (e) { die(`Could not read ${CONFIG_FILE}: ${e.message}`); }
+
+// --grill-me / --no-grill-me: one-shot override of the interview step's enabled
+// state (id convention: "grill"). Applied BEFORE normalization so --only/--from
+// and read-shrinking all see the final state.
+if (opt.grillMe !== undefined) {
+  const grill = (cfg.pipeline || []).find((s) => s && s.id === "grill");
+  if (!grill) die('--grill-me: this config has no step with id "grill".');
+  grill.enabled = opt.grillMe;
+}
 
 const ART_DIR = cfg.artifactsDir || ".orca/artifacts";
 const MAX_RETRIES = cfg.maxRetries ?? 2;
