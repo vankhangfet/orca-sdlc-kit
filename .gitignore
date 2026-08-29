@@ -1,0 +1,5 @@
+# Local Claude Code permissions (per-machine)
+.claude/settings.local.json
+
+# Runtime pipeline output
+.orca/artifacts/

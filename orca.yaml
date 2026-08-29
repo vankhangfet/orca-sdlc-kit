@@ -1,0 +1,18 @@
+# orca.yaml — repo hooks for Orca ADE (cross-platform)
+# Place at the ROOT of the repo. It only PREPARES the environment;
+# the pipeline is orchestrated by .orca/flow.mjs.
+
+setup:
+  - name: "Scaffold Orca SDLC workspace"
+    run: node -e "require('fs').mkdirSync('.orca/artifacts',{recursive:true});console.log('[orca-flow] workspace ready')"
+  # (Optional) install deps on each worktree create:
+  # - name: "Install deps"
+  #   run: pnpm install --frozen-lockfile
+
+archive:
+  - name: "Clean flow artifacts"
+    run: node -e "try{require('fs').rmSync('.orca/artifacts',{recursive:true,force:true})}catch(e){}"
+
+worktree:
+  sharedDirectories: []
+    # - .env

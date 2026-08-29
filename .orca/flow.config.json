@@ -1,0 +1,133 @@
+{
+  "//": "flow.config.json — FULL SDLC PIPELINE CONFIG. This is the only file you edit.",
+  "//pipeline": "Each entry is a STEP. Set 'enabled:false' to SKIP it. Array order = run order.",
+  "//reads": "'reads' lists the ids of steps whose output this step needs. If a step is skipped, it is auto-removed from later steps' 'reads' (chain stays intact).",
+  "//writes": "'writes' = the artifact filename this step produces (inside artifactsDir).",
+  "//agent": "Matches Orca's agent catalog: claude, codex, opencode, gemini, cursor, droid, grok.",
+  "//onFailGoto": "If this step returns outcome=failed and has onFailGoto, jump back to that step to fix (up to maxRetries times).",
+  "//gate": "gate:true => after this step finishes, create a decision gate; must resolve 'yes' to continue.",
+  "artifactsDir": ".orca/artifacts",
+  "maxRetries": 2,
+  "defaults": {
+    "timeoutMs": 900000,
+    "worktree": "name:lab2"
+  },
+  "pipeline": [
+    {
+      "id": "planning",
+      "title": "Planning",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "PLAN.md",
+      "reads": [],
+      "spec": "You are a product planning agent. Analyze the objective and the current repo. Write to {out}: context, scope (in/out of scope), functional and non-functional requirements, risks, and acceptance criteria. Do NOT do technical design and do NOT write code."
+    },
+    {
+      "id": "architecture",
+      "title": "Architecture Design",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "ARCHITECTURE.md",
+      "reads": [
+        "planning"
+      ],
+      "spec": "You are a software architect. Based on {reads}, design the overall architecture in {out}: main components and responsibilities, data flow, technology choices (with rationale), module/service boundaries, and diagrams (Mermaid) where useful. Do not go down to specific functions/classes yet."
+    },
+    {
+      "id": "detailed-design",
+      "title": "Detailed Design",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "DETAILED_DESIGN.md",
+      "reads": [
+        "architecture"
+      ],
+      "spec": "You are a detailed-design agent. Based on {reads}, write {out}: concrete modules/classes/functions, signatures and data types, API/interface contracts, data schemas, error handling and edge cases. Detailed enough for a coding agent to implement directly."
+    },
+    {
+      "id": "uiux-design",
+      "title": "UI/UX Design (mockscreen)",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "UIUX_MOCKS.md",
+      "reads": [
+        "planning",
+        "architecture"
+      ],
+      "spec": "You are a UI/UX designer. Based on {reads}, design the experience and interface in {out}: key screens, user flows, and a static HTML/CSS MOCKUP for each screen (in code blocks or under .orca/artifacts/mocks/). Describe states (empty/loading/error), responsiveness, and accessibility notes."
+    },
+    {
+      "id": "coding",
+      "title": "Coding",
+      "enabled": true,
+      "agent": "codex",
+      "writes": "CHANGES.md",
+      "hardTimeoutMs": 7200000,
+      "reads": [
+        "detailed-design",
+        "uiux-design"
+      ],
+      "onFailGoto": null,
+      "spec": "You are a coding agent. Implement fully according to {reads}. Follow the detailed design and mockups closely. If this task is being re-run after a failed review or test, also read REVIEW.md, SECURITY_REVIEW.md, and TEST_REPORT.md in the artifacts dir and fix every issue reported there. When done, write a summary of the changes (which files, what, and why) to {out}. Do not expand scope beyond the design."
+    },
+    {
+      "id": "code-review",
+      "title": "Code Review",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "REVIEW.md",
+      "reads": [
+        "coding",
+        "detailed-design"
+      ],
+      "gate": false,
+      "onFailGoto": "coding",
+      "spec": "You are a reviewer. Compare the changed code (see {reads}) against the design. Write {out}: findings by severity (blocker/major/minor), correctness issues, security, performance, maintainability. Give a clear VERDICT at the end: if there is any blocker/major, report FAIL (outcome=failed) to loop back to coding; otherwise PASS."
+    },
+    {
+      "id": "security-review",
+      "title": "Security Review",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "SECURITY_REVIEW.md",
+      "reads": [
+        "coding",
+        "architecture"
+      ],
+      "gate": false,
+      "onFailGoto": "coding",
+      "spec": "You are an application security expert. Review the changes (see {reads}) for vulnerabilities, independent of language/framework — assess general principles: input validation and injection (SQL/command/template/etc.), authentication and authorization, session and token management, secret/credential exposure in code or logs, encryption of sensitive data at rest and in transit, access control at the data layer, known-vulnerable dependencies, insecure default configuration, and error handling that leaks information. Write {out}: each finding with severity (critical/high/medium/low), location, impact, and remediation. VERDICT at the end: if there is any critical/high, report FAIL (outcome=failed) to loop back to coding; otherwise PASS."
+    },
+    {
+      "id": "testing",
+      "title": "Testing",
+      "enabled": true,
+      "agent": "opencode",
+      "writes": "TEST_REPORT.md",
+      "reads": [
+        "coding",
+        "code-review",
+        "security-review"
+      ],
+      "onFailGoto": "coding",
+      "spec": "You are a testing agent. Based on {reads}, write and RUN tests (unit + integration where sensible) for the changes. Write {out}: tests written, pass/fail results, failure details, and fix suggestions. If any test fails, report outcome=failed to loop back to coding."
+    },
+    {
+      "id": "documentation",
+      "title": "Documentation",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "DOCUMENTATION.md",
+      "reads": [
+        "planning",
+        "architecture",
+        "detailed-design",
+        "uiux-design",
+        "coding",
+        "security-review",
+        "testing"
+      ],
+      "spec": "You are a documentation agent. Synthesize from {reads} into complete documentation in {out}: overview, setup and run guide, architecture summary, API reference, usage guide, and operational notes. Update the repo README if needed."
+    }
+  ]
+}

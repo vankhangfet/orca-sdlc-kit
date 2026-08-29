@@ -1,0 +1,60 @@
+{
+  "//": "fixbug.config.json — BUG-FIX PIPELINE. Run with:",
+  "//usage": "node .orca/flow.mjs --config fixbug.config.json \"<bug description: what happens, expected behavior, how to reproduce>\"",
+  "//steps": "root-cause -> fix-plan -> fix-coding -> fix-verify. fix-verify FAIL loops back to fix-coding (maxRetries).",
+  "artifactsDir": ".orca/artifacts",
+  "maxRetries": 2,
+  "defaults": {
+    "timeoutMs": 900000,
+    "worktree": "name:lab2"
+  },
+  "pipeline": [
+    {
+      "id": "root-cause",
+      "title": "Root Cause Analysis",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "ROOT_CAUSE.md",
+      "reads": [],
+      "spec": "You are a debugging agent. The OVERALL OBJECTIVE describes a bug. First reproduce it if at all possible (run the app/tests/the reproduction steps given). Then trace it to the TRUE root cause: read error messages completely, follow the data flow from symptom to source, check recent changes. Write {out}: steps to reproduce, expected vs actual behavior, evidence gathered (commands run and their output), the root cause (be specific: file and line), and alternative explanations you ruled out and why. Do NOT fix anything yet and do NOT write the fix plan."
+    },
+    {
+      "id": "fix-plan",
+      "title": "Fix Plan",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "FIX_PLAN.md",
+      "reads": [
+        "root-cause"
+      ],
+      "spec": "You are a planning agent. Based on {reads}, write {out}: the chosen fix approach (with alternatives considered and why this one), the exact files/functions to change and the change for each, risks and side effects, and a verification plan: how to prove the original bug is fixed plus a REGRESSION TEST to add (framework, file, cases — must fail on the old code and pass on the fixed code). Keep the fix minimal — no refactors beyond the bug."
+    },
+    {
+      "id": "fix-coding",
+      "title": "Bug Fix",
+      "enabled": true,
+      "agent": "codex",
+      "writes": "FIX_CHANGES.md",
+      "reads": [
+        "root-cause",
+        "fix-plan"
+      ],
+      "onFailGoto": null,
+      "hardTimeoutMs": 7200000,
+      "spec": "You are a coding agent. Implement the bug fix exactly per {reads}: the minimal code change AND the regression test defined in the plan (the test must be a permanent file in the repo's test suite). Run the regression test and the project's existing tests before finishing. If this task is being re-run after a failed verification, also read VERIFICATION.md in the artifacts dir and address every failure it reports. When done, write {out}: files changed, what changed and why, and test results."
+    },
+    {
+      "id": "fix-verify",
+      "title": "Fix Verification",
+      "enabled": true,
+      "agent": "opencode",
+      "writes": "VERIFICATION.md",
+      "reads": [
+        "fix-coding",
+        "root-cause"
+      ],
+      "onFailGoto": "fix-coding",
+      "spec": "You are a verification agent. Based on {reads}: (1) reproduce the ORIGINAL bug from ROOT_CAUSE.md against the fixed code and show it no longer occurs; (2) run the regression test added by the fix and the project's existing test suite; (3) check the changed code for obvious regressions or side effects. Write {out}: what you ran, actual results (include command output), and a clear VERDICT at the end — if the bug still reproduces or any test fails, report FAIL (outcome=failed) to loop back to the fix; otherwise PASS."
+    }
+  ]
+}
