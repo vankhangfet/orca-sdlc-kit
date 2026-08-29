@@ -8,6 +8,7 @@ runs on Node (already required by Orca).
 
 | # | Step | Agent | Reads | Writes |
 |---|------|-------|-------|--------|
+| 0* | Grill Me (optional — opt-in via `--grill-me`) | claude | — | BRAINSTORM.md |
 | 1 | Planning | claude | — | PLAN.md |
 | 2 | Architecture Design | claude | 1 | ARCHITECTURE.md |
 | 3 | Detailed Design | claude | 2 | DETAILED_DESIGN.md |
@@ -17,6 +18,8 @@ runs on Node (already required by Orca).
 | 7 | Security Review | claude | 5,2 | SECURITY_REVIEW.md · fail -> back to 5 |
 | 8 | Testing | opencode | 5,6,7 | TEST_REPORT.md · fail -> back to 5 |
 | 9 | Documentation | claude | all | DOCUMENTATION.md |
+
+\*0 = optional requirements interview, disabled by default — see [Grill-me](#grill-me--optional-interview-phase-opt-in) below.
 
 Specs are **not tied to a specific stack** — they mention no language or framework
 and describe general principles so they work on any project. To force a specific

@@ -239,7 +239,9 @@ applied before `--only` / `--from` are processed:
 The shipped `grill` step carries large `timeoutMs` (60 min = `3600000`) /
 `hardTimeoutMs` (4 h = `14400000`): the agent terminal is idle while it waits
 for a HUMAN to answer, and the 15-min default would report the step hung
-mid-interview. Tune them only upward for longer interviews.
+mid-interview. Tune them only upward for longer interviews. A single question
+left unanswered past `timeoutMs` stops the flow with the interview terminal
+left open — restart the interview with `--grill-me --from grill "<objective>"`.
 
 ---
 

@@ -102,13 +102,13 @@ Interview protocol — follow exactly:
 
 When all decisions are confirmed, write the result to {out} with exactly these
 sections:
-# Brainstorm — <objective>
+# Brainstorm - <overall objective>
 ## Objective (refined)          — 1-3 sentences, agreed with the user
 ## Decisions                    — numbered; each with rationale and "confirmed by user"
 ## Scope                        — two lists: In / Out
 ## Constraints & assumptions
 ## Open questions               — only if any remain; each with why it blocks nothing
-Then finish.
+Then finish and report success.
 ```
 
 ### 5.3 `.orca/flow.mjs` (~12 lines)
