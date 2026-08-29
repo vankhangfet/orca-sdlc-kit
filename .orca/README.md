@@ -66,13 +66,47 @@ Useful flags:
 | `--from <id>` | Start from a step (skip earlier ones). E.g. `--from coding`. |
 | `--only a,b` | Run only a subset of steps. E.g. `--only planning,architecture`. |
 | `--agent <id>=<agent>` | Override one step's agent for this run. E.g. `--agent coding=claude`. |
+| `--grill-me` | Run the optional `grill` interview step before Planning (see Grill-me below). |
+| `--no-grill-me` | Skip the `grill` step for this run, even if enabled in config. |
 
 Examples:
 ```
 node .orca/flow.mjs --dry-run "Build a login page"
 node .orca/flow.mjs --from coding "Continue after design is done"
 node .orca/flow.mjs --only planning,architecture,detailed-design "Design phase only"
+node .orca/flow.mjs --grill-me "Interview me first, then build"
+node .orca/flow.mjs --grill-me --only grill "Just the brainstorm session"
 ```
+
+## Grill-me — optional interview phase (opt-in)
+
+The kit ships a `grill` step (id `grill`) with `"enabled": false`. It is an
+interactive REQUIREMENTS INTERVIEW: the agent asks you questions **in its own
+terminal** — one at a time, mostly multiple choice — restates each answer, then
+presents every decision for you to confirm or edit. You participate by typing
+into that terminal. When confirmed, it writes `BRAINSTORM.md`, which Planning
+reads as input.
+
+Turn it on for one run:
+
+```
+node .orca/flow.mjs --grill-me "Feature idea"
+```
+
+Brainstorm-only session (interview now, build later):
+
+```
+node .orca/flow.mjs --grill-me --only grill "Feature idea"
+```
+
+`BRAINSTORM.md` persists in `.orca/artifacts/`, so a later full run picks it up
+automatically — Planning's `reads` already include `grill`, and a skipped step's
+artifact still counts when the file exists.
+
+Make it default-on by setting `"enabled": true` on the `grill` step in
+`flow.config.json`; `--no-grill-me` then disables it for a single run. The step
+carries large timeouts (60 min silence / 4 h hard) because the terminal sits
+idle while it waits for a human answer — do not lower them to the 15-min default.
 
 ## Configure — edit `.orca/flow.config.json`
 
