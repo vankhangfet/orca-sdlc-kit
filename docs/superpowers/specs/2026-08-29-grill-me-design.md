@@ -64,7 +64,7 @@ New step at index 0 of `pipeline[]`:
   "writes": "BRAINSTORM.md",
   "reads": [],
   "timeoutMs": 3600000,
-  "hardTimeoutMs": 5400000,
+  "hardTimeoutMs": 14400000,
   "spec": "<interview spec, see 5.2>"
 }
 ```
@@ -73,8 +73,9 @@ New step at index 0 of `pipeline[]`:
 
 Timeout rationale (mandatory, not style): the agent TUI is idle while waiting for
 a human to answer. Default `timeoutMs` (15 min max-silence) can kill the step
-mid-interview. 60 min silence allowance / 90 min absolute keeps human-paced
-sessions alive; users can override per-step like any other step field.
+mid-interview. 60 min silence allowance catches an abandoned interview; the 4 h
+absolute cap (the kit's 4x convention) keeps a long but ACTIVE interview from
+being hard-killed; users can override per-step like any other step field.
 
 ### 5.2 Grill step spec (full text)
 
@@ -153,7 +154,7 @@ Precedence notes (documented, not new code):
 | `--grill-me --no-grill-me` together | die, mutually exclusive |
 | flag given, no `grill` step in config | die with hint |
 | `enabled:false`, `--only grill`, no flag | step skipped (existing config-beats-`--only` rule) |
-| user answers slowly | 60 min silence absorbed; 90 min hard cap → `still-running` → script prints resume command (existing path) |
+| user answers slowly | 60 min silence absorbed; 4 h hard cap → `still-running` → script prints resume command (existing path) |
 | agent emits `question` events mid-interview | logged only, step stays alive (existing, desired) |
 | stale `BRAINSTORM.md` from an old run | consumed by planning unless user deletes it — same rule as every other artifact today |
 | `--dry-run --grill-me` | plan shows grill enabled; nothing executes |
