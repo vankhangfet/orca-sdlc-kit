@@ -114,11 +114,12 @@ Then finish.
 ### 5.3 `.orca/flow.mjs` (~12 lines)
 
 1. **Argv parsing** (flow.mjs:44-60 block): `--grill-me` sets `opt.grillMe = true`;
-   `--no-grill-me` sets `opt.grillMe = false`. Both present → `die("--grill-me and
-   --no-grill-me are mutually exclusive")`.
+   `--no-grill-me` sets `opt.grillMe = false`. Mixed pair (`--grill-me` with
+   `--no-grill-me`) → die mutually-exclusive; repeating the same flag is
+   idempotent.
 2. **After config load, before pipeline normalization** (between flow.mjs:66 and
    flow.mjs:74): if `opt.grillMe !== undefined`, find the step with
-   `id === "grill"`. Missing → `die('--grill-me: config has no step with id "grill"')`.
+   `id === "grill"`. Missing → `die('--grill-me/--no-grill-me: <config> has no step with id "grill"')`.
    Present → set `step.enabled = opt.grillMe`.
 3. Nothing else. `isEnabled()`, `--only`, `--from`, `effectiveReads()`,
    `printPlan()`, `runStep()`, gate and onFailGoto logic are untouched and pick up
