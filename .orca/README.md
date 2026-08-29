@@ -101,7 +101,9 @@ node .orca/flow.mjs --grill-me --only grill "Feature idea"
 
 `BRAINSTORM.md` persists in `.orca/artifacts/`, so a later full run picks it up
 automatically — Planning's `reads` already include `grill`, and a skipped step's
-artifact still counts when the file exists.
+artifact still counts when the file exists. Planning consumes whatever
+`BRAINSTORM.md` is there: before starting a DIFFERENT objective, delete the file
+or re-run the interview.
 
 Make it default-on by setting `"enabled": true` on the `grill` step in
 `flow.config.json`; `--no-grill-me` then disables it for a single run. The step
@@ -112,7 +114,8 @@ idle while it waits for a human answer — do not lower them to the 15-min defau
 
 ### Skip a step
 Set `"enabled": false`. A skipped step is **auto-removed from later steps' `reads`**
-— the chain stays intact. E.g. drop UI/UX:
+— the chain stays intact — unless its artifact file already exists (that is what
+lets a later run reuse `BRAINSTORM.md`; see Grill-me). E.g. drop UI/UX:
 
 ```json
 { "id": "uiux-design", "enabled": false, ... }
