@@ -55,8 +55,9 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--only") opt.only = argv[++i].split(",").map((s) => s.trim());
   else if (a === "--dry-run") opt.dryRun = true;
   else if (a === "--grill-me" || a === "--no-grill-me") {
-    if (opt.grillMe !== undefined) die("--grill-me and --no-grill-me are mutually exclusive.");
-    opt.grillMe = a === "--grill-me";
+    const v = a === "--grill-me";
+    if (opt.grillMe !== undefined && opt.grillMe !== v) die("--grill-me and --no-grill-me are mutually exclusive.");
+    opt.grillMe = v;
   }
   else if (a === "--config") opt.config = argv[++i];
   else if (a === "--agent") {
@@ -79,7 +80,7 @@ catch (e) { die(`Could not read ${CONFIG_FILE}: ${e.message}`); }
 // and read-shrinking all see the final state.
 if (opt.grillMe !== undefined) {
   const grill = (cfg.pipeline || []).find((s) => s && s.id === "grill");
-  if (!grill) die('--grill-me: this config has no step with id "grill".');
+  if (!grill) die(`--grill-me/--no-grill-me: ${CONFIG_FILE} has no step with id "grill".`);
   grill.enabled = opt.grillMe;
 }
 
