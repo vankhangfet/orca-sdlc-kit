@@ -199,12 +199,12 @@ handles it. Always verify with `--dry-run` to see the effective `reads` after fi
 | `--from <id>` | Start from a step, drop earlier ones | `--from coding` |
 | `--only a,b,c` | Run only the listed steps | `--only planning,architecture` |
 | `--agent <id>=<agent>` | Override one step's agent, this run only | `--agent coding=claude` |
-| `--grill-me` | Enable the `grill` step for this run (see 5.2) | `--grill-me` |
-| `--no-grill-me` | Disable the `grill` step for this run (see 5.2) | `--no-grill-me` |
+| `--grill-me` | Enable the `grill` step for this run (see section 5.2) | `--grill-me --only grill` |
+| `--no-grill-me` | Disable the `grill` step for this run (see section 5.2) | `--no-grill-me` |
 
 Flags affect only that run; they are not written to the config. `enabled:false` in
 config is always respected, even if that step is listed in `--only`. (Exception:
-`--grill-me` / `--no-grill-me` explicitly override the `grill` step — see 5.2.)
+`--grill-me` / `--no-grill-me` explicitly override the `grill` step — see section 5.2.)
 
 ### 5.1. Multiple pipelines
 
@@ -229,16 +229,17 @@ requirements-interview step) for this run; `--no-grill-me` disables it. Both are
 shorthands for flipping that step's `enabled` field. Because the override is
 applied before `--only` / `--from` are processed:
 
-- `--grill-me --only grill,planning` works (flag first, subset after).
+- `--grill-me --only grill,planning` works (the override lands before subsetting — argv order is irrelevant).
 - `--from planning` still skips the interview — a resume must not restart it.
+- When `grill` is skipped, section 4's artifact-exists exception still feeds Planning an existing `BRAINSTORM.md` — see the README's Grill-me section for when to refresh that file.
 - If the config has no step with id `grill`, the flag fails with a clear error.
 - The two flags are mutually exclusive.
 - Renaming the step's `id` breaks the flags — keep the id `grill`.
 
-The shipped `grill` step carries large `timeoutMs` (60 min) / `hardTimeoutMs`
-(4 h): the agent terminal is idle while it waits for a HUMAN to answer, and
-the 15-min default would report the step hung mid-interview. Tune them only
-upward for longer interviews.
+The shipped `grill` step carries large `timeoutMs` (60 min = `3600000`) /
+`hardTimeoutMs` (4 h = `14400000`): the agent terminal is idle while it waits
+for a HUMAN to answer, and the 15-min default would report the step hung
+mid-interview. Tune them only upward for longer interviews.
 
 ---
 
