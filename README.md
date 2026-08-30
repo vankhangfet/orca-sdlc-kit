@@ -87,6 +87,8 @@ node .orca/flow.mjs --config fixbug.config.json "Bug description"
 
 Troubleshooting: check current CLI flags with `orca skills get orchestration --full`; reset stale orchestration state with `orca orchestration reset --all --json`.
 
+**Claude agent crashes with `EBADF ... history.jsonl.lock` (Windows)** — known Claude Code bug ([#15739](https://github.com/anthropics/claude-code/issues/15739)): the CLI's file watcher races the create/delete of `~/.claude/history.jsonl.lock`, crashing when several Claude instances run at once. The flow already spawns claude agents with `CLAUDE_CODE_SKIP_PROMPT_HISTORY=true` (no prompt history -> no lock churn). If it still happens, close other Claude Code sessions while an interactive `--grill-me` step is running, or update Claude Code.
+
 ## License
 
 [MIT](LICENSE)

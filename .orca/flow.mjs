@@ -228,9 +228,24 @@ function resolveWorktreePath(soft = false) {
   return WT_PATH;
 }
 
+// Terminal command for an agent. Claude Code on Windows can crash with
+// EBADF when its file watcher races the create/delete of
+// ~/.claude/history.jsonl.lock, which is written on every user prompt
+// (anthropics/claude-code#15739) — hit hardest by the interactive grill
+// step. Skipping prompt history for flow-spawned claude agents removes the
+// lock churn. NOTE: the CLI gates on the exact string "true" (not "1").
+// Only the manual path can inject env; the cold-start fallback (--agent)
+// launches the TUI Orca-side and stays unprotected.
+function agentCommand(agent) {
+  if (agent !== "claude") return agent;
+  return IS_WIN
+    ? `cmd /c "set CLAUDE_CODE_SKIP_PROMPT_HISTORY=true&& claude"`
+    : `env CLAUDE_CODE_SKIP_PROMPT_HISTORY=true claude`;
+}
+
 function warmTerminal(agent) {
   const startedAt = Date.now();
-  const c = orca(["terminal", "create", "--worktree", resolveWorktree(), "--command", agent]);
+  const c = orca(["terminal", "create", "--worktree", resolveWorktree(), "--command", agentCommand(agent)]);
   const cr = res(c.json);
   const handle = pick(cr, ["handle", "terminalHandle"]) || pick(cr.terminal || {}, ["handle"]);
   if (!c.ok || !handle) {
