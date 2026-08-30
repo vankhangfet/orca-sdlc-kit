@@ -134,9 +134,11 @@ function effectiveReads(step) {
   });
 }
 
-// Substitute {out} and {reads} in the spec. In auto-run mode every spec
-// (except the interactive grill interview) also gets an autonomy directive so
-// agents in interactive TUIs do not stall waiting for a human.
+// Substitute {out} and {reads} in the spec. Mode directives:
+// - auto-run: every spec (except the grill interview) gets an AUTONOMY
+//   directive so agents do not stall waiting for a human.
+// - manual mode: steps flagged "interactive": true get an INTERVIEW protocol
+//   (align with the user before finalizing). Ignored in auto-run mode.
 function renderSpec(step) {
   const reads = effectiveReads(step);
   const readList = reads.length
@@ -146,7 +148,10 @@ function renderSpec(step) {
   const autonomy = (AUTO_RUN && step.id !== "grill")
     ? "\n\nAUTONOMY: this pipeline runs unattended — do NOT ask the user questions and do NOT wait for confirmation. When something is ambiguous, decide with your best judgment and record it in {out} under an 'Assumptions & decisions' section."
     : "";
-  return (objectiveLine + (step.spec || "") + autonomy)
+  const interview = (!AUTO_RUN && step.interactive)
+    ? "\n\nINTERACTIVE SESSION (manual mode): this pipeline runs with user oversight — ALIGN WITH THE USER before finalizing. Interview protocol, follow exactly: (1) Ask ONE question at a time in this terminal and WAIT for the answer; never batch questions. (2) Cover, roughly in order: alignment with the functional requirements and scope; non-functional requirements; performance targets and expected load; security and compliance constraints; scalability and growth expectations; database and persistence choices; technology constraints and team preferences; deployment and operations. (3) Prefer multiple choice; open-ended only when options would bias the answer. (4) After each answer, restate your understanding in one short line so the user can correct you early. (5) Finish with a numbered DECISIONS list (decision + rationale) and get the user's confirmation on each before writing {out}. Include the confirmed decisions and any remaining open points in {out}."
+    : "";
+  return (objectiveLine + (step.spec || "") + autonomy + interview)
     .replaceAll("{out}", outPath(step.writes))
     .replaceAll("{reads}", readList);
 }
@@ -450,7 +455,8 @@ function printPlan() {
     const reads = effectiveReads(s);
     const flags = [];
     if (s.onFailGoto && enabledIds.has(s.onFailGoto)) flags.push(`onFail->${s.onFailGoto}`);
-    if (s.gate) flags.push("gate");
+    if (s.gate && !AUTO_RUN) flags.push("gate");
+    if (s.interactive && !AUTO_RUN) flags.push("interactive");
     console.log(
       `  ${i + 1}. ${s.title.padEnd(26)} agent=${agentOf(s).padEnd(9)} ` +
       `reads=[${reads.join(", ") || "-"}] writes=${s.writes}` +
@@ -567,8 +573,13 @@ function runStep(step) {
   log(`> ${step.title}  (agent=${agentOf(step)}, task=${taskId})`);
   const { dispatchId, terminal } = startWorker(step, taskId);
 
-  const maxIdleMs = timeoutOf(step);
-  const hardCapMs = step.hardTimeoutMs ?? cfg.defaults?.hardTimeoutMs ?? 4 * maxIdleMs;
+  // Manual-mode interactive steps sit idle while waiting for human answers —
+  // give them the same generous budgets as the grill interview.
+  const interactiveNow = !AUTO_RUN && step.interactive;
+  const baseIdleMs = timeoutOf(step);
+  const baseHardMs = step.hardTimeoutMs ?? cfg.defaults?.hardTimeoutMs ?? 4 * baseIdleMs;
+  const maxIdleMs = interactiveNow ? Math.max(baseIdleMs, 3600000) : baseIdleMs;
+  const hardCapMs = interactiveNow ? Math.max(baseHardMs, 14400000) : baseHardMs;
   const SLICE_MS = Math.min(120000, maxIdleMs);
   const startedAt = Date.now();
   let lastBusy = Date.now();

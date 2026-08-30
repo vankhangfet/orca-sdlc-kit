@@ -6,6 +6,7 @@
   "//agent": "Matches Orca's agent catalog: claude, codex, opencode, gemini, cursor, droid, grok.",
   "//onFailGoto": "If this step returns outcome=failed and has onFailGoto, jump back to that step to fix (up to maxRetries times).",
   "//gate": "gate:true => after this step finishes, create a decision gate; must resolve 'yes' to continue. Effective only when autoRun is false.",
+  "//interactive": "step flag: in manual mode (autoRun:false) the agent INTERVIEWS the user before finalizing — one question at a time, decisions confirmed one by one, then the artifact is written. Timeout budgets are raised automatically (60min silence / 4h hard). Ignored when autoRun is true (fully autonomous).",
   "artifactsDir": ".orca/artifacts",
   "maxRetries": 2,
   "//autoRun": "true (default) = fully automatic: agents never ask the user anything (each spec carries an autonomy directive) and 'gate' flags are ignored. false = manual mode: steps with \"gate\": true create an approval gate the pipeline waits on (defaults.gateTimeoutMs, 60min default).",
@@ -43,6 +44,7 @@
       "title": "Architecture Design",
       "enabled": true,
       "agent": "claude",
+      "interactive": true,
       "writes": "ARCHITECTURE.md",
       "reads": [
         "planning"

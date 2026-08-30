@@ -93,6 +93,17 @@ until you approve "yes" before continuing. Use for milestones needing human sign
 **Effective only in manual mode** (`"autoRun": false`) — with the default
 `autoRun: true` gates are ignored so the pipeline runs unattended.
 
+**`interactive`** — (optional) `true` makes the step an **interview** in manual
+mode (`autoRun: false`): the agent asks you questions in its terminal — one at a
+time, mostly multiple choice — to align on decisions before writing its artifact,
+then confirms a numbered DECISIONS list with you. The shipped config marks
+Architecture Design this way; the interview covers functional and non-functional
+requirements, performance, security, scalability, database/persistence, technology
+constraints, and deployment. Timeouts are raised automatically (60 min silence /
+4 h hard) because the terminal idles while waiting for your answers. Like `gate`,
+it is **ignored when `autoRun: true`** — the step then runs fully autonomously
+and records its assumptions in the artifact instead.
+
 **`model` / `effort`** — (optional) apply to `claude`, `codex`, `cursor` only.
 `effort` (e.g. `"high"`) requires `model`. Leave empty to use the agent's default.
 
