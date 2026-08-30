@@ -1,6 +1,9 @@
 # Local Claude Code permissions (per-machine)
 .claude/settings.local.json
 
+# Local-only guidance for Claude Code instances
+CLAUDE.md
+
 # Runtime pipeline output
 .orca/artifacts/
 
