@@ -154,6 +154,7 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 ## When something goes wrong
 
 - **Preview first** — `--dry-run` shows exactly what will run; make it a habit.
+- **A step looks quiet for a long time** — silence is not treated as failure: an agent deep in one long verification (reviews routinely run an hour) is waited on until it settles or the step's hard cap (default 4x its timeout) is hit. The fix loop only ever triggers on a definite FAIL verdict, never on a silent worker.
 - **A step is taking forever** — the flow leaves that agent's terminal open and prints the exact `--from <step>` command to continue later.
 - **Stale orchestration state after experiments** — `orca orchestration reset --all --json`.
 - **CLI flags differ on your Orca version** — check `orca skills get orchestration --full`.

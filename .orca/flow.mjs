@@ -33,9 +33,13 @@
 //   node .orca/flow.mjs --no-grill-me "..."
 //
 // Step timeouts: `timeoutMs` = max worker SILENCE (no terminal output, no
-// heartbeat) before the step is considered hung; `hardTimeoutMs` (default 4x
-// timeoutMs) = absolute cap — on hit the worker's terminal is left open and
-// the flow stops with a --from resume hint (outcome=still-running).
+// heartbeat). Silence is NOT a failure verdict — a worker deep in one long
+// tool call can render a static screen for most of an hour (verified). A
+// quiet-but-alive dispatch is waited on and a warning printed; the step only
+// settles on worker_done or a POSITIVE failure (dispatch failed). The fix
+// loop (onFailGoto) never triggers on "unknown". `hardTimeoutMs` (default
+// 4x timeoutMs) = absolute cap — on hit the worker's terminal is left open
+// and the flow stops with a --from resume hint (outcome=still-running).
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
@@ -374,6 +378,15 @@ function manualStart(step, taskId) {
     return null;
   }
 
+  // A large paste can collapse into an input-box chip that swallows the
+  // trailing Enter — the prompt then sits UNsubmitted forever (verified:
+  // a codex terminal frozen on "[Pasted Content 5237 chars]", no heartbeat,
+  // dispatch never settled). A bare Enter a few seconds later submits it,
+  // and is a no-op when the paste already went through (verified on codex;
+  // other TUIs ignore Enter on an empty input).
+  sleepMs(3000);
+  orca(["terminal", "send", "--terminal", term, "--text", "", "--enter"]);
+
   // A send can be silently DROPPED: TUIs may flush pending input when they
   // finish booting and switch to their input view (seen with opencode —
   // warmed quiet, paste sent, the welcome screen never changed and the
@@ -393,9 +406,14 @@ function manualStart(step, taskId) {
       if (pv == null || before == null || pv !== before) return { dispatchId, terminal: term };
     }
     if (attempt < SEND_ATTEMPTS) {
-      warn(`no sign the '${step.title}' prompt was consumed; re-sending (${attempt + 1}/${SEND_ATTEMPTS})`);
-      const s2 = orca(["terminal", "send", "--terminal", term, "--text",
-        preamble.split("ctx_dryrun").join(dispatchId), "--enter"]);
+      // Attempt 2 nudges with a bare Enter (submits a pending paste chip
+      // without duplicating it); attempt 3 re-sends the full preamble.
+      const nudge = attempt === 1;
+      warn(`no sign the '${step.title}' prompt was consumed; ${nudge ? "nudging with Enter" : "re-sending"} (${attempt + 1}/${SEND_ATTEMPTS})`);
+      const s2 = nudge
+        ? orca(["terminal", "send", "--terminal", term, "--text", "", "--enter"])
+        : orca(["terminal", "send", "--terminal", term, "--text",
+            preamble.split("ctx_dryrun").join(dispatchId), "--enter"]);
       if (!s2.ok) { warn(`re-send '${step.title}' failed: ${s2.stderr || s2.raw}`); break; }
     }
   }
@@ -585,6 +603,7 @@ function runStep(step) {
   let lastBusy = Date.now();
   let lastPreview;                 // undefined = not observed yet (baseline)
   let done = null, note = "";
+  let quietWarned = false;         // warn once about a quiet-but-alive worker
   while (true) {
     const wait = orca(["orchestration", "check", "--run", RUN_ID, "--wait",
       "--types", "worker_done,escalation,question", "--timeout-ms", String(SLICE_MS)],
@@ -628,14 +647,23 @@ function runStep(step) {
       lastBusy = Date.now();
     }
     const silenceMs = Date.now() - lastBusy;
-    if (silenceMs >= maxIdleMs) {
-      note = `no worker activity for ${Math.round(silenceMs / 60000)}min (dispatch status=${v.status})`;
-      break;
-    }
+    // Hard cap first: absolute per-step limit, busy or quiet.
     if (Date.now() - startedAt >= hardCapMs) {
-      log(`[warn] "${step.title}" still busy after ${Math.round((Date.now() - startedAt) / 60000)}min; ` +
+      log(`[warn] "${step.title}" not settled after ${Math.round((Date.now() - startedAt) / 60000)}min; ` +
           `leaving its terminal open and stopping the pipeline.`);
-      return { outcome: "still-running", note: `still busy after ${Math.round((Date.now() - startedAt) / 60000)}min`, terminal };
+      return { outcome: "still-running", note: `not settled after ${Math.round((Date.now() - startedAt) / 60000)}min`, terminal };
+    }
+    // Silence alone is NOT proof of death: a worker deep in one long tool
+    // call renders a static screen for tens of minutes (verified incident:
+    // a 60-min code review was falsely failed at 15 min while its dispatch
+    // was alive, and the blind retry double-dispatched the task while the
+    // reviewer was still working). Only a POSITIVE failure (dispatch failed
+    // / worker_report) settles a step as failed; a quiet-but-alive dispatch
+    // is waited on up to the hard cap above, then left running.
+    if (silenceMs >= maxIdleMs && !quietWarned) {
+      quietWarned = true;
+      warn(`"${step.title}" quiet for ${Math.round(silenceMs / 60000)}min but its dispatch is alive (status=${v.status}) — ` +
+           `waiting up to the ${Math.round(hardCapMs / 60000)}min hard cap before giving up.`);
     }
   }
   // Settled (done reported) => clean up. Manual path: the terminal is ours,
@@ -707,7 +735,14 @@ while (i < steps.length) {
         `  node .orca/flow.mjs --from ${next ? next.id : step.id} "<objective>"`);
   }
 
-  // failed / unknown => try onFailGoto
+  // Only a POSITIVE failed outcome may trigger the onFailGoto fix loop.
+  // Anything else ("unknown": silent worker, lost report) means we could not
+  // tell — a blind retry has double-dispatched a live task before (the
+  // reviewer was still working when the coder was re-started under it).
+  if (outcome !== "failed")
+    die(`"${step.title}" returned outcome=${outcome}${r.note ? ` (${r.note})` : ""}. ` +
+        `Not retrying without a definite failure — inspect the terminal/artifacts, then re-run with --from ${step.id}.`);
+
   const gotoId = step.onFailGoto;
   if (gotoId && enabledIds.has(gotoId)) {
     const key = `${step.id}->${gotoId}`;

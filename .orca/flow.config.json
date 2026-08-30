@@ -93,6 +93,8 @@
       "title": "Code Review",
       "enabled": true,
       "agent": "claude",
+      "timeoutMs": 1800000,
+      "hardTimeoutMs": 7200000,
       "writes": "REVIEW.md",
       "reads": [
         "coding",
@@ -107,6 +109,8 @@
       "title": "Security Review",
       "enabled": true,
       "agent": "claude",
+      "timeoutMs": 1800000,
+      "hardTimeoutMs": 7200000,
       "writes": "SECURITY_REVIEW.md",
       "reads": [
         "coding",
