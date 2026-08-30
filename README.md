@@ -54,6 +54,7 @@ Optional Orca button — Settings -> Quick Commands (scope **Project**):
 
 ## Pipeline configuration — `.orca/flow.config.json`
 
+- **Auto-run** — `true` (default): the whole pipeline runs unattended — agents never ask questions or wait for confirmation (each spec carries an autonomy directive) and `gate` flags are ignored. Set `false` for manual mode: steps marked `"gate": true` block on an approval gate before the flow continues.
 - **Skip a step** — `"enabled": false`.
 - **Worktree** — agents run in the Orca worktree containing the folder you launch from (auto-detect, the default). Pin `defaults.worktree` only when launching from outside the target; `--worktree <selector>` (per run) or `ORCA_FLOW_WORKTREE` (per machine) override. A wrong pin fails fast before any agent starts.
 - **Swap an agent** — edit `"agent"` (claude, codex, opencode, gemini, cursor, droid, grok).

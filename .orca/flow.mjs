@@ -90,6 +90,12 @@ if (opt.grillMe !== undefined) {
 
 const ART_DIR = cfg.artifactsDir || ".orca/artifacts";
 const MAX_RETRIES = cfg.maxRetries ?? 2;
+// Fully automatic by default: every spec gets an AUTONOMY directive (never ask
+// the user, decide and record assumptions) and per-step "gate" flags are
+// ignored — the pipeline runs end-to-end unattended. Set "autoRun": false for
+// manual mode: agents may ask questions and steps with "gate": true block on
+// an approval gate.
+const AUTO_RUN = cfg.autoRun ?? true;
 const DEFAULT_TIMEOUT = cfg.defaults?.timeoutMs ?? 900000;
 const outPath = (file) => `${ART_DIR}/${file}`;
 
@@ -128,14 +134,19 @@ function effectiveReads(step) {
   });
 }
 
-// Substitute {out} and {reads} in the spec
+// Substitute {out} and {reads} in the spec. In auto-run mode every spec
+// (except the interactive grill interview) also gets an autonomy directive so
+// agents in interactive TUIs do not stall waiting for a human.
 function renderSpec(step) {
   const reads = effectiveReads(step);
   const readList = reads.length
     ? reads.map((id) => `${byId[id].title} (${outPath(byId[id].writes)})`).join(", ")
     : "(no prior input — start from the objective)";
   const objectiveLine = `OVERALL OBJECTIVE: ${objective}\n\n`;
-  return objectiveLine + (step.spec || "")
+  const autonomy = (AUTO_RUN && step.id !== "grill")
+    ? "\n\nAUTONOMY: this pipeline runs unattended — do NOT ask the user questions and do NOT wait for confirmation. When something is ambiguous, decide with your best judgment and record it in {out} under an 'Assumptions & decisions' section."
+    : "";
+  return (objectiveLine + (step.spec || "") + autonomy)
     .replaceAll("{out}", outPath(step.writes))
     .replaceAll("{reads}", readList);
 }
@@ -433,6 +444,7 @@ function startWorker(step, taskId) {
 function printPlan() {
   log(`Config: ${CONFIG_FILE}${opt.config ? "" : " (default)"}`);
   log(`Worktree: ${WT || WT_PIN || "(auto-detect, unresolved in dry-run)"}  (${wtSource()})`);
+  log(`Auto-run: ${AUTO_RUN ? "on — agents run unattended, gates ignored" : "off — steps with 'gate' block for approval"}`);
   log("Pipeline to run (in order):");
   steps.forEach((s, i) => {
     const reads = effectiveReads(s);
@@ -630,7 +642,8 @@ function runStep(step) {
   return { outcome: outcomeOf(done) || "unknown", note, terminal };
 }
 
-// Gate after a step (if configured)
+// Gate after a step (manual mode only — autoRun ignores gates entirely).
+// Blocks until the gate is resolved (or defaults.gateTimeoutMs passes).
 function runGate(step) {
   const g = orca(["orchestration", "gate-create", "--task", taskIds[step.id],
     "--question", `Approve the result of step "${step.title}"?`, "--options", '["yes","no"]']);
@@ -638,6 +651,23 @@ function runGate(step) {
   log(`  [gate] for "${step.title}". Approve to continue:`);
   log(`     ${ORCA} orchestration gate-resolve --id ${gateId} --resolution yes --json`);
   log(`  (Waiting — resolve the gate in Orca or with the command above.)`);
+  const GATE_TIMEOUT_MS = cfg.defaults?.gateTimeoutMs ?? 3600000;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < GATE_TIMEOUT_MS) {
+    sleepMs(5000);
+    const l = orca(["orchestration", "gate-list", "--run", RUN_ID]);
+    const gates = pick(res(l.json), ["gates"]) || [];
+    const gate = gates.find((x) =>
+      pick(x, ["id"]) === gateId || pick(x, ["gateId", "gate_id"]) === gateId);
+    if (!gate) continue;                       // not listed (yet)
+    const status = String(pick(gate, ["status", "state"]) ?? "");
+    const resolution = pick(gate, ["resolution", "answer", "result"]);
+    if (resolution == null && /^(pending|open|waiting|created)$/i.test(status)) continue;
+    const verdict = String(resolution ?? status).toLowerCase();
+    if (verdict === "yes" || verdict === "approved" || verdict === "resolved") return;
+    die(`Gate for "${step.title}" was resolved with "${resolution ?? status}" — stopping the pipeline.`);
+  }
+  warn(`gate for "${step.title}" not resolved within ${Math.round(GATE_TIMEOUT_MS / 60000)}min; continuing anyway.`);
 }
 
 // =============================================================================
@@ -652,7 +682,7 @@ while (i < steps.length) {
 
   if (outcome === "succeeded") {
     log(`[ok] ${step.title} done -> ${outPath(step.writes)}`);
-    if (step.gate) runGate(step);
+    if (step.gate && !AUTO_RUN) runGate(step);
     i++;
     continue;
   }

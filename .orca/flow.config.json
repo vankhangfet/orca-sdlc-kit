@@ -5,9 +5,11 @@
   "//writes": "'writes' = the artifact filename this step produces (inside artifactsDir).",
   "//agent": "Matches Orca's agent catalog: claude, codex, opencode, gemini, cursor, droid, grok.",
   "//onFailGoto": "If this step returns outcome=failed and has onFailGoto, jump back to that step to fix (up to maxRetries times).",
-  "//gate": "gate:true => after this step finishes, create a decision gate; must resolve 'yes' to continue.",
+  "//gate": "gate:true => after this step finishes, create a decision gate; must resolve 'yes' to continue. Effective only when autoRun is false.",
   "artifactsDir": ".orca/artifacts",
   "maxRetries": 2,
+  "//autoRun": "true (default) = fully automatic: agents never ask the user anything (each spec carries an autonomy directive) and 'gate' flags are ignored. false = manual mode: steps with \"gate\": true create an approval gate the pipeline waits on (defaults.gateTimeoutMs, 60min default).",
+  "autoRun": true,
   "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree: \"name:<displayName>\" or \"path:<dir>\". One-off: --worktree <selector>; per-machine: ORCA_FLOW_WORKTREE env. A pin is validated before the run starts.",
   "defaults": {
     "timeoutMs": 900000,

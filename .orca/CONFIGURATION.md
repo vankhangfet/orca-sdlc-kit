@@ -12,6 +12,7 @@ config field, with examples for common situations.
 {
   "artifactsDir": ".orca/artifacts",   // where step outputs are stored
   "maxRetries": 2,                      // max retries per onFailGoto loop
+  "autoRun": true,                      // fully automatic (default): no questions, no gates
   "defaults": { "timeoutMs": 900000 },  // default per-step timeout (ms)
   "pipeline": [ /* list of steps, run in array order */ ]
 }
@@ -21,6 +22,8 @@ config field, with examples for common situations.
 |-------|------|----------|---------|
 | `artifactsDir` | string | no (default `.orca/artifacts`) | Folder holding the artifact files steps write |
 | `maxRetries` | number | no (default 2) | Cap on how many times a `fail -> onFailGoto` pair may loop before stopping |
+| `autoRun` | boolean | no (default `true`) | `true` = fully automatic: every step's spec carries an autonomy directive (never ask the user, decide and record assumptions in the artifact) and `gate` flags are ignored. `false` = manual mode: agents may ask questions and steps with `gate:true` block on an approval gate. |
+| `defaults.gateTimeoutMs` | number | no (default 3600000 = 60 min) | Manual mode only: how long to wait for a decision gate to be resolved before continuing anyway |
 | `defaults.timeoutMs` | number | no (default 900000 = 15 min) | Max worker **silence** (no terminal output, no heartbeat) before a step is considered hung — NOT a wall-clock limit; a busy worker is waited on |
 | `defaults.hardTimeoutMs` | number | no (default 4x `timeoutMs`) | Absolute per-step cap; on hit the worker's terminal is left open and the flow stops with a `--from` resume hint |
 | `defaults.warmupTimeoutMs` | number | no (default 240000 = 4 min) | How long to wait for a freshly created agent TUI to become idle before dispatching into it (prevents `agent_prompt_stalled` on slow boots) |
@@ -87,6 +90,8 @@ then resumes. Set to `null` or omit to disable. Loop count is bounded by `maxRet
 **`gate`** — (optional) `true` means that after the step finishes, the orchestrator
 creates a **decision gate** and prints a `gate-resolve` command; the pipeline waits
 until you approve "yes" before continuing. Use for milestones needing human sign-off.
+**Effective only in manual mode** (`"autoRun": false`) — with the default
+`autoRun: true` gates are ignored so the pipeline runs unattended.
 
 **`model` / `effort`** — (optional) apply to `claude`, `codex`, `cursor` only.
 `effort` (e.g. `"high"`) requires `model`. Leave empty to use the agent's default.
