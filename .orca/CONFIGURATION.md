@@ -66,8 +66,12 @@ that points to it.
 removed from later steps' `reads`, so the chain doesn't break (see section 4).
 
 **`agent`** — an agent name from Orca's catalog. Valid values:
-`claude`, `codex`, `opencode`, `gemini`, `cursor`, `droid`, `grok`.
-(Confirm the list for your Orca build with `orca skills get orchestration --full`.)
+`claude`, `codex`, `opencode`, `gemini`, `cursor`, `grok`, plus `kiro-cli`
+(Kiro's terminal chat — verified end-to-end through the flow's terminal
+dispatch path; needs `kiro-cli` on PATH and logged in via `kiro-cli login`.
+Unlike the catalog agents it cannot use the cold-start `worker-start` fallback,
+and flags may be appended, e.g. `"kiro-cli --trust-all-tools"` for unattended runs).
+(Confirm the catalog for your Orca build with `orca skills get orchestration --full`.)
 
 **`writes`** — filename (no path) the step writes its output to. The full path is
 `artifactsDir + "/" + writes`. This is what later steps read back.
@@ -284,7 +288,7 @@ entry. If `--dry-run` reports "Could not read flow.config.json", check those two
 
 ## 8. Quick reference of valid values
 
-- `agent`: `claude` · `codex` · `opencode` · `gemini` · `cursor` · `droid` · `grok`
+- `agent`: `claude` · `codex` · `opencode` · `gemini` · `cursor` · `grok` · `kiro-cli`
 - `enabled`: `true` · `false`
 - `gate`: `true` · `false`
 - `onFailGoto`: any `id` earlier in the pipeline, or `null`

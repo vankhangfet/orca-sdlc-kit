@@ -3,7 +3,7 @@
   "//pipeline": "Each entry is a STEP. Set 'enabled:false' to SKIP it. Array order = run order.",
   "//reads": "'reads' lists the ids of steps whose output this step needs. If a step is skipped, it is auto-removed from later steps' 'reads' (chain stays intact).",
   "//writes": "'writes' = the artifact filename this step produces (inside artifactsDir).",
-  "//agent": "Matches Orca's agent catalog: claude, codex, opencode, gemini, cursor, droid, grok.",
+  "//agent": "Agent for each step: claude, codex, opencode, gemini, cursor, grok (Orca catalog) or kiro-cli (Kiro terminal chat, run via the flow's terminal dispatch — needs kiro-cli on PATH and logged in).",
   "//onFailGoto": "If this step returns outcome=failed and has onFailGoto, jump back to that step to fix (up to maxRetries times).",
   "//gate": "gate:true => after this step finishes, create a decision gate; must resolve 'yes' to continue. Effective only when autoRun is false.",
   "//interactive": "step flag: in manual mode (autoRun:false) the agent INTERVIEWS the user before finalizing — one question at a time, decisions confirmed one by one, then the artifact is written. Timeout budgets are raised automatically (60min silence / 4h hard). Ignored when autoRun is true (fully autonomous).",

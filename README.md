@@ -77,7 +77,7 @@ Everything lives in `.orca/flow.config.json` (no code edits ever):
 | I want to... | Do this |
 |---|---|
 | Skip a step (e.g. no UI/UX) | set `"enabled": false` on that step — later steps adjust automatically |
-| Use a different AI for a step | edit `"agent"` — claude, codex, opencode, gemini, cursor, droid, grok |
+| Use a different AI for a step | edit `"agent"` — claude, codex, opencode, gemini, cursor, grok, kiro-cli |
 | Change what a step does | edit its `"spec"` text; `{out}` / `{reads}` are filled in for you |
 | Be interviewed on architecture | keep `"interactive": true` on Architecture and set `"autoRun": false` |
 | Add my own step (e.g. a lint gate) | add an entry to the `"pipeline"` array — order in the array is the run order |
