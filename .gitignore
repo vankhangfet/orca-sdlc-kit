@@ -3,3 +3,6 @@
 
 # Runtime pipeline output
 .orca/artifacts/
+
+# Internal docs (not published)
+docs/

@@ -1,164 +1,92 @@
 # Orca SDLC Flow Kit
 
-Orchestrates a full software development lifecycle inside Orca ADE — one agent per
-step, **each step toggleable via config**. Cross-platform (Windows/macOS/Linux),
-runs on Node (already required by Orca).
+Orchestrate a complete software development lifecycle inside Orca ADE — one AI agent per step, every step toggleable via a single config file. Cross-platform (Windows / macOS / Linux), runs on Node only.
 
-## Default pipeline (9 steps)
+## Why use it
 
-| # | Step | Agent | Reads | Writes |
-|---|------|-------|-------|--------|
-| 0* | Grill Me (optional — opt-in via `--grill-me`) | claude | — | BRAINSTORM.md |
-| 1 | Planning | claude | — | PLAN.md |
-| 2 | Architecture Design | claude | 1 | ARCHITECTURE.md |
-| 3 | Detailed Design | claude | 2 | DETAILED_DESIGN.md |
-| 4 | UI/UX Design (mockscreen) | claude | 1,2 | UIUX_MOCKS.md |
-| 5 | Coding | codex | 3,4 | CHANGES.md |
-| 6 | Code Review | claude | 5,3 | REVIEW.md · fail -> back to 5 |
-| 7 | Security Review | claude | 5,2 | SECURITY_REVIEW.md · fail -> back to 5 |
-| 8 | Testing | opencode | 5,6,7 | TEST_REPORT.md · fail -> back to 5 |
-| 9 | Documentation | claude | all | DOCUMENTATION.md |
+- **Full lifecycle, automated** — from requirements to documentation, hands-off.
+- **Best agent for each job** — mix Claude, Codex, OpenCode, Gemini, Cursor, Droid, Grok per step.
+- **Quality loops built in** — review, security, and test failures automatically loop back to coding (capped by `maxRetries`).
+- **Stack-agnostic** — specs describe general principles, no language or framework assumptions.
+- **Config-driven** — skip, reorder, add steps, or swap agents by editing one JSON file.
 
-\*0 = optional requirements interview, disabled by default — see [Grill-me](#grill-me--optional-interview-phase-opt-in) below.
+## Pipelines
 
-Specs are **not tied to a specific stack** — they mention no language or framework
-and describe general principles so they work on any project. To force a specific
-tool, add it to that step's `spec` (e.g. "run tests with pytest").
+### Full SDLC (`flow.config.json`)
 
-Data passes between steps via artifact files in `.orca/artifacts/`.
+| # | Step | Agent | Writes | On fail |
+|---|------|-------|--------|---------|
+| 0* | Grill Me (interview, opt-in) | claude | BRAINSTORM.md | — |
+| 1 | Planning | claude | PLAN.md | — |
+| 2 | Architecture Design | claude | ARCHITECTURE.md | — |
+| 3 | Detailed Design | claude | DETAILED_DESIGN.md | — |
+| 4 | UI/UX Design | claude | UIUX_MOCKS.md | — |
+| 5 | Coding | codex | CHANGES.md | — |
+| 6 | Code Review | claude | REVIEW.md | back to 5 |
+| 7 | Security Review | claude | SECURITY_REVIEW.md | back to 5 |
+| 8 | Testing | opencode | TEST_REPORT.md | back to 5 |
+| 9 | Documentation | claude | DOCUMENTATION.md | — |
 
-## Bug-fix pipeline (`fixbug.config.json`)
+\* Disabled by default; enable per run with `--grill-me` or permanently in config.
 
-A second, developer-facing pipeline for fixing reported bugs — root cause first,
-then a reviewed fix that is verified against the original reproduction:
+Steps pass data via artifact files in `.orca/artifacts/`. A skipped step is auto-removed from later steps' `reads` — the chain stays intact.
 
-| # | Step | Agent | Reads | Writes |
-|---|------|-------|-------|--------|
-| 1 | Root Cause Analysis | claude | — | ROOT_CAUSE.md |
-| 2 | Fix Plan | claude | 1 | FIX_PLAN.md |
-| 3 | Bug Fix (code + regression test) | codex | 1,2 | FIX_CHANGES.md |
-| 4 | Fix Verification | opencode | 3,1 | VERIFICATION.md · fail -> back to 3 |
+### Bug fix (`fixbug.config.json`)
+
+Root Cause Analysis -> Fix Plan -> Bug Fix -> Fix Verification (loops back on failure, max 2 retries).
 
 ```
-node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavior, how to reproduce>"
+node .orca/flow.mjs --config fixbug.config.json "<symptom, expected behavior, reproduction steps>"
 ```
 
-Pass the full bug context as the objective — step 1 reproduces from it. If verification
-still reproduces the bug (or a test fails), step 4 loops back to the fix (max 2 retries).
+## Setup
 
-## Install into a project
+1. Copy `orca.yaml` and the `.orca/` folder into your project root.
+2. Add `.orca/artifacts/` to your `.gitignore`.
+3. In Orca: Settings -> Experimental -> enable **Orchestration**. Verify with `orca status --json`.
+4. Create a worktree in Orca (the hook scaffolds `.orca/artifacts`). For an existing worktree:
+   ```
+   node -e "require('fs').mkdirSync('.orca/artifacts',{recursive:true})"
+   ```
 
-1. Copy `orca.yaml` (repo root) and the `.orca/` folder into your project.
-2. `echo ".orca/artifacts/" >> .gitignore`
-3. Orca -> Settings -> Experimental -> enable **Orchestration**. Verify `orca status --json`.
-4. Create a new worktree in Orca (the hook creates `.orca/artifacts`). For an
-   existing worktree: `node -e "require('fs').mkdirSync('.orca/artifacts',{recursive:true})"`
+Optional Orca button — Settings -> Quick Commands (scope **Project**):
+`Run SDLC flow` -> `node .orca/flow.mjs "Objective"`
 
-## Run
+## Pipeline configuration — `.orca/flow.config.json`
 
-```
-node .orca/flow.mjs "Feature / objective description"
-```
+- **Skip a step** — `"enabled": false`.
+- **Swap an agent** — edit `"agent"` (claude, codex, opencode, gemini, cursor, droid, grok).
+- **Change what a step does** — edit `"spec"`; `{out}` = output file, `{reads}` = input files.
+- **Add / remove / reorder steps** — edit the `"pipeline"` array; order = run order. Required fields: `id`, `title`, `enabled`, `agent`, `writes`, `reads`, `spec`. Optional: `onFailGoto`, `gate`, `model`/`effort`, `timeoutMs`.
+- **Fix loop** — `onFailGoto: "coding"` jumps back on failure; `maxRetries` caps loops; `null` disables.
+- **Manual approval** — `"gate": true` pauses the pipeline until you approve via the printed `gate-resolve` command.
 
-Useful flags:
+Full field reference: [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md).
 
-| Flag | Meaning |
-|------|---------|
-| `--dry-run` | Print the pipeline WITHOUT calling agents. Use to check config. |
-| `--config <file>` | Use another pipeline config. E.g. `--config fixbug.config.json`. |
-| `--from <id>` | Start from a step (skip earlier ones). E.g. `--from coding`. |
-| `--only a,b` | Run only a subset of steps. E.g. `--only planning,architecture`. |
-| `--agent <id>=<agent>` | Override one step's agent for this run. E.g. `--agent coding=claude`. |
-| `--grill-me` | Run the optional `grill` interview step before Planning (see Grill-me below). |
-| `--no-grill-me` | Skip the `grill` step for this run, even if enabled in config. |
+## Key commands
 
-Examples:
-```
+```bash
+# Run the full pipeline
+node .orca/flow.mjs "Build a login page"
+
+# Preview the pipeline without calling agents (always do this first)
 node .orca/flow.mjs --dry-run "Build a login page"
-node .orca/flow.mjs --from coding "Continue after design is done"
-node .orca/flow.mjs --only planning,architecture,detailed-design "Design phase only"
-node .orca/flow.mjs --grill-me "Interview me first, then build"
-node .orca/flow.mjs --grill-me --only grill "Just the brainstorm session"
-```
 
-## Grill-me — optional interview phase (opt-in)
+# Start from / run only specific steps
+node .orca/flow.mjs --from coding "Continue after design"
+node .orca/flow.mjs --only planning,architecture "Design phase only"
 
-The kit ships a `grill` step (id `grill`) with `"enabled": false`. It is an
-interactive REQUIREMENTS INTERVIEW: the agent asks you questions **in its own
-terminal** — one at a time, mostly multiple choice — restates each answer, then
-presents every decision for you to confirm or edit. You participate by typing
-into that terminal. When confirmed, it writes `BRAINSTORM.md`, which Planning
-reads as input.
-
-Turn it on for one run:
-
-```
+# Interactive requirements interview first
 node .orca/flow.mjs --grill-me "Feature idea"
+node .orca/flow.mjs --grill-me --only grill "Brainstorm session only"
+
+# Override an agent for one run / use another pipeline
+node .orca/flow.mjs --agent coding=claude "Objective"
+node .orca/flow.mjs --config fixbug.config.json "Bug description"
 ```
 
-Brainstorm-only session (interview now, build later):
+Troubleshooting: check current CLI flags with `orca skills get orchestration --full`; reset stale orchestration state with `orca orchestration reset --all --json`.
 
-```
-node .orca/flow.mjs --grill-me --only grill "Feature idea"
-```
+## License
 
-`BRAINSTORM.md` persists in `.orca/artifacts/`, so a later full run picks it up
-automatically — Planning's `reads` already include `grill`, and a skipped step's
-artifact still counts when the file exists. Planning consumes whatever
-`BRAINSTORM.md` is there: before starting a DIFFERENT objective, delete the file
-or re-run the interview.
-
-Make it default-on by setting `"enabled": true` on the `grill` step in
-`flow.config.json`; `--no-grill-me` then disables it for a single run. The step
-carries large timeouts (60 min silence / 4 h hard) because the terminal sits
-idle while it waits for a human answer — do not lower them to the 15-min default.
-
-## Configure — edit `.orca/flow.config.json`
-
-### Skip a step
-Set `"enabled": false`. A skipped step is **auto-removed from later steps' `reads`**
-— the chain stays intact — unless its artifact file already exists (that is what
-lets a later run reuse `BRAINSTORM.md`; see Grill-me). E.g. drop UI/UX:
-
-```json
-{ "id": "uiux-design", "enabled": false, ... }
-```
-
-### Change a step's agent (permanent)
-Edit `"agent"`. Values: claude, codex, opencode, gemini, cursor, droid, grok.
-
-### Change what a step does
-Edit `"spec"`. Inside a spec, `{out}` = the file this step writes, `{reads}` = the
-list of input files (built from the enabled steps). Name your project's tools if
-needed (e.g. "run tests with pytest").
-
-### Add / remove / reorder steps
-Add or remove entries in the `"pipeline"` array. Array order = run order. Each step
-needs: `id`, `title`, `enabled`, `agent`, `writes` (filename), `reads` (array of
-other step ids), `spec`. Optional: `onFailGoto` (id to loop back to on failure),
-`gate` (true = wait for approval after the step), `model`/`effort`, `timeoutMs`.
-
-### Fix loop
-`onFailGoto: "coding"` sends the step back to Coding when it returns outcome=failed.
-`maxRetries` (top-level config) caps the number of loops. Set `onFailGoto: null` to disable.
-
-### Manual approval gate
-`"gate": true` on a step: after it finishes, the script creates a decision gate and
-prints a `gate-resolve` command to approve before continuing.
-
-## Button in Orca
-
-Settings -> Quick Commands -> scope **Project**:
-- Label: `Run SDLC flow`
-- Command: `node .orca/flow.mjs "Objective"`
-
-## Troubleshooting
-
-CLI flags evolve with the Orca version. Run `orca skills get orchestration --full`
-to check. The script is tolerant of JSON key names (tries `taskId/task_id/id`,
-`outcome/result`, ...). Reset when experiments get messy:
-`orca orchestration reset --all --json`.
-
-Always run `--dry-run` before a real run to confirm the pipeline is as expected.
-
-See **CONFIGURATION.md** for the full field reference.
+[MIT](LICENSE)
