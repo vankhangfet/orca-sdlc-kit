@@ -55,6 +55,7 @@ Optional Orca button — Settings -> Quick Commands (scope **Project**):
 ## Pipeline configuration — `.orca/flow.config.json`
 
 - **Skip a step** — `"enabled": false`.
+- **Worktree** — agents run in the Orca worktree containing the folder you launch from (auto-detect, the default). Pin `defaults.worktree` only when launching from outside the target; `--worktree <selector>` (per run) or `ORCA_FLOW_WORKTREE` (per machine) override. A wrong pin fails fast before any agent starts.
 - **Swap an agent** — edit `"agent"` (claude, codex, opencode, gemini, cursor, droid, grok).
 - **Change what a step does** — edit `"spec"`; `{out}` = output file, `{reads}` = input files.
 - **Add / remove / reorder steps** — edit the `"pipeline"` array; order = run order. Required fields: `id`, `title`, `enabled`, `agent`, `writes`, `reads`, `spec`. Optional: `onFailGoto`, `gate`, `model`/`effort`, `timeoutMs`.
@@ -83,6 +84,9 @@ node .orca/flow.mjs --grill-me --only grill "Brainstorm session only"
 # Override an agent for one run / use another pipeline
 node .orca/flow.mjs --agent coding=claude "Objective"
 node .orca/flow.mjs --config fixbug.config.json "Bug description"
+
+# Pin the worktree (only when launching from outside the target worktree)
+node .orca/flow.mjs --worktree name:lab "Objective"
 ```
 
 Troubleshooting: check current CLI flags with `orca skills get orchestration --full`; reset stale orchestration state with `orca orchestration reset --all --json`.

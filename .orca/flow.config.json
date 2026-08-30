@@ -8,9 +8,10 @@
   "//gate": "gate:true => after this step finishes, create a decision gate; must resolve 'yes' to continue.",
   "artifactsDir": ".orca/artifacts",
   "maxRetries": 2,
+  "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree: \"name:<displayName>\" or \"path:<dir>\". One-off: --worktree <selector>; per-machine: ORCA_FLOW_WORKTREE env. A pin is validated before the run starts.",
   "defaults": {
     "timeoutMs": 900000,
-    "worktree": "name:lab2"
+    "worktree": null
   },
   "pipeline": [
     {

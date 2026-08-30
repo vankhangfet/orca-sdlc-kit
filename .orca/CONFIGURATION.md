@@ -26,7 +26,7 @@ config field, with examples for common situations.
 | `defaults.warmupTimeoutMs` | number | no (default 240000 = 4 min) | How long to wait for a freshly created agent TUI to become idle before dispatching into it (prevents `agent_prompt_stalled` on slow boots) |
 | `defaults.startGraceMs` | number | no (default 90000) | After delivering a prompt, how long to watch the TUI for proof it was consumed before re-sending (some TUIs drop input pasted during boot) |
 | `defaults.sendAttempts` | number | no (default 3) | Max prompt deliveries into a warmed terminal before falling back to a cold `worker-start` |
-| `defaults.worktree` | string | no (default `current`) | Worktree selector where agents run (`current` = the invoking Orca terminal's worktree; or pin e.g. `name:lab2`, `path:C:\\...`) |
+| `defaults.worktree` | string | no (default: auto-detect from the invoking directory) | Worktree selector where agents run. Leave unset for auto-detect (recommended — works whenever the flow is launched from inside an Orca-managed worktree). Pin (`name:lab2`, `path:C:\\...`) only when launching from OUTSIDE the target worktree. Per-run override: `--worktree <selector>`; per-machine: `ORCA_FLOW_WORKTREE` env. Precedence: flag > env > config > auto-detect. A pinned selector is validated before the run starts — a wrong pin fails fast with the available worktrees listed. |
 | `pipeline` | array | **yes** | The steps; **array order = run order** |
 
 ---
@@ -196,6 +196,7 @@ handles it. Always verify with `--dry-run` to see the effective `reads` after fi
 |------|--------|---------|
 | `--dry-run` | Print the pipeline, do NOT call agents | `node .orca/flow.mjs --dry-run "x"` |
 | `--config <file>` | Use another pipeline config (default `flow.config.json`) | `--config fixbug.config.json` |
+| `--worktree <selector>` | Pin the worktree for this run (default: auto-detect from the invoking directory) | `--worktree name:lab2` |
 | `--from <id>` | Start from a step, drop earlier ones | `--from coding` |
 | `--only a,b,c` | Run only the listed steps | `--only planning,architecture` |
 | `--agent <id>=<agent>` | Override one step's agent, this run only | `--agent coding=claude` |

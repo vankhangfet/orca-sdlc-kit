@@ -4,9 +4,10 @@
   "//steps": "root-cause -> fix-plan -> fix-coding -> fix-verify. fix-verify FAIL loops back to fix-coding (maxRetries).",
   "artifactsDir": ".orca/artifacts",
   "maxRetries": 2,
+  "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree. See flow.config.json for details.",
   "defaults": {
     "timeoutMs": 900000,
-    "worktree": "name:lab2"
+    "worktree": null
   },
   "pipeline": [
     {

@@ -24,6 +24,9 @@
 // Run a DIFFERENT pipeline config (e.g. the bug-fix flow in fixbug.config.json):
 //   node .orca/flow.mjs --config fixbug.config.json "<bug description>"
 //
+// Pin the worktree for one run (only when launching from OUTSIDE the target):
+//   node .orca/flow.mjs --worktree name:lab2 "..."
+//
 // Opt-in requirements interview before planning (step id "grill" in config):
 //   node .orca/flow.mjs --grill-me "..."
 // Disable it for this run when it is enabled in config:
@@ -47,7 +50,7 @@ const die = (m) => { console.error("[orca-flow] ERROR:", m); process.exit(1); };
 
 // --- Parse argv: flags + objective ---
 const argv = process.argv.slice(2);
-const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined };
+const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined, worktree: null };
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -60,6 +63,7 @@ for (let i = 0; i < argv.length; i++) {
     opt.grillMe = v;
   }
   else if (a === "--config") opt.config = argv[++i];
+  else if (a === "--worktree") opt.worktree = argv[++i];
   else if (a === "--agent") {
     const [step, ag] = argv[++i].split("=");
     if (step && ag) opt.agentOverrides[step] = ag;
@@ -117,7 +121,9 @@ function effectiveReads(step) {
   return (step.reads || []).filter((id) => {
     if (!byId[id]) return false;
     if (enabledIds.has(id)) return true;
-    const p = resolveWorktreePath();
+    // Soft resolve: during dry-run the worktree may be unresolvable (running
+    // from a non-worktree folder) — the plan should still print in full.
+    const p = resolveWorktreePath(true);
     return p ? existsSync(join(p, ART_DIR, byId[id].writes)) : false;
   });
 }
@@ -194,28 +200,71 @@ function sleepMs(ms) {
 const START_RETRIES = cfg.defaults?.startRetries ?? 2;
 const START_RETRY_DELAY_MS = cfg.defaults?.startRetryDelayMs ?? 4000;
 const WARMUP_TIMEOUT_MS = cfg.defaults?.warmupTimeoutMs ?? 240000;
-// Where agents run. IMPORTANT: "current"/"active" resolve by the INVOKING
-// CWD for `terminal create` (strictly) — running flow.mjs from a folder that
-// is not itself an Orca worktree (e.g. this config-only folder) fails with
-// selector_not_found. So we resolve a CONCRETE selector once at startup:
-// defaults.worktree if given, else the CWD's worktree, else we stop and tell
-// the user to pin one (e.g. "name:lab2").
-const WT_CFG = cfg.defaults?.worktree || null;
+// Where agents run. Precedence:
+//   1. --worktree <selector>         (one-off run)
+//   2. ORCA_FLOW_WORKTREE env        (per machine / shell)
+//   3. defaults.worktree in config   (explicit pin)
+//   4. auto-detect: the Orca worktree containing the invoking directory
+// Auto-detect is the DEFAULT on purpose: a hardcoded pin ships badly (users
+// forget to change it, then the flow targets a foreign worktree or dies with
+// selector_not_found mid-run). Pin only when launching from OUTSIDE the
+// target worktree. A pinned selector is validated BEFORE anything is created,
+// and on failure we list the available worktrees.
+const WT_PIN = opt.worktree || process.env.ORCA_FLOW_WORKTREE || cfg.defaults?.worktree || null;
+const wtSource = () => opt.worktree ? "--worktree flag"
+  : process.env.ORCA_FLOW_WORKTREE ? "ORCA_FLOW_WORKTREE env"
+  : cfg.defaults?.worktree ? "config defaults.worktree" : "auto-detect";
 let WT = null;
-function resolveWorktree(soft = false) {
-  if (WT) return WT;
-  if (WT_CFG) { WT = WT_CFG; return WT; }
-  const w = orca(["worktree", "current"]);
-  const entry = pick(res(w.json), ["worktree"]) || res(w.json);
-  const p = pick(entry, ["path"]);
-  if (w.ok && p) { WT = `path:${p}`; return WT; }
-  if (soft) return null;
-  die('Could not resolve the target worktree (CWD is not inside an Orca-managed worktree). ' +
-      'Set "defaults": { "worktree": "name:<displayName>" } (or "path:<dir>") in flow.config.json.');
-}
+let WT_WARNED = false;   // soft mode: report an unresolvable worktree only once
 // Filesystem path of the worktree (agents run THERE, so artifacts live there —
 // not necessarily next to this config). Null until resolvable.
 let WT_PATH = null;
+// Human-readable worktree list for error messages. `worktree list` is GLOBAL
+// across repos, so prefer worktrees under the git root of the CWD; fall back
+// to all when none match.
+function worktreeCandidates() {
+  const l = orca(["worktree", "list"]);
+  const ws = (pick(res(l.json), ["worktrees"]) || [])
+    .map((w) => ({ name: pick(w, ["displayName"]) || "", path: pick(w, ["path"]) || "" }))
+    .filter((w) => w.name && w.path);
+  let root = null;
+  const g = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  if (!g.error && g.status === 0) root = (g.stdout || "").trim().toLowerCase();
+  const same = root ? ws.filter((w) => {
+    const p = w.path.toLowerCase();
+    return p === root || p.startsWith(root + "\\") || p.startsWith(root + "/");
+  }) : [];
+  return (same.length ? same : ws).slice(0, 8)
+    .map((w) => `  name:${w.name}  ->  ${w.path}`).join("\n");
+}
+const wtFixHint = () =>
+  "Fix one of:\n" +
+  "  - run the flow from inside the target Orca worktree (auto-detect), or\n" +
+  "  - pass --worktree <selector> for this run, or\n" +
+  "  - set ORCA_FLOW_WORKTREE for this machine/shell, or\n" +
+  '  - set "defaults": { "worktree": "name:<displayName>" } in the config.';
+function resolveWorktree(soft = false) {
+  if (WT) return WT;
+  if (WT_PIN) {
+    const shown = orca(["worktree", "show", "--worktree", WT_PIN]);
+    const p = pick(res(shown.json).worktree || {}, ["path"]);
+    if (shown.ok && p) { WT = WT_PIN; WT_PATH = p; return WT; }
+    const cands = worktreeCandidates();
+    const msg = `worktree "${WT_PIN}" (from ${wtSource()}) does not exist.\n${wtFixHint()}` +
+      (cands ? `\nAvailable worktrees:\n${cands}` : "");
+    if (soft) { if (!WT_WARNED) { WT_WARNED = true; warn(msg); } return null; }
+    die(msg);
+  }
+  const w = orca(["worktree", "current"]);
+  const entry = pick(res(w.json), ["worktree"]) || res(w.json);
+  const p = pick(entry, ["path"]);
+  if (w.ok && p) { WT = `path:${p}`; WT_PATH = p; return WT; }
+  if (soft) return null;
+  const cands = worktreeCandidates();
+  die("Could not auto-detect the worktree: the invoking directory is not inside an " +
+      `Orca-managed worktree.\n${wtFixHint()}` +
+      (cands ? `\nAvailable worktrees:\n${cands}` : ""));
+}
 function resolveWorktreePath(soft = false) {
   if (WT_PATH != null) return WT_PATH;
   const sel = resolveWorktree(soft);
@@ -383,7 +432,7 @@ function startWorker(step, taskId) {
 // =============================================================================
 function printPlan() {
   log(`Config: ${CONFIG_FILE}${opt.config ? "" : " (default)"}`);
-  log(`Worktree: ${WT_CFG || "current (auto-resolved at start)"}`);
+  log(`Worktree: ${WT || WT_PIN || "(auto-detect, unresolved in dry-run)"}  (${wtSource()})`);
   log("Pipeline to run (in order):");
   steps.forEach((s, i) => {
     const reads = effectiveReads(s);
