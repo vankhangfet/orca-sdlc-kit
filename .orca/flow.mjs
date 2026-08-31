@@ -609,6 +609,7 @@ function warmTerminal(agent) {
   let lastOut = -1, quietSince = Date.now();
   while (Date.now() - startedAt < WARMUP_TIMEOUT_MS) {
     sleepMs(POLL_MS);
+    writeStatus();   // startup heartbeat: page stays fresh during TUI warmup
     const s = orca(["terminal", "show", "--terminal", handle]);
     const out = pick(pick(res(s.json), ["terminal"]) || {}, ["lastOutputAt"]) || 0;
     if (out !== lastOut) { lastOut = out; quietSince = Date.now(); }
@@ -681,6 +682,7 @@ function manualStart(step, taskId) {
     const deadline = Date.now() + START_GRACE_MS;
     while (Date.now() < deadline) {
       sleepMs(4000);
+      writeStatus();   // startup heartbeat: page stays fresh while watching the paste
       const pv = previewOf(term);
       if (pv == null || before == null || pv !== before) return { dispatchId, terminal: term };
     }
@@ -1001,6 +1003,8 @@ function runGate(step) {
   log(`  [gate] for "${step.title}". Approve to continue:`);
   log(`     ${ORCA} orchestration gate-resolve --id ${gateId} --resolution yes --json`);
   log(`  (Waiting — resolve the gate in Orca or with the command above.)`);
+  statusSet(step.id, { status: "waiting-approval", note: "gate open — approve to continue" });
+  writeStatus();
   const GATE_TIMEOUT_MS = cfg.defaults?.gateTimeoutMs ?? 3600000;
   const startedAt = Date.now();
   while (Date.now() - startedAt < GATE_TIMEOUT_MS) {
@@ -1014,7 +1018,11 @@ function runGate(step) {
     const resolution = pick(gate, ["resolution", "answer", "result"]);
     if (resolution == null && /^(pending|open|waiting|created)$/i.test(status)) continue;
     const verdict = String(resolution ?? status).toLowerCase();
-    if (verdict === "yes" || verdict === "approved" || verdict === "resolved") return;
+    if (verdict === "yes" || verdict === "approved" || verdict === "resolved") {
+      statusSet(step.id, { status: "succeeded", note: null });
+      writeStatus();
+      return;
+    }
     die(`Gate for "${step.title}" was resolved with "${resolution ?? status}" — stopping the pipeline.`);
   }
   warn(`gate for "${step.title}" not resolved within ${Math.round(GATE_TIMEOUT_MS / 60000)}min; continuing anyway.`);
@@ -1042,6 +1050,8 @@ while (i < steps.length) {
   // Healthy but endless worker: the terminal stays open so it can finish.
   // Tell the user exactly how to continue instead of looping or dying blindly.
   if (outcome === "still-running") {
+    STATUS.overall = "still-running";   // die() only overwrites "running"
+    writeStatus();
     const next = steps[i + 1];
     die(`"${step.title}" ${r.note}. Its terminal ${r.terminal || "(dispatch-owned)"} was left OPEN to finish. ` +
         `Watch it; once it reports done and writes ${outPath(step.writes)}, continue with:\n` +
@@ -1078,5 +1088,6 @@ while (i < steps.length) {
   die(`"${step.title}" returned outcome=${outcome}${r.note ? ` (${r.note})` : ""} and has no valid onFailGoto. Stopping.`);
 }
 
+finishStatus("succeeded");
 log("Pipeline COMPLETE. Artifacts in " + ART_DIR + ":");
 for (const s of steps) log(`  ${s.title.padEnd(26)} -> ${s.writes}`);
