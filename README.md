@@ -84,6 +84,9 @@ affects the pipeline. Disable the auto-open with `--no-open-status` or
 
 Want a peek without starting a run? `node .orca/flow.mjs --status-preview`
 writes a sample dashboard showing every state to `.orca/status-preview/`.
+It is a fixture only — never combine it with an objective or
+`--only`/`--from`/`--agent` (the flow refuses the mix). Real runs need no
+flag: the page opens by itself.
 
 ## The pipelines
 
@@ -116,7 +119,7 @@ node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavio
 ```bash
 node .orca/flow.mjs "Objective"                     # the whole pipeline
 node .orca/flow.mjs --dry-run "Objective"           # preview only — always try this first
-node .orca/flow.mjs --status-preview                # sample status dashboard, no run
+node .orca/flow.mjs --status-preview                # sample dashboard only — never with an objective
 node .orca/flow.mjs --from coding "Objective"       # resume / skip the design phase
 node .orca/flow.mjs --only planning,architecture "Objective"
 node .orca/flow.mjs --grill-me "Objective"          # interview me before planning

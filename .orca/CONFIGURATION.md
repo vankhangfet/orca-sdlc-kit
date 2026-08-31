@@ -224,7 +224,7 @@ handles it. Always verify with `--dry-run` to see the effective `reads` after fi
 | `--grill-me` | Enable the `grill` step for this run (see section 5.2) | `--grill-me --only grill` |
 | `--no-grill-me` | Disable the `grill` step for this run (see section 5.2) | `--no-grill-me` |
 | `--no-open-status` | Do not auto-open the live status page for this run (see section 5.3) | `--no-open-status` |
-| `--status-preview` | Write a fixture status page (`.orca/status-preview/`) showing every state — dev aid, no run, no agents | `node .orca/flow.mjs --status-preview` |
+| `--status-preview` | Write a fixture status page (`.orca/status-preview/`) showing every state — dev aid, no run, no agents. Refused when combined with an objective / `--only` / `--from` / `--agent` (before v1.0.1 that mix silently skipped the pipeline with no agent spawned) | `node .orca/flow.mjs --status-preview` |
 
 Flags affect only that run; they are not written to the config. `enabled:false` in
 config is always respected, even if that step is listed in `--only`. (Exception:
@@ -276,7 +276,7 @@ Every real run writes a self-updating dashboard next to the artifacts:
 
 It shows the objective, an overall badge (RUNNING / DONE / FAILED / UNKNOWN / STILL RUNNING — "still running" means the flow stopped with a step's terminal left open; resume with `--from`), a progress bar, and every pipeline step with its agent, live elapsed time, durations, retry attempts (`attempt 2`, ...), approval-gate waits (manual mode) and — at the end — the artifact list. Steps excluded by `enabled:false`, `--only` or `--from` render as SKIPPED, except when a previous run's history (same config) exists in the same worktree: the page then merges it, so a `--from` resume shows one continuous picture (durations of earlier steps included).
 
-The page opens automatically when the run starts (`explorer.exe` on Windows, `open` on macOS, `xdg-open` on Linux). Turn that off with `--no-open-status`, or per-project with `"defaults": { "openStatus": false }`. If writing the page fails (e.g. a read-only folder) the run continues untouched — the dashboard never affects pipeline execution. `node .orca/flow.mjs --status-preview` renders a fixture page showing every state without a run.
+The page opens automatically when the run starts (`explorer.exe` on Windows, `open` on macOS, `xdg-open` on Linux). Turn that off with `--no-open-status`, or per-project with `"defaults": { "openStatus": false }`. If writing the page fails (e.g. a read-only folder) the run continues untouched — the dashboard never affects pipeline execution. `node .orca/flow.mjs --status-preview` renders a fixture page showing every state without a run — it cannot be combined with an objective or `--only`/`--from`/`--agent`; real runs write and open the page automatically and need no flag.
 
 ---
 
