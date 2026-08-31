@@ -346,6 +346,8 @@ STATUS = {
   artifacts: [],
 };
 let STATUS_FAILED = false;
+// Terminal for merge purposes. "unknown" is included beyond the spec's three:
+// a settled-unknown row is more informative than a bare SKIPPED strikethrough.
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "skipped", "unknown"]);
 function statusDir() { return join(WT_PATH || ".", ART_DIR); }
 const statusJsOf = (S) =>
@@ -410,7 +412,10 @@ function loadPreviousStatus(dir = statusDir()) {
           attempt: Math.max(cur.attempt, ps.attempt || 0),
           startedAt: ps.startedAt ?? null, endedAt: ps.endedAt ?? null,
           durationMs: ps.durationMs ?? null, note: ps.note ?? null });
-      } else if (cur.status === "pending") {
+      } else if (cur.status === "pending" && prev.overall !== "succeeded") {
+        // Attempts carry only across an INCOMPLETE previous run (resume of a
+        // fix loop) — a clean re-run of a fully-succeeded pipeline starts
+        // every step at attempt 1, not a phantom "attempt 2".
         cur.attempt = Math.max(cur.attempt, ps.attempt || 0);
       }
     }
