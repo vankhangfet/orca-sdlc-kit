@@ -801,6 +801,16 @@ function printPlan() {
   if (skipped.length) log(`Skipped: ${skipped.join(", ")}`);
 }
 
+// --status-preview renders a SAMPLE dashboard and exits without calling
+// agents. Combined with a real run's trappings (objective / --only / --from /
+// --agent) it almost certainly means the user wanted a REAL run with the
+// status page — which is already the default and needs no flag. Refuse the
+// ambiguous mix instead of silently skipping the pipeline (verified incident:
+// "--only planning,architecture "<objective>" --status-preview" exited after
+// writing the fixture and no agent ever spawned).
+if (opt.statusPreview && (objective || opt.only || opt.from || Object.keys(opt.agentOverrides).length))
+  die("--status-preview renders a SAMPLE status page and exits WITHOUT calling agents, but this command looks like a real run (objective/--only/--from/--agent present). Remove --status-preview to run the pipeline for real — the status page opens automatically — or drop the objective and selectors to see the sample page.");
+
 // Dev fixture: render the status page with every state represented, without
 // an Orca run. ORCA_STATUS_PREVIEW_RESUME=1 additionally exercises the resume
 // merge: a previous run's status.js is simulated, then merged exactly like a
