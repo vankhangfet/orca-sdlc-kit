@@ -381,6 +381,33 @@ function finishStatus(overall) {
   writeStatus();
 }
 
+// Called once, right after run-create: fills meta, writes both files, opens
+// the page. (A later task adds the previous-run merge call here.)
+function initStatus() {
+  STATUS.meta.runId = RUN_ID;
+  STATUS.meta.worktree = WT || WT_PIN || "(auto-detect)";
+  STATUS.meta.startedAt = Date.now();
+  try {
+    writeFileSync(join(statusDir(), "status.html"), STATUS_HTML);
+  } catch (e) {
+    STATUS_FAILED = true;
+    warn(`status page could not be written (${e.message}); continuing without it.`);
+    return;
+  }
+  writeStatus();
+  openStatusPage();
+  log(`Status page: ${join(statusDir(), "status.html")}`);
+}
+// explorer.exe always exits non-zero (even on success) — its exit code is noise.
+function openStatusPage() {
+  if (opt.noOpenStatus || !(cfg.defaults?.openStatus ?? true)) return;
+  const file = join(statusDir(), "status.html");
+  const r = IS_WIN ? spawnSync("explorer.exe", [file])
+    : process.platform === "darwin" ? spawnSync("open", [file])
+    : spawnSync("xdg-open", [file]);
+  if (r.error) warn(`could not auto-open the status page (${r.error.message}) — open it yourself: ${file}`);
+}
+
 // Dev fixture covering EVERY state, rendered without an Orca run. With the
 // shipped flow.config.json the index mapping is: grill skipped (real config),
 // planning/architecture succeeded, detailed-design RUNNING, uiux-design NEXT,
@@ -780,6 +807,7 @@ if (!runResp.ok) die(`run-create failed: ${runResp.stderr || runResp.raw}`);
 RUN_ID = pick(res(runResp.json).run || {}, ["id"]) || pick(res(runResp.json), ["runId", "run_id"]);
 if (!RUN_ID) die(`Could not read Run ID from run-create. Output: ${runResp.raw}`);
 log(`Run: ${RUN_ID}`);
+initStatus();
 
 // Create a task per step, keep taskId for reuse on retries
 const taskIds = {};
@@ -877,6 +905,7 @@ function runStep(step) {
   let done = null, note = "";
   let quietWarned = false;         // warn once about a quiet-but-alive worker
   while (true) {
+    writeStatus();   // heartbeat: keep the page's "updated Xs ago" fresh each slice
     const wait = orca(["orchestration", "check", "--run", RUN_ID, "--wait",
       "--types", "worker_done,escalation,question", "--timeout-ms", String(SLICE_MS)],
       { timeoutMs: SLICE_MS + 60000 });
@@ -936,6 +965,8 @@ function runStep(step) {
       quietWarned = true;
       warn(`"${step.title}" quiet for ${Math.round(silenceMs / 60000)}min but its dispatch is alive (status=${v.status}) — ` +
            `waiting up to the ${Math.round(hardCapMs / 60000)}min hard cap before giving up.`);
+      statusSet(step.id, { note: `quiet ${Math.round(silenceMs / 60000)}min but alive — waiting to the hard cap` });
+      writeStatus();
     }
   }
   // Settled (done reported) => clean up. Manual path: the terminal is ours,
@@ -988,8 +1019,10 @@ const retriesUsed = {};
 let i = 0;
 while (i < steps.length) {
   const step = steps[i];
+  statusBegin(step.id);
   const r = runStep(step);
   const outcome = r.outcome;
+  statusEnd(step.id, outcome, r.note);
 
   if (outcome === "succeeded") {
     log(`[ok] ${step.title} done -> ${outPath(step.writes)}`);
