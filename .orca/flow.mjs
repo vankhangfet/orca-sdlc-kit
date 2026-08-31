@@ -32,6 +32,10 @@
 // Disable it for this run when it is enabled in config:
 //   node .orca/flow.mjs --no-grill-me "..."
 //
+// Live status page (auto-opens on real runs; see .orca/CONFIGURATION.md 5.3):
+//   node .orca/flow.mjs --no-open-status "..."   // don't auto-open the browser
+//   node .orca/flow.mjs --status-preview         // fixture page, no run
+//
 // Step timeouts: `timeoutMs` = max worker SILENCE (no terminal output, no
 // heartbeat). Silence is NOT a failure verdict — a worker deep in one long
 // tool call can render a static screen for most of an hour (verified). A
@@ -43,18 +47,30 @@
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// Live-page accumulator: null until the status section assigns it (before any
+// run starts). `die` uses it to leave a final state on the status page.
+let STATUS = null;
 const log = (...a) => console.log("[orca-flow]", ...a);
 const warn = (...a) => console.warn("[orca-flow]", ...a);
-const die = (m) => { console.error("[orca-flow] ERROR:", m); process.exit(1); };
+const die = (m) => {
+  console.error("[orca-flow] ERROR:", m);
+  // Final status write for the live page — only once a run has actually
+  // started (runId set by initStatus). Never let this mask the real error.
+  if (STATUS && STATUS.meta.runId) {
+    if (STATUS.overall === "running") STATUS.overall = "failed";
+    try { writeStatusTo(statusDir(), STATUS); } catch { }
+  }
+  process.exit(1);
+};
 
 // --- Parse argv: flags + objective ---
 const argv = process.argv.slice(2);
-const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined, worktree: null };
+const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined, worktree: null, noOpenStatus: false, statusPreview: false };
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -68,13 +84,15 @@ for (let i = 0; i < argv.length; i++) {
   }
   else if (a === "--config") opt.config = argv[++i];
   else if (a === "--worktree") opt.worktree = argv[++i];
+  else if (a === "--no-open-status") opt.noOpenStatus = true;
+  else if (a === "--status-preview") opt.statusPreview = true;
   else if (a === "--agent") {
     const [step, ag] = argv[++i].split("=");
     if (step && ag) opt.agentOverrides[step] = ag;
   } else rest.push(a);
 }
 const objective = rest.join(" ").trim();
-if (!objective && !opt.dryRun)
+if (!objective && !opt.dryRun && !opt.statusPreview)
   die('An objective is required, e.g.: node .orca/flow.mjs "Build a login page"');
 
 // --- Load config ---
