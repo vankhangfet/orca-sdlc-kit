@@ -388,12 +388,41 @@ function finishStatus(overall) {
   writeStatus();
 }
 
+// Resume merge: when a previous status.js from the SAME config exists in the
+// artifacts dir, carry its history into this run — a `--from` resume then
+// shows one continuous picture. Steps excluded from THIS run ("skipped",
+// e.g. everything before --from) adopt their previous terminal state and
+// timings; steps that WILL run keep "pending" but continue their attempt
+// counter, so a resumed fix loop renders as attempt 2, 3, ...
+function loadPreviousStatus(dir = statusDir()) {
+  try {
+    const p = join(dir, "status.js");
+    if (!existsSync(p)) return;
+    const m = readFileSync(p, "utf8").match(/window\.__STATUS=([\s\S]*?);window\.__ON_STATUS/);
+    if (!m) return;
+    const prev = JSON.parse(m[1]);
+    if (!prev || !Array.isArray(prev.steps) || prev.meta?.config !== STATUS.meta.config) return;
+    for (const ps of prev.steps) {
+      const cur = statusOf(ps.id);
+      if (!cur) continue;
+      if (cur.status === "skipped" && TERMINAL_STATUSES.has(ps.status)) {
+        Object.assign(cur, { status: ps.status,
+          startedAt: ps.startedAt ?? null, endedAt: ps.endedAt ?? null,
+          durationMs: ps.durationMs ?? null, note: ps.note ?? null });
+      } else if (cur.status === "pending") {
+        cur.attempt = Math.max(cur.attempt, ps.attempt || 0);
+      }
+    }
+  } catch { /* unreadable previous status — start fresh */ }
+}
+
 // Called once, right after run-create: fills meta, writes both files, opens
 // the page. (A later task adds the previous-run merge call here.)
 function initStatus() {
   STATUS.meta.runId = RUN_ID;
   STATUS.meta.worktree = WT || WT_PIN || "(auto-detect)";
   STATUS.meta.startedAt = Date.now();
+  loadPreviousStatus();
   try {
     writeFileSync(join(statusDir(), "status.html"), STATUS_HTML);
   } catch (e) {
@@ -783,7 +812,7 @@ if (opt.statusPreview) {
       STATUS.meta.worktree = WT || WT_PIN || "(preview)";
       STATUS.meta.startedAt = Date.now() - 3720000;
       STATUS.meta.updatedAt = Date.now();
-      if (typeof loadPreviousStatus === "function") loadPreviousStatus(dir);
+      loadPreviousStatus(dir);
     }
     writeFileSync(join(dir, "status.html"), STATUS_HTML);
     writeStatusTo(dir, process.env.ORCA_STATUS_PREVIEW_RESUME ? STATUS : previewStatus());
