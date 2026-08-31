@@ -61,7 +61,7 @@ const die = (m) => {
   console.error("[orca-flow] ERROR:", m);
   // Final status write for the live page — only once a run has actually
   // started (runId set by initStatus). Never let this mask the real error.
-  if (STATUS && STATUS.meta.runId) {
+  if (STATUS?.meta?.runId) {
     if (STATUS.overall === "running") STATUS.overall = "failed";
     try { writeStatusTo(statusDir(), STATUS); } catch { }
   }
@@ -315,6 +315,232 @@ function resolveWorktreePath(soft = false) {
   return WT_PATH;
 }
 
+// =============================================================================
+// Live status page (zero-dep). While agents run, the flow keeps a snapshot in
+// <worktree>/<artifactsDir>/:
+//   status.html — written ONCE per run (STATUS_HTML below; static page).
+//   status.js   — rewritten at every step event; contains window.__STATUS={...}.
+// The page re-creates a <script src="status.js"> tag every 2s: classic script
+// tags are NOT CORS-blocked on file:// (fetch is), so a double-clicked page
+// live-updates with no server. Status writes must NEVER kill a run: the first
+// failure warns once, then the page is abandoned.
+// =============================================================================
+STATUS = {
+  meta: {
+    runId: null, objective, config: CONFIG_FILE, worktree: null,
+    startedAt: null, updatedAt: null,
+  },
+  overall: "running",   // running | succeeded | failed | unknown | still-running
+  steps: allSteps.map((s) => ({
+    id: s.id, title: s.title, agent: agentOf(s), writes: s.writes || null,
+    status: enabledIds.has(s.id) ? "pending" : "skipped",
+    attempt: 0, startedAt: null, endedAt: null, durationMs: null, note: null,
+  })),
+  artifacts: [],
+};
+let STATUS_FAILED = false;
+const TERMINAL_STATUSES = new Set(["succeeded", "failed", "skipped", "unknown"]);
+function statusDir() { return join(WT_DIR || ".", ART_DIR); }
+const statusJsOf = (S) =>
+  `window.__STATUS=${JSON.stringify(S)};window.__ON_STATUS&&window.__ON_STATUS();`;
+function writeStatusTo(dir, S) { writeFileSync(join(dir, "status.js"), statusJsOf(S)); }
+function writeStatus() {
+  if (STATUS_FAILED) return;
+  try {
+    STATUS.meta.updatedAt = Date.now();
+    writeStatusTo(statusDir(), STATUS);
+  } catch (e) {
+    STATUS_FAILED = true;
+    warn(`status page write failed (${e.message}); continuing without it.`);
+  }
+}
+const statusOf = (id) => STATUS.steps.find((x) => x.id === id) || null;
+function statusSet(id, patch) { const st = statusOf(id); if (st) Object.assign(st, patch); }
+function statusBegin(id) {
+  const st = statusOf(id);
+  if (!st) return;
+  st.status = "running"; st.attempt += 1;
+  st.startedAt = Date.now(); st.endedAt = null; st.durationMs = null; st.note = null;
+  writeStatus();
+}
+function statusEnd(id, outcome, note) {
+  const st = statusOf(id);
+  if (!st) return;
+  st.status = outcome === "succeeded" ? "succeeded"
+    : outcome === "failed" ? "failed"
+    // still-running: its terminal was left open to finish — keep it visually live
+    : outcome === "still-running" ? "running" : "unknown";
+  st.endedAt = Date.now();
+  if (st.startedAt) st.durationMs = st.endedAt - st.startedAt;
+  st.note = note || null;
+  writeStatus();
+}
+function finishStatus(overall) {
+  STATUS.overall = overall;
+  STATUS.artifacts = steps.map((s) => outPath(s.writes));
+  writeStatus();
+}
+
+// Dev fixture covering EVERY state, rendered without an Orca run. With the
+// shipped flow.config.json the index mapping is: grill skipped (real config),
+// planning/architecture succeeded, detailed-design RUNNING, uiux-design NEXT,
+// coding failed attempt 2, code-review awaiting approval, security-review
+// unknown, testing skipped, documentation pending.
+function previewStatus() {
+  const S = JSON.parse(JSON.stringify(STATUS));
+  S.meta.runId = "preview-run-0000";
+  S.meta.worktree = WT || WT_PIN || "(preview)";
+  S.meta.startedAt = Date.now() - 3720000;
+  S.meta.updatedAt = Date.now();
+  S.overall = "running";
+  const t = Date.now();
+  S.steps.forEach((s, idx) => {
+    if (s.status === "skipped") return;          // keep real config skips visible
+    if (idx < 3) {
+      s.status = "succeeded"; s.attempt = 1;
+      s.startedAt = t - 3720000 + idx * 600000; s.endedAt = s.startedAt + 240000 + idx * 30000;
+      s.durationMs = s.endedAt - s.startedAt;
+    } else if (idx === 3) { s.status = "running"; s.attempt = 1; s.startedAt = t - 757000; }
+    else if (idx === 4) { /* stays pending — renders the NEXT chip */ }
+    else if (idx === 5) { s.status = "failed"; s.attempt = 2; s.startedAt = t - 600000; s.endedAt = t - 300000; s.durationMs = 300000; s.note = "tests failed (preview fixture)"; }
+    else if (idx === 6) { s.status = "waiting-approval"; s.attempt = 1; s.startedAt = t - 120000; s.note = "gate open (preview fixture)"; }
+    else if (idx === 7) { s.status = "unknown"; s.attempt = 1; s.note = "no worker_done seen (preview fixture)"; }
+    else if (idx === 8) { s.status = "skipped"; }
+  });
+  return S;
+}
+
+// The page itself. Client behaviors: re-creates <script src="status.js"> every
+// 2s (classic scripts load fine from file://), re-renders every 1s so running
+// timers and "updated Xs ago" tick between snapshots, escapes all strings.
+const STATUS_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orca Flow — pipeline status</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background:#0d1017; color:#d7dce4; font:14px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif; padding:24px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .card { background:#151a23; border:1px solid #232b38; border-radius:10px; padding:18px 20px; margin-bottom:14px; }
+  .objective { font-size:16px; font-weight:600; margin-bottom:6px; word-wrap:break-word; }
+  .meta { color:#8b949e; font-size:12px; display:flex; flex-wrap:wrap; gap:14px; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.5px; margin-bottom:8px; }
+  .badge.running { background:#0c2d1b; color:#3fb950; border:1px solid #1d4428; animation:pulse 1.6s infinite; }
+  .badge.succeeded { background:#0c2d1b; color:#3fb950; border:1px solid #1d4428; }
+  .badge.failed, .badge.unknown { background:#2d0c0e; color:#f85149; border:1px solid #442126; }
+  .badge.still-running { background:#2d230c; color:#d29922; border:1px solid #44361d; }
+  @keyframes pulse { 50% { opacity:.55; } }
+  .bar { height:8px; background:#21262d; border-radius:4px; overflow:hidden; margin:10px 0 2px; }
+  .bar > i { display:block; height:100%; background:#3fb950; transition:width .4s; }
+  .count { color:#8b949e; font-size:12px; }
+  .step { display:flex; align-items:center; gap:12px; padding:10px 6px; border-bottom:1px solid #1c2330; flex-wrap:wrap; }
+  .step:last-child { border-bottom:none; }
+  .glyph { width:22px; text-align:center; font-weight:700; flex:none; }
+  .name { font-weight:600; }
+  .step.pending .name, .step.skipped .name { color:#6e7681; font-weight:400; }
+  .step.skipped .name { text-decoration: line-through; }
+  .agent { color:#58a6ff; font-size:12px; flex:none; min-width:86px; }
+  .dur { color:#8b949e; font-size:12px; margin-left:auto; flex:none; font-variant-numeric:tabular-nums; }
+  .note { color:#d29922; font-size:12px; flex-basis:100%; }
+  .step.running .glyph, .step.running .name { color:#3fb950; }
+  .step.running .glyph { animation:pulse 1.6s infinite; }
+  .step.succeeded .glyph { color:#3fb950; }
+  .step.failed .glyph, .step.failed .name { color:#f85149; }
+  .step.unknown .glyph { color:#8b949e; }
+  .step.waiting-approval .glyph, .step.waiting-approval .name { color:#d29922; }
+  .next { border-left:2px solid #58a6ff; padding-left:10px; }
+  .chip { font-size:10px; font-weight:700; letter-spacing:.5px; color:#58a6ff; border:1px solid #1f3a5f; border-radius:4px; padding:1px 6px; margin-left:8px; vertical-align:1px; }
+  .chip.retry { color:#d29922; border-color:#44361d; }
+  .arts { font-size:12px; color:#8b949e; word-break:break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card" id="head"></div>
+  <div class="card" id="list"></div>
+  <div class="card arts" id="arts" style="display:none"></div>
+</div>
+<script>
+(function () {
+  var S = null;
+  var GLYPH = { pending:"○", running:"▶", succeeded:"✓", failed:"✗",
+                skipped:"⊘", unknown:"?", "waiting-approval":"⏸" };
+  var LABEL = { pending:"PENDING", running:"RUNNING", succeeded:"DONE", failed:"FAILED",
+                skipped:"SKIPPED", unknown:"UNKNOWN", "waiting-approval":"AWAITING APPROVAL",
+                "still-running":"STILL RUNNING" };
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]; }); }
+  function dur(ms) {
+    if (ms == null) return "";
+    var s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    s %= 60;
+    return h ? h + "h " + String(m).padStart(2, "0") + "m" : m + "m " + String(s).padStart(2, "0") + "s";
+  }
+  function since(ts) { return ts ? Math.max(0, Date.now() - ts) : null; }
+  function render() {
+    if (!S) return;
+    var runIdx = -1;
+    for (var k = 0; k < S.steps.length; k++) {
+      var rs = S.steps[k].status;
+      if (rs === "running" || rs === "waiting-approval") { runIdx = k; break; }
+    }
+    var nextIdx = -1;
+    if (runIdx >= 0) for (var j = runIdx + 1; j < S.steps.length; j++)
+      if (S.steps[j].status === "pending") { nextIdx = j; break; }
+    var done = 0;
+    S.steps.forEach(function (s) { if (s.status === "succeeded" || s.status === "skipped") done++; });
+    var pct = S.steps.length ? Math.round((done / S.steps.length) * 100) : 0;
+    document.getElementById("head").innerHTML =
+      '<div class="badge ' + esc(S.overall) + '">' + esc(LABEL[S.overall] || String(S.overall || "").toUpperCase()) + "</div>" +
+      '<div class="objective">' + esc(S.meta.objective || "(no objective)") + "</div>" +
+      '<div class="meta"><span>run: ' + esc(String(S.meta.runId || "").slice(0, 8)) + "</span>" +
+      "<span>worktree: " + esc(S.meta.worktree || "-") + "</span>" +
+      "<span>config: " + esc(S.meta.config || "-") + "</span>" +
+      "<span>elapsed: " + dur(since(S.meta.startedAt)) + "</span>" +
+      "<span>updated " + Math.max(0, Math.round((Date.now() - S.meta.updatedAt) / 1000)) + "s ago</span></div>" +
+      '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="count">' + done + "/" + S.steps.length + " steps done</div>";
+    var html = "";
+    S.steps.forEach(function (s, i) {
+      var liveDur = s.status === "running" ? dur(since(s.startedAt)) : dur(s.durationMs);
+      html += '<div class="step ' + esc(s.status) + (i === nextIdx ? " next" : "") + '">' +
+        '<span class="glyph">' + (GLYPH[s.status] || "·") + "</span>" +
+        '<span class="name">' + esc(s.title) +
+        (i === nextIdx ? '<span class="chip">NEXT</span>' : "") +
+        (s.attempt > 1 ? '<span class="chip retry">attempt ' + s.attempt + "</span>" : "") +
+        "</span>" +
+        '<span class="agent">' + esc(s.agent || "") + "</span>" +
+        '<span class="dur">' + liveDur + "</span>" +
+        (s.note ? '<span class="note">' + esc(s.note) + "</span>" : "") +
+        "</div>";
+    });
+    document.getElementById("list").innerHTML = html;
+    var arts = document.getElementById("arts");
+    if (S.artifacts && S.artifacts.length) {
+      arts.style.display = "";
+      arts.innerHTML = "<b>Artifacts</b><br>" + S.artifacts.map(esc).join(" · ");
+    }
+  }
+  window.__ON_STATUS = function () { S = window.__STATUS; render(); };
+  setInterval(render, 1000);   // running timers + "updated Xs ago" stay fresh
+  function load() {            // classic <script src> loads fine on file://
+    var old = document.getElementById("sloader");
+    if (old) old.remove();
+    var sc = document.createElement("script");
+    sc.id = "sloader";
+    sc.src = "status.js?ts=" + Date.now();
+    document.head.appendChild(sc);
+  }
+  load();
+  setInterval(load, 2000);
+})();
+</script>
+</body>
+</html>
+`;
+
 // Terminal command for an agent. Claude Code on Windows can crash with
 // EBADF when its file watcher races the create/delete of
 // ~/.claude/history.jsonl.lock, which is written on every user prompt
@@ -511,6 +737,30 @@ resolveWorktree(opt.dryRun);
 resolveWorktreePath(opt.dryRun);
 printPlan();
 if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
+
+// Dev fixture: render the status page with every state represented, without
+// an Orca run. ORCA_STATUS_PREVIEW_RESUME=1 additionally exercises the resume
+// merge (Task on resume adds loadPreviousStatus): a previous run's status.js
+// is simulated, then merged exactly like a --from resume would.
+if (opt.statusPreview) {
+  const dir = join(HERE, "status-preview");
+  try {
+    mkdirSync(dir, { recursive: true });
+    if (process.env.ORCA_STATUS_PREVIEW_RESUME) {
+      writeStatusTo(dir, previewStatus());
+      // Pretend this run started --from the 5th step: earlier ones are
+      // excluded ("skipped"), exactly like --from — the merge must then adopt
+      // their previous terminal state for the page.
+      STATUS.steps.forEach((s, idx) => { if (idx < 4) s.status = "skipped"; });
+      if (typeof loadPreviousStatus === "function") loadPreviousStatus(dir);
+    }
+    writeFileSync(join(dir, "status.html"), STATUS_HTML);
+    writeStatusTo(dir, process.env.ORCA_STATUS_PREVIEW_RESUME ? STATUS : previewStatus());
+    log(`Status preview: ${join(dir, "status.html")}` +
+        (process.env.ORCA_STATUS_PREVIEW_RESUME ? " (resume merge exercised)" : ""));
+  } catch (e) { warn(`status preview failed: ${e.message}`); }
+  process.exit(0);
+}
 
 // =============================================================================
 // Execution

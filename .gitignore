@@ -7,5 +7,8 @@ CLAUDE.md
 # Runtime pipeline output
 .orca/artifacts/
 
+# Dev fixture from --status-preview
+.orca/status-preview/
+
 # Internal docs (not published)
 docs/
