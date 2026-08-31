@@ -66,7 +66,7 @@ const die = (m) => {
     // never runs statusEnd — downgrade the in-flight step so the page does not
     // show a pulsing RUNNING row under a terminal badge.
     for (const st of STATUS.steps)
-      if (st.status === "running" || st.status === "waiting-approval") st.status = "unknown";
+      if ((st.status === "running" || st.status === "waiting-approval") && !st.endedAt) st.status = "unknown";
     if (STATUS.overall === "running") STATUS.overall = "failed";
     // Deliberately bypasses the STATUS_FAILED latch: a transient mid-run write
     // failure (e.g. AV file lock) may have healed by exit — last-chance write.
@@ -1009,6 +1009,7 @@ function runGate(step) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < GATE_TIMEOUT_MS) {
     sleepMs(5000);
+    writeStatus();   // heartbeat: a human may sit on this gate for up to gateTimeoutMs
     const l = orca(["orchestration", "gate-list", "--run", RUN_ID]);
     const gates = pick(res(l.json), ["gates"]) || [];
     const gate = gates.find((x) =>
@@ -1023,9 +1024,12 @@ function runGate(step) {
       writeStatus();
       return;
     }
+    statusSet(step.id, { note: "gate rejected" });
     die(`Gate for "${step.title}" was resolved with "${resolution ?? status}" — stopping the pipeline.`);
   }
   warn(`gate for "${step.title}" not resolved within ${Math.round(GATE_TIMEOUT_MS / 60000)}min; continuing anyway.`);
+  statusSet(step.id, { status: "succeeded", note: "gate timeout — continued anyway" });
+  writeStatus();
 }
 
 // =============================================================================
