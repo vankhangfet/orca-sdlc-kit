@@ -70,6 +70,15 @@ node .orca/flow.mjs "Build a login page"             # the real run
 
 Optional Orca button — Settings -> Quick Commands (scope **Project**): `Run SDLC flow` -> `node .orca/flow.mjs "Objective"`.
 
+## Watch it run — the live status page
+
+While the pipeline runs, the flow writes a live dashboard into the worktree: open
+`<worktree>/.orca/artifacts/status.html` in a browser (on Windows it opens by
+itself when the run starts) and it updates on its own — which step is running,
+what is done, what comes next, timings, retry attempts, and the final artifact
+list. An interrupted run resumed with `--from` continues the same picture.
+Disable the auto-open with `--no-open-status` or `"defaults": { "openStatus": false }`.
+
 ## "I want to..." — the configuration cookbook
 
 Everything lives in `.orca/flow.config.json` (no code edits ever):

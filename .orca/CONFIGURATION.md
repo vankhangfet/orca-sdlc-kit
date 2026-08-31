@@ -30,6 +30,7 @@ config field, with examples for common situations.
 | `defaults.startGraceMs` | number | no (default 90000) | After delivering a prompt, how long to watch the TUI for proof it was consumed before re-sending (some TUIs drop input pasted during boot) |
 | `defaults.sendAttempts` | number | no (default 3) | Max prompt deliveries into a warmed terminal before falling back to a cold `worker-start` |
 | `defaults.worktree` | string | no (default: auto-detect from the invoking directory) | Worktree selector where agents run. Leave unset for auto-detect (recommended — works whenever the flow is launched from inside an Orca-managed worktree). Pin (`name:lab2`, `path:C:\\...`) only when launching from OUTSIDE the target worktree. Per-run override: `--worktree <selector>`; per-machine: `ORCA_FLOW_WORKTREE` env. Precedence: flag > env > config > auto-detect. A pinned selector is validated before the run starts — a wrong pin fails fast with the available worktrees listed. |
+| `defaults.openStatus` | boolean | no (default `true`) | Auto-open the run's live status page (`status.html` in the worktree's artifacts dir) in your browser when a real run starts. Dry-runs never write or open it. Per-run off-switch: `--no-open-status` (flag wins over config) |
 | `pipeline` | array | **yes** | The steps; **array order = run order** |
 
 ---
@@ -222,6 +223,8 @@ handles it. Always verify with `--dry-run` to see the effective `reads` after fi
 | `--agent <id>=<agent>` | Override one step's agent, this run only | `--agent coding=claude` |
 | `--grill-me` | Enable the `grill` step for this run (see section 5.2) | `--grill-me --only grill` |
 | `--no-grill-me` | Disable the `grill` step for this run (see section 5.2) | `--no-grill-me` |
+| `--no-open-status` | Do not auto-open the live status page for this run (see section 5.3) | `--no-open-status` |
+| `--status-preview` | Write a fixture status page (`.orca/status-preview/`) showing every state — dev aid, no run, no agents | `node .orca/flow.mjs --status-preview` |
 
 Flags affect only that run; they are not written to the config. `enabled:false` in
 config is always respected, even if that step is listed in `--only`. (Exception:
@@ -263,6 +266,17 @@ for a HUMAN to answer, and the 15-min default would report the step hung
 mid-interview. Tune them only upward for longer interviews. A single question
 left unanswered past `timeoutMs` stops the flow with the interview terminal
 left open — restart the interview with `--grill-me --from grill "<objective>"`.
+
+### 5.3. The live status page
+
+Every real run writes a self-updating dashboard next to the artifacts:
+
+- `<worktree>/<artifactsDir>/status.html` — open it in any browser; it refreshes itself every 2 seconds (works straight from disk — no server, no ports).
+- `<worktree>/<artifactsDir>/status.js` — the snapshot the page reads; rewritten by the orchestrator at every step event.
+
+It shows the objective, an overall badge (RUNNING / DONE / FAILED / UNKNOWN / STILL RUNNING), a progress bar, and every pipeline step with its agent, live elapsed time, durations, retry attempts (`attempt 2`, ...), approval-gate waits (manual mode) and — at the end — the artifact list. Steps excluded by `enabled:false`, `--only` or `--from` render as SKIPPED, except when a previous run's history exists in the same worktree: the page then merges it, so a `--from` resume shows one continuous picture (durations of earlier steps included).
+
+The page opens automatically when the run starts (`explorer.exe` on Windows, `open` on macOS, `xdg-open` on Linux). Turn that off with `--no-open-status`, or per-project with `"defaults": { "openStatus": false }`. If writing the page fails (e.g. a read-only folder) the run continues untouched — the dashboard never affects pipeline execution. `node .orca/flow.mjs --status-preview` renders a fixture page showing every state without a run.
 
 ---
 
