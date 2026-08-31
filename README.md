@@ -76,8 +76,14 @@ While the pipeline runs, the flow writes a live dashboard into the worktree: ope
 `<worktree>/.orca/artifacts/status.html` in a browser (it opens by itself when
 the run starts) and it updates on its own — which step is running,
 what is done, what comes next, timings, retry attempts, and the final artifact
-list. An interrupted run resumed with `--from` continues the same picture.
-Disable the auto-open with `--no-open-status` or `"defaults": { "openStatus": false }`.
+list. An interrupted run resumed with `--from` continues the same picture, with
+earlier steps keeping their original durations. If the page can't be written
+(e.g. a read-only folder) the run continues untouched — the dashboard never
+affects the pipeline. Disable the auto-open with `--no-open-status` or
+`"defaults": { "openStatus": false }`.
+
+Want a peek without starting a run? `node .orca/flow.mjs --status-preview`
+writes a sample dashboard showing every state to `.orca/status-preview/`.
 
 ## "I want to..." — the configuration cookbook
 
@@ -150,6 +156,7 @@ node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavio
 ```bash
 node .orca/flow.mjs "Objective"                     # the whole pipeline
 node .orca/flow.mjs --dry-run "Objective"           # preview only — always try this first
+node .orca/flow.mjs --status-preview                # sample status dashboard, no run
 node .orca/flow.mjs --from coding "Objective"       # resume / skip the design phase
 node .orca/flow.mjs --only planning,architecture "Objective"
 node .orca/flow.mjs --grill-me "Objective"          # interview me before planning
@@ -164,7 +171,7 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 
 - **Preview first** — `--dry-run` shows exactly what will run; make it a habit.
 - **A step looks quiet for a long time** — silence is not treated as failure: an agent deep in one long verification (reviews routinely run an hour) is waited on until it settles or the step's hard cap (default 4x its timeout) is hit. The fix loop only ever triggers on a definite FAIL verdict, never on a silent worker.
-- **A step is taking forever** — the flow leaves that agent's terminal open and prints the exact `--from <step>` command to continue later.
+- **A step is taking forever** — the status page shows it as STILL RUNNING; the flow leaves that agent's terminal open and prints the exact `--from <step>` command to continue later.
 - **Stale orchestration state after experiments** — `orca orchestration reset --all --json`.
 - **CLI flags differ on your Orca version** — check `orca skills get orchestration --full`.
 - **Claude agent crashes with `EBADF ... history.jsonl.lock` (Windows)** — known Claude Code bug ([#15739](https://github.com/anthropics/claude-code/issues/15739)); the flow already spawns Claude agents in a way that avoids it (`CLAUDE_CODE_SKIP_PROMPT_HISTORY=true`). If it still happens, close other Claude Code sessions during interactive steps, or update Claude Code.
