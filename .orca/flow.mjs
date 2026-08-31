@@ -340,7 +340,7 @@ STATUS = {
 };
 let STATUS_FAILED = false;
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "skipped", "unknown"]);
-function statusDir() { return join(WT_DIR || ".", ART_DIR); }
+function statusDir() { return join(WT_PATH || ".", ART_DIR); }
 const statusJsOf = (S) =>
   `window.__STATUS=${JSON.stringify(S)};window.__ON_STATUS&&window.__ON_STATUS();`;
 function writeStatusTo(dir, S) { writeFileSync(join(dir, "status.js"), statusJsOf(S)); }
@@ -427,7 +427,7 @@ const STATUS_HTML = `<!doctype html>
   .objective { font-size:16px; font-weight:600; margin-bottom:6px; word-wrap:break-word; }
   .meta { color:#8b949e; font-size:12px; display:flex; flex-wrap:wrap; gap:14px; }
   .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.5px; margin-bottom:8px; }
-  .badge.running { background:#0c2d1b; color:#3fb950; border:1px solid #1d4428; animation:pulse 1.6s infinite; }
+  .badge.running { background:#0c2d1b; color:#3fb950; border:1px solid #1d4428; animation:pulse 1s infinite; }
   .badge.succeeded { background:#0c2d1b; color:#3fb950; border:1px solid #1d4428; }
   .badge.failed, .badge.unknown { background:#2d0c0e; color:#f85149; border:1px solid #442126; }
   .badge.still-running { background:#2d230c; color:#d29922; border:1px solid #44361d; }
@@ -445,7 +445,7 @@ const STATUS_HTML = `<!doctype html>
   .dur { color:#8b949e; font-size:12px; margin-left:auto; flex:none; font-variant-numeric:tabular-nums; }
   .note { color:#d29922; font-size:12px; flex-basis:100%; }
   .step.running .glyph, .step.running .name { color:#3fb950; }
-  .step.running .glyph { animation:pulse 1.6s infinite; }
+  .step.running .glyph { animation:pulse 1s infinite; }
   .step.succeeded .glyph { color:#3fb950; }
   .step.failed .glyph, .step.failed .name { color:#f85149; }
   .step.unknown .glyph { color:#8b949e; }
@@ -504,7 +504,7 @@ const STATUS_HTML = `<!doctype html>
       '<div class="count">' + done + "/" + S.steps.length + " steps done</div>";
     var html = "";
     S.steps.forEach(function (s, i) {
-      var liveDur = s.status === "running" ? dur(since(s.startedAt)) : dur(s.durationMs);
+      var liveDur = (s.status === "running" || s.status === "waiting-approval") ? dur(since(s.startedAt)) : dur(s.durationMs);
       html += '<div class="step ' + esc(s.status) + (i === nextIdx ? " next" : "") + '">' +
         '<span class="glyph">' + (GLYPH[s.status] || "·") + "</span>" +
         '<span class="name">' + esc(s.title) +
@@ -728,15 +728,6 @@ function printPlan() {
   const skipped = allSteps.filter((s) => !enabledIds.has(s.id)).map((s) => s.id);
   if (skipped.length) log(`Skipped: ${skipped.join(", ")}`);
 }
-// Resolve the CLI + concrete worktree BEFORE planning: read lists must see
-// artifacts already on disk from earlier runs (--from resume), and the
-// artifacts dir lives in the WORKTREE, not necessarily beside this config.
-// Soft mode (dry-run) degrades to run-scope reads if the runtime is down.
-ORCA = resolveOrca();
-resolveWorktree(opt.dryRun);
-resolveWorktreePath(opt.dryRun);
-printPlan();
-if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
 
 // Dev fixture: render the status page with every state represented, without
 // an Orca run. ORCA_STATUS_PREVIEW_RESUME=1 additionally exercises the resume
@@ -752,6 +743,9 @@ if (opt.statusPreview) {
       // excluded ("skipped"), exactly like --from — the merge must then adopt
       // their previous terminal state for the page.
       STATUS.steps.forEach((s, idx) => { if (idx < 4) s.status = "skipped"; });
+      STATUS.meta.worktree = WT || WT_PIN || "(preview)";
+      STATUS.meta.startedAt = Date.now() - 3720000;
+      STATUS.meta.updatedAt = Date.now();
       if (typeof loadPreviousStatus === "function") loadPreviousStatus(dir);
     }
     writeFileSync(join(dir, "status.html"), STATUS_HTML);
@@ -761,6 +755,16 @@ if (opt.statusPreview) {
   } catch (e) { warn(`status preview failed: ${e.message}`); }
   process.exit(0);
 }
+
+// Resolve the CLI + concrete worktree BEFORE planning: read lists must see
+// artifacts already on disk from earlier runs (--from resume), and the
+// artifacts dir lives in the WORKTREE, not necessarily beside this config.
+// Soft mode (dry-run) degrades to run-scope reads if the runtime is down.
+ORCA = resolveOrca();
+resolveWorktree(opt.dryRun);
+resolveWorktreePath(opt.dryRun);
+printPlan();
+if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
 
 // =============================================================================
 // Execution
