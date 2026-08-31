@@ -62,7 +62,14 @@ const die = (m) => {
   // Final status write for the live page — only once a run has actually
   // started (runId set by initStatus). Never let this mask the real error.
   if (STATUS?.meta?.runId) {
+    // A die from inside a step's support code (task-create, cold-start, gate)
+    // never runs statusEnd — downgrade the in-flight step so the page does not
+    // show a pulsing RUNNING row under a terminal badge.
+    for (const st of STATUS.steps)
+      if (st.status === "running" || st.status === "waiting-approval") st.status = "unknown";
     if (STATUS.overall === "running") STATUS.overall = "failed";
+    // Deliberately bypasses the STATUS_FAILED latch: a transient mid-run write
+    // failure (e.g. AV file lock) may have healed by exit — last-chance write.
     try { writeStatusTo(statusDir(), STATUS); } catch { }
   }
   process.exit(1);
@@ -400,11 +407,12 @@ function initStatus() {
 }
 // explorer.exe always exits non-zero (even on success) — its exit code is noise.
 function openStatusPage() {
+  if (STATUS_FAILED) return;   // page was abandoned — don't open a dead tab
   if (opt.noOpenStatus || !(cfg.defaults?.openStatus ?? true)) return;
   const file = join(statusDir(), "status.html");
-  const r = IS_WIN ? spawnSync("explorer.exe", [file])
-    : process.platform === "darwin" ? spawnSync("open", [file])
-    : spawnSync("xdg-open", [file]);
+  const r = IS_WIN ? spawnSync("explorer.exe", [file], { timeout: 10000, stdio: "ignore" })
+    : process.platform === "darwin" ? spawnSync("open", [file], { timeout: 10000, stdio: "ignore" })
+    : spawnSync("xdg-open", [file], { timeout: 10000, stdio: "ignore" });
   if (r.error) warn(`could not auto-open the status page (${r.error.message}) — open it yourself: ${file}`);
 }
 
