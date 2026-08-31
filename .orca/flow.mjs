@@ -407,6 +407,7 @@ function loadPreviousStatus(dir = statusDir()) {
       if (!cur) continue;
       if (cur.status === "skipped" && TERMINAL_STATUSES.has(ps.status)) {
         Object.assign(cur, { status: ps.status,
+          attempt: Math.max(cur.attempt, ps.attempt || 0),
           startedAt: ps.startedAt ?? null, endedAt: ps.endedAt ?? null,
           durationMs: ps.durationMs ?? null, note: ps.note ?? null });
       } else if (cur.status === "pending") {
@@ -416,8 +417,8 @@ function loadPreviousStatus(dir = statusDir()) {
   } catch { /* unreadable previous status — start fresh */ }
 }
 
-// Called once, right after run-create: fills meta, writes both files, opens
-// the page. (A later task adds the previous-run merge call here.)
+// Called once, right after run-create: fills meta, merges any previous run's
+// status, writes both files, opens the page.
 function initStatus() {
   STATUS.meta.runId = RUN_ID;
   STATUS.meta.worktree = WT || WT_PIN || "(auto-detect)";
@@ -797,8 +798,8 @@ function printPlan() {
 
 // Dev fixture: render the status page with every state represented, without
 // an Orca run. ORCA_STATUS_PREVIEW_RESUME=1 additionally exercises the resume
-// merge (Task on resume adds loadPreviousStatus): a previous run's status.js
-// is simulated, then merged exactly like a --from resume would.
+// merge: a previous run's status.js is simulated, then merged exactly like a
+// --from resume would.
 if (opt.statusPreview) {
   const dir = join(HERE, "status-preview");
   try {
