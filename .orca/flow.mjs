@@ -415,7 +415,7 @@ function parseProgress(text) {
 
 // Display-only refresh of a step's task checklist from its `progress` file.
 // Swallows everything: the file appears only once the agent writes it and may
-// be mid-write at any read — the last good snapshot simply stays.
+// be mid-write at any read — a good parse replaces the snapshot, errors keep it.
 function refreshProgress(step) {
   if (!step.progress) return;
   try {
@@ -466,13 +466,7 @@ function initStatus() {
   // Steps whose progress file already exists (an earlier run in this
   // worktree) start with its checklist — a `--from` resume then shows the
   // final task list even for steps that will not run again.
-  for (const st of STATUS.steps) {
-    if (!st.progress) continue;
-    try {
-      const tasks = parseProgress(readFileSync(join(statusDir(), st.progress), "utf8"));
-      if (tasks) st.tasks = tasks;
-    } catch { /* no file yet — fine */ }
-  }
+  for (const st of STATUS.steps) refreshProgress(st);
   try {
     writeFileSync(join(statusDir(), "status.html"), STATUS_HTML);
   } catch (e) {
@@ -1069,6 +1063,7 @@ function runStep(step) {
       writeStatus();
     }
   }
+  refreshProgress(step);   // final snapshot: catch the last ticks before worker_done
   // Settled (done reported) => clean up. Manual path: the terminal is ours,
   // close it. Cold path: the terminal is dispatch-owned, release it. On an
   // unknown outcome keep everything for inspection (per Orca guidance).
