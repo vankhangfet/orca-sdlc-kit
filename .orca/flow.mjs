@@ -561,9 +561,11 @@ const STATUS_HTML = `<!doctype html>
   .next { border-left:2px solid #58a6ff; padding-left:10px; }
   .chip { font-size:10px; font-weight:700; letter-spacing:.5px; color:#58a6ff; border:1px solid #1f3a5f; border-radius:4px; padding:1px 6px; margin-left:8px; vertical-align:1px; }
   .chip.retry { color:#d29922; border-color:#44361d; }
-  .tcard-title { font-weight:600; margin-bottom:8px; }
+  .tcard-title { font-weight:600; margin-bottom:8px; margin-top:14px; }
+  .tcard-title:first-child { margin-top:0; }
   .trow { display:flex; align-items:baseline; gap:8px; padding:3px 6px; font-size:13px; }
   .trow.lv1 { padding-left:28px; }
+  .ttext { min-width:0; overflow-wrap:anywhere; }
   .tglyph { flex:none; width:18px; text-align:center; font-weight:700; }
   .trow.done .tglyph { color:#3fb950; }
   .trow.done .ttext { color:#8b949e; text-decoration:line-through; }
