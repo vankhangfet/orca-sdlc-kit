@@ -515,6 +515,19 @@ function previewStatus() {
     else if (idx === 7) { s.status = "unknown"; s.attempt = 1; s.note = "no worker_done seen (preview fixture)"; }
     else if (idx === 8) { s.status = "skipped"; }
   });
+  // Exercise the real parser + the Tasks card: the first step with a
+  // `progress` file (coding in the shipped config, fix-coding in fixbug)
+  // gets a sample checklist parsed by parseProgress itself.
+  const prog = S.steps.find((s) => s.progress);
+  if (prog) prog.tasks = parseProgress(
+    "- [x] Project scaffold + config wiring\n" +
+    "- [x] Data layer: schema + migrations\n" +
+    "  - [x] migration scripts\n" +
+    "  - [ ] seed data\n" +
+    "- [~] Auth API (email + Google sign-in)\n" +
+    "- [ ] Session management + middleware\n" +
+    "- [ ] Integration tests\n" +
+    "- [ ] README updates\n");
   return S;
 }
 
