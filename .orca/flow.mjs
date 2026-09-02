@@ -561,6 +561,16 @@ const STATUS_HTML = `<!doctype html>
   .next { border-left:2px solid #58a6ff; padding-left:10px; }
   .chip { font-size:10px; font-weight:700; letter-spacing:.5px; color:#58a6ff; border:1px solid #1f3a5f; border-radius:4px; padding:1px 6px; margin-left:8px; vertical-align:1px; }
   .chip.retry { color:#d29922; border-color:#44361d; }
+  .tcard-title { font-weight:600; margin-bottom:8px; }
+  .trow { display:flex; align-items:baseline; gap:8px; padding:3px 6px; font-size:13px; }
+  .trow.lv1 { padding-left:28px; }
+  .tglyph { flex:none; width:18px; text-align:center; font-weight:700; }
+  .trow.done .tglyph { color:#3fb950; }
+  .trow.done .ttext { color:#8b949e; text-decoration:line-through; }
+  .trow.doing .tglyph, .trow.doing .ttext { color:#d29922; }
+  .trow.doing .tglyph { animation:pulse 1s infinite; }
+  .trow.todo .tglyph, .trow.todo .ttext { color:#6e7681; }
+  .thint { color:#8b949e; font-size:12px; font-style:italic; }
   .arts { font-size:12px; color:#8b949e; word-break:break-all; }
 </style>
 </head>
@@ -568,6 +578,7 @@ const STATUS_HTML = `<!doctype html>
 <div class="wrap">
   <div class="card" id="head"></div>
   <div class="card" id="list"></div>
+  <div class="card" id="tasks" style="display:none"></div>
   <div class="card arts" id="arts" style="display:none"></div>
 </div>
 <script>
@@ -625,6 +636,28 @@ const STATUS_HTML = `<!doctype html>
         "</div>";
     });
     document.getElementById("list").innerHTML = html;
+    var tasksHtml = "";
+    S.steps.forEach(function (s) {
+      if (s.tasks && s.tasks.length) {
+        var tdone = 0;
+        s.tasks.forEach(function (t) { if (t.status === "done") tdone++; });
+        var tpct = s.tasks.length ? Math.round((tdone / s.tasks.length) * 100) : 0;
+        tasksHtml += '<div class="tcard-title">Tasks — ' + esc(s.title) +
+          ' <span class="count">' + tdone + "/" + s.tasks.length + " done</span></div>" +
+          '<div class="bar"><i style="width:' + tpct + '%"></i></div><div style="height:8px"></div>';
+        s.tasks.forEach(function (t) {
+          tasksHtml += '<div class="trow ' + esc(t.status) + (t.level ? " lv1" : "") + '">' +
+            '<span class="tglyph">' + (t.status === "done" ? "✓" : t.status === "doing" ? "◐" : "○") + "</span>" +
+            '<span class="ttext">' + esc(t.text) + "</span></div>";
+        });
+      } else if (s.progress && s.status === "running") {
+        tasksHtml += '<div class="tcard-title">Tasks — ' + esc(s.title) + "</div>" +
+          '<div class="thint">waiting for ' + esc(s.progress) + " — the agent has not written its task list yet</div>";
+      }
+    });
+    var tcard = document.getElementById("tasks");
+    if (tasksHtml) { tcard.style.display = ""; tcard.innerHTML = tasksHtml; }
+    else { tcard.style.display = "none"; }
     var arts = document.getElementById("arts");
     if (S.artifacts && S.artifacts.length) {
       arts.style.display = "";
