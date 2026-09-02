@@ -80,13 +80,14 @@
       "enabled": true,
       "agent": "codex",
       "writes": "CHANGES.md",
+      "progress": "TASKS.md",
       "hardTimeoutMs": 7200000,
       "reads": [
         "detailed-design",
         "uiux-design"
       ],
       "onFailGoto": null,
-      "spec": "You are a coding agent. Implement fully according to {reads}. Follow the detailed design and mockups closely. If this task is being re-run after a failed review or test, also read REVIEW.md, SECURITY_REVIEW.md, and TEST_REPORT.md in the artifacts dir and fix every issue reported there. When done, write a summary of the changes (which files, what, and why) to {out}. Do not expand scope beyond the design."
+      "spec": "You are a coding agent. FIRST ACTION - TASK CHECKLIST: before writing any code, break the implementation down (from {reads}) into concrete tasks and write them as a Markdown checklist to {tasks} using exactly these markers: '- [ ]' not started, '- [~]' in progress, '- [x]' completed; one task per line, sub-tasks indented two spaces, nothing else on those lines. This file is read live by the pipeline's status page, so keep it current: mark a task '- [~]' the moment you start it and '- [x]' the moment you finish it - never batch updates at the end. Every task must be '- [x]' before you write {out}. Then implement fully according to {reads}. Follow the detailed design and mockups closely. If this task is being re-run after a failed review or test, also read TASKS.md, REVIEW.md, SECURITY_REVIEW.md, and TEST_REPORT.md in the artifacts dir and fix every issue reported there (update the checklist, not just the reports). When done, write a summary of the changes (which files, what, and why) to {out}. Do not expand scope beyond the design."
     },
     {
       "id": "code-review",
