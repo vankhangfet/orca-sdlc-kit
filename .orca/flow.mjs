@@ -182,6 +182,7 @@ function renderSpec(step) {
     : "";
   return (objectiveLine + (step.spec || "") + autonomy + interview)
     .replaceAll("{out}", outPath(step.writes))
+    .replaceAll("{tasks}", step.progress ? outPath(step.progress) : "{tasks}")
     .replaceAll("{reads}", readList);
 }
 
@@ -340,8 +341,10 @@ STATUS = {
   overall: "running",   // running | succeeded | failed | unknown | still-running
   steps: allSteps.map((s) => ({
     id: s.id, title: s.title, agent: agentOf(s), writes: s.writes || null,
+    progress: s.progress || null,
     status: enabledIds.has(s.id) ? "pending" : "skipped",
     attempt: 0, startedAt: null, endedAt: null, durationMs: null, note: null,
+    tasks: null,
   })),
   artifacts: [],
 };
@@ -410,6 +413,17 @@ function parseProgress(text) {
   return out.length ? out : null;
 }
 
+// Display-only refresh of a step's task checklist from its `progress` file.
+// Swallows everything: the file appears only once the agent writes it and may
+// be mid-write at any read — the last good snapshot simply stays.
+function refreshProgress(step) {
+  if (!step.progress) return;
+  try {
+    const tasks = parseProgress(readFileSync(join(statusDir(), step.progress), "utf8"));
+    if (tasks) statusSet(step.id, { tasks });
+  } catch { /* not written yet / unreadable — keep the last snapshot */ }
+}
+
 // Resume merge: when a previous status.js from the SAME config exists in the
 // artifacts dir, carry its history into this run — a `--from` resume then
 // shows one continuous picture. Steps excluded from THIS run ("skipped",
@@ -449,6 +463,16 @@ function initStatus() {
   STATUS.meta.worktree = WT || WT_PIN || "(auto-detect)";
   STATUS.meta.startedAt = Date.now();
   loadPreviousStatus();
+  // Steps whose progress file already exists (an earlier run in this
+  // worktree) start with its checklist — a `--from` resume then shows the
+  // final task list even for steps that will not run again.
+  for (const st of STATUS.steps) {
+    if (!st.progress) continue;
+    try {
+      const tasks = parseProgress(readFileSync(join(statusDir(), st.progress), "utf8"));
+      if (tasks) st.tasks = tasks;
+    } catch { /* no file yet — fine */ }
+  }
   try {
     writeFileSync(join(statusDir(), "status.html"), STATUS_HTML);
   } catch (e) {
@@ -980,6 +1004,7 @@ function runStep(step) {
   let done = null, note = "";
   let quietWarned = false;         // warn once about a quiet-but-alive worker
   while (true) {
+    refreshProgress(step);   // task checklist snapshot (display-only)
     writeStatus();   // heartbeat: keep the page's "updated Xs ago" fresh each slice
     const wait = orca(["orchestration", "check", "--run", RUN_ID, "--wait",
       "--types", "worker_done,escalation,question", "--timeout-ms", String(SLICE_MS)],
