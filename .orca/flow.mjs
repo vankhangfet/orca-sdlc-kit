@@ -390,6 +390,26 @@ function finishStatus(overall) {
   writeStatus();
 }
 
+// Parse a progress checklist (e.g. TASKS.md) an agent maintains mid-step.
+// Grammar: one checkbox per line — "- [ ]" todo, "- [~]" doing, "- [x]"/"- [X]"
+// done; an indent of 2+ spaces marks a sub-task. Every other line (headers,
+// prose, blanks) is ignored. Returns the task array, or null when the text has
+// no checkbox at all. DISPLAY ONLY: callers swallow all errors — a missing or
+// mangled file never affects the run.
+function parseProgress(text) {
+  const out = [];
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const m = line.match(/^(\s*)-\s*\[([ xX~])\]\s*(.*)$/);
+    if (!m) continue;
+    out.push({
+      status: m[2] === " " ? "todo" : m[2] === "~" ? "doing" : "done",
+      level: m[1].length >= 2 ? 1 : 0,
+      text: m[3].trim(),
+    });
+  }
+  return out.length ? out : null;
+}
+
 // Resume merge: when a previous status.js from the SAME config exists in the
 // artifacts dir, carry its history into this run — a `--from` resume then
 // shows one continuous picture. Steps excluded from THIS run ("skipped",
