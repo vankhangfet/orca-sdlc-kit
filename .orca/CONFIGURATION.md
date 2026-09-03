@@ -93,9 +93,10 @@ or malformed checklist is ignored silently — the run is never affected.
 into a list of input files and injects it into `{reads}` in the spec. A step with
 `reads: []` is a starting step (relies only on the objective you pass in).
 
-**`spec`** — the prompt given to the agent. Two placeholders are substituted:
+**`spec`** — the prompt given to the agent. Three placeholders are substituted:
 - `{out}` -> the path this step must write (from `writes`).
 - `{reads}` -> a list of "Step title (file-path)" for the enabled inputs.
+- `{tasks}` -> the path of the step's task-checklist file (from `progress`; only substituted when the step declares one).
 
 The orchestrator also prepends `OVERALL OBJECTIVE: <objective>` to every spec, so
 the agent always knows the overall goal regardless of where the step sits.
