@@ -72,17 +72,22 @@ Full field reference (timeouts, models, custom steps, the fix loop): [`.orca/CON
 
 ## Watch it run — the live status page
 
-While the pipeline runs, the flow writes a live dashboard into the worktree: open
-`<worktree>/.orca/artifacts/status.html` in a browser (it opens by itself when
-the run starts) and it updates on its own — which step is running,
-what is done, what comes next, timings, retry attempts, and the final artifact
-list.
+Start a run and a dashboard opens itself in your browser —
+`<worktree>/.orca/artifacts/status.html` — and keeps updating on its own while
+the agents work: which step is running, what is done, what comes next, timings,
+retry attempts and the final artifact list. No refresh button, no server; the
+page re-reads its snapshot from disk every couple of seconds.
 
-Steps that carry a task checklist (`progress` in config — the coding step does)
-also get a live **Tasks card**: the coding agent first breaks the plan into a
-checkbox list (`.orca/artifacts/TASKS.md`), then ticks each task off as it
-works — `○` queued, `◐` in progress, `✓` done — so mid-coding you always know
-what is done, what is in flight and what is left.
+![The Orca Flow status dashboard: pipeline steps on top, and below it the live
+Tasks card showing each implementation task as ○ queued, ◐ in progress or
+✓ done](img/status_dashboard.png)
+
+The star of the mid-run view is that **Tasks card**. Steps that carry a task
+checklist (`progress` in config — the coding step does) show every
+implementation task as a checkbox list (`.orca/artifacts/TASKS.md`) that the
+coding agent ticks off as it works — `○` queued, `◐` in progress, `✓` done —
+so mid-coding you always know what is done, what is in flight and what is left,
+without opening a single file.
 
 An interrupted run resumed with `--from` continues the same picture, with
 earlier steps keeping their original durations. If the page can't be written
