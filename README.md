@@ -65,7 +65,7 @@ Everything lives in `.orca/flow.config.json` — no code edits, ever. The kit is
 
 Two knobs cover the rest:
 
-- **`autoRun` (default `true`) — how much it asks you.** `true`: start it and walk away — agents never ask, they decide and record assumptions in the artifact for you to audit later; gates are ignored. `false` (manual mode): agents may ask in their terminal; steps with `"gate": true` pause for your approval, and steps with `"interactive": true` (the shipped Architecture step) interview you — one question at a time, confirming every decision before writing.
+- **`autoRun` (default `true`) — how much it asks you.** `true`: start it and walk away — agents never ask, they decide and record assumptions in the artifact for you to audit later; gates are ignored, and Claude Code agents run with permission bypass so nothing waits for a click. `false` (manual mode): agents may ask in their terminal; steps with `"gate": true` pause for your approval, and steps with `"interactive": true` (the shipped Architecture step) interview you — one question at a time, confirming every decision before writing.
 - **The worktree (default: auto-detected) — where it runs.** Agents run in the Orca worktree of the folder you launch from. Pin only when launching from outside the target: `--worktree name:lab2` for one run, `ORCA_FLOW_WORKTREE` for your machine. A wrong pin fails immediately with the list of valid worktrees — never mid-run.
 
 Full field reference (timeouts, models, custom steps, the fix loop): [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md).
@@ -141,6 +141,7 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 ## When something goes wrong
 
 - **Preview first** — `--dry-run` shows exactly what will run; make it a habit.
+- **A claude agent's terminal shows a one-time "accept responsibility" dialog** — Claude Code asks this once per machine the first time a session starts with permission bypass. Accept it once (it is remembered), or pre-set `"skipDangerousModePermissionPrompt": true` in your user-level Claude Code settings. Bypass grants the agent full tool access — which is why unattended pipelines belong in disposable Orca worktrees (the default way this kit runs).
 - **A step looks quiet for a long time** — silence is not treated as failure: an agent deep in one long verification (reviews routinely run an hour) is waited on until it settles or its hard cap hits. The fix loop only triggers on a definite FAIL verdict, never on a silent worker.
 - **A step is taking forever** — the status page shows it as STILL RUNNING; the flow leaves that agent's terminal open and prints the exact `--from <step>` command to continue later.
 - **Stale orchestration state after experiments** — `orca orchestration reset --all --json`.

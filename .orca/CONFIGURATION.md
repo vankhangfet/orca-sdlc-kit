@@ -22,7 +22,7 @@ config field, with examples for common situations.
 |-------|------|----------|---------|
 | `artifactsDir` | string | no (default `.orca/artifacts`) | Folder holding the artifact files steps write |
 | `maxRetries` | number | no (default 2) | Cap on how many times a `fail -> onFailGoto` pair may loop before stopping |
-| `autoRun` | boolean | no (default `true`) | `true` = fully automatic: every step's spec carries an autonomy directive (never ask the user, decide and record assumptions in the artifact) and `gate` flags are ignored. `false` = manual mode: agents may ask questions and steps with `gate:true` block on an approval gate. |
+| `autoRun` | boolean | no (default `true`) | `true` = fully automatic: every step's spec carries an autonomy directive (never ask the user, decide and record assumptions in the artifact) and `gate` flags are ignored. `false` = manual mode: agents may ask questions and steps with `gate:true` block on an approval gate. In auto-run, claude agents also start with permission bypass (`--permission-mode bypassPermissions`) so their terminal never waits for an approval; manual mode keeps default prompting. |
 | `defaults.gateTimeoutMs` | number | no (default 3600000 = 60 min) | Manual mode only: how long to wait for a decision gate to be resolved before continuing anyway |
 | `defaults.timeoutMs` | number | no (default 900000 = 15 min) | Max worker **silence** (no terminal output, no heartbeat). Silence is NOT a failure verdict: a worker deep in one long tool call can look quiet for most of an hour. A quiet-but-alive dispatch is waited on (with a warning) until it settles or the hard cap hits; only a positive failure (dispatch failed / worker report) fails the step |
 | `defaults.hardTimeoutMs` | number | no (default 4x `timeoutMs`) | Absolute per-step cap; on hit the worker's terminal is left open and the flow stops with a `--from` resume hint |
@@ -74,6 +74,8 @@ dispatch path; needs `kiro-cli` on PATH and logged in via `kiro-cli login`.
 Unlike the catalog agents it cannot use the cold-start `worker-start` fallback,
 and flags may be appended, e.g. `"kiro-cli --trust-all-tools"` for unattended runs).
 (Confirm the catalog for your Orca build with `orca skills get orchestration --full`.)
+
+A `"claude ..."` value with extra CLI flags (e.g. `"claude --model haiku"`) is supported: the flow keeps your flags and adds its own wrap — in auto-run it also appends the permission bypass unless you already set a permission flag yourself. Keep flag values free of quotes and `%` signs; the string is passed through the Windows command wrap verbatim.
 
 **`writes`** — filename (no path) the step writes its output to. The full path is
 `artifactsDir + "/" + writes`. This is what later steps read back.
