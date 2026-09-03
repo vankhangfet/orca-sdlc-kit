@@ -147,6 +147,10 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 - **CLI flags differ on your Orca version** — check `orca skills get orchestration --full`.
 - **Claude agent crashes with `EBADF ... history.jsonl.lock` (Windows)** — known Claude Code bug ([#15739](https://github.com/anthropics/claude-code/issues/15739)); the flow already spawns Claude agents in a way that avoids it. If it still happens, close other Claude Code sessions during interactive steps, or update Claude Code.
 
+## Roadmap
+
+What's next — run history and an artifact viewer for the status page, auto-resume, parallel steps, notifications, agent fallback on retries, batch runs and more: [ROADMAP.md](ROADMAP.md).
+
 ## License
 
 [MIT](LICENSE)
