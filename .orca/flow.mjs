@@ -708,8 +708,9 @@ const STATUS_HTML = `<!doctype html>
 // reliable channel because project-level settings cannot enable this mode
 // (Claude Code v2.1.257+); manual mode (autoRun:false) keeps default
 // prompting — the user is present and overseeing the terminal.
-// CLAUDE_AFK_TIMEOUT_MS dismisses the rare interactive dialog even bypass
-// cannot auto-approve (the AUTONOMY directive makes asking rare already).
+// CLAUDE_AFK_TIMEOUT_MS (auto-run only) auto-continues a stray
+// AskUserQuestion dialog after 60s — in manual mode it must stay unset,
+// because interview steps legitimately wait minutes for a human answer.
 // A "claude ..." agent string keeps its user flags and still gets the wrap;
 // a permission flag in the string is respected, never duplicated.
 // Only the manual path can inject env/flags; the cold-start fallback
@@ -720,9 +721,17 @@ function agentCommand(agent) {
   let cmd = agent;
   if (AUTO_RUN && !cmd.includes("--permission-mode") && !cmd.includes("--dangerously-skip-permissions"))
     cmd += " --permission-mode bypassPermissions";
+  // AFK guard in AUTO-RUN ONLY: an AskUserQuestion dialog there is
+  // contract-violating noise (the AUTONOMY directive forbids asking), and
+  // auto-continuing it after 60s matches that directive's semantics. In
+  // manual mode the human answers in the terminal — interview steps budget
+  // 60 min idle — so the var must stay unset there.
+  const env = AUTO_RUN
+    ? "CLAUDE_CODE_SKIP_PROMPT_HISTORY=true CLAUDE_AFK_TIMEOUT_MS=60000"
+    : "CLAUDE_CODE_SKIP_PROMPT_HISTORY=true";
   return IS_WIN
-    ? `cmd /c "set CLAUDE_CODE_SKIP_PROMPT_HISTORY=true&& set CLAUDE_AFK_TIMEOUT_MS=60000&& ${cmd}"`
-    : `env CLAUDE_CODE_SKIP_PROMPT_HISTORY=true CLAUDE_AFK_TIMEOUT_MS=60000 ${cmd}`;
+    ? `cmd /c "set ${env.replaceAll(" ", "&& set ")}&& ${cmd}"`
+    : `env ${env} ${cmd}`;
 }
 
 function warmTerminal(agent) {
