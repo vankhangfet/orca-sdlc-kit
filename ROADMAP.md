@@ -1,104 +1,144 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Last updated: 2026-09-03 (after v1.1.0 — task-level progress)
-Status: proposal, nothing committed to a milestone yet.
+Last updated: 2026-09-03
 
-## Guiding principles (every item must respect these)
+The Orca SDLC Flow Kit turns one sentence — "build a login page with email
+sign-in" — into a working, reviewed and documented implementation: a team
+of AI agents plans, designs, codes, reviews, tests and documents the
+feature while you follow along on a live status page. Version 1.1.0 just
+added per-task progress to that page. This roadmap describes what we
+intend to add next.
 
-1. **Behavior lives in configs** (Rule #1): new knobs are JSON fields; `flow.mjs` stays a generic executor.
-2. **Zero dependencies, Node only** — no server, no ports, no npm install. The status page keeps working from `file://`.
-3. **Display never kills a run** — anything observation-flavored (status page, logs, tracking) must be unable to change outcomes, timeouts, retries, liveness.
-4. **Cross-platform from day one** (Windows quirks are first-class, not ports).
+Plans may change as we learn, and nothing below is a promised date or a
+committed release.
 
-Sizes: S ≤ ~50 LOC / 1 file · M ~50–150 LOC or 2–3 files · L > 150 LOC or new concepts.
+## The order, briefly
 
----
+Trust comes first: the first two items close silent gaps, because a tool
+you don't trust is a tool you don't reach for. Visibility comes next:
+documents, logs and past runs without leaving the status page. After that,
+speed and supervision — parallel steps, notifications, smarter retries and
+whole backlogs.
 
-## HORIZON 1 — Quick wins (high value, small)
+## Ground rules for everything below
 
-### 1. Run history on the status page — M
-**Pain:** every run overwrites `status.js`; once the flow exits the page is frozen, and there is no way to compare runs ("which step failed last time, how long did coding take across runs?").
-**Plan:** keep `status-<runId8>.js` snapshots beside the current `status.js`; the page gets a run selector (fetch by re-creating `<script src>` per selection); current run stays the default. Cap retention (e.g. last 20) to bound disk.
-**Lands in:** `flow.mjs` (status write path) + `STATUS_HTML`.
-
-### 2. Artifact viewer in the status page — M
-**Pain:** PLAN.md, ARCHITECTURE.md, REVIEW.md, TASKS.md all sit next to `status.js`, but reviewing them means hunting files in the worktree.
-**Plan:** each step row gets an artifact link; the page lazy-loads `<artifact>.md` files via classic `<script src>` wrappers (same file:// trick as status.js — wrap content as `window.__ARTIFACT["PLAN.md"]=...`, written by the flow on each status write; fall back to "open in editor" hint if a file is absent). Render as preformatted text with basic heading/code styling — NOT a full Markdown engine (zero-dep principle).
-**Lands in:** `flow.mjs` (write `artifacts.js`) + `STATUS_HTML`.
-
-### 3. Auto-resume (`--from auto`) — S/M
-**Pain:** after a crash/hard-cap, the user must read the resume hint and type `--from <step>` with the right id.
-**Plan:** `--from auto` loads the previous `status.js` + checks artifact existence on disk, picks the last step that did not settle as succeeded (or the step after the last succeeded one), prints what it chose and why, and continues. Manual `--from <id>` keeps precedence.
-**Lands in:** `flow.mjs` (resume resolution before pipeline normalization).
-
-### 4. Deep config validation at dry-run — S
-**Pain:** `reads` pointing at a non-existent id, `onFailGoto` pointing forward, unknown agent names, `progress` file equal to another step's `writes`, duplicate ids — all surface mid-run or never.
-**Plan:** a `validateConfig()` pass run before `printPlan()` in every mode (not just dry-run): reference graph checks, cycle check for onFailGoto, agent-name check against the known catalog + kiro-cli, duplicate/missing fields, writes/progress filename collisions. Fail fast with precise messages.
-**Lands in:** `flow.mjs`; documented in CONFIGURATION.md §7 (safe-editing workflow).
-
-### 5. `model` / `effort` honored on the manual path — S (bug-fix grade)
-**Pain:** the fields only work on the cold-start fallback (`coldStart()` passes `--model/--effort`); the PRIMARY manual dispatch path (`manualStart()`) silently ignores them — users configure values that never take effect.
-**Plan:** map per-agent: claude/codex/cursor accept model/effort via env or CLI flag on `terminal create --command` (agentCommand() already wraps commands; extend the wrapper). Document per-agent support honestly in CONFIGURATION.md.
-**Lands in:** `flow.mjs` `agentCommand()` + docs.
+- **Zero install, no server.** One folder you copy into a project, nothing
+  to install or keep running — works the same on Windows, macOS and Linux.
+- **Watching never interferes.** The status page, history and logs are for
+  your eyes only; nothing you open or look at can change what a run does.
+- **Everything stays on disk.** Every step's output is a plain, readable
+  document you can check, edit or reuse.
 
 ---
 
-## HORIZON 2 — Pipeline productivity
+## Now — trust and visibility
 
-### 6. Parallel independent steps — M/L
-**Pain:** the pipeline is strictly sequential; `detailed-design` and `uiux-design` (and others in user configs) do not depend on each other but run one after another — 20–30% wasted wall-clock per run.
-**Plan:** config field `"parallelWith": "<id>"` (explicit beats auto-detection for predictability — auto can come later as `--dry-run` hint). The main loop runs each branch's worker and merges on a join barrier before any step that `reads` both. Status page already handles multiple "running" rows. Fix-loop interactions must be defined (a failed parallel branch pauses the join; onFailGoto from later steps unchanged).
-**Lands in:** `flow.mjs` (main loop) + CONFIGURATION.md; fixture/preview updates.
+### Settings that always take effect
+*Today: the "which model" and "how hard should it try" options are
+silently ignored — you can set them and nothing changes.*
+Choose a stronger model for a step, or dial an agent's effort up or down,
+and the run will genuinely use that choice. This item is a fix rather than
+a feature: an option you write should never quietly do nothing.
 
-### 7. Run log artifact — S
-**Pain:** everything the flow prints (`[orca-flow]` lines, warnings, gate hints) lives only in the console; post-mortems scroll terminals.
-**Plan:** a `tee`-style log() wrapper writing `FLOW_LOG.md` into the artifacts dir (append per run, newest first section with runId + objective + timestamps). Cheap, and makes #1 (history) far more useful.
-**Lands in:** `flow.mjs` logging functions.
+### Mistakes caught before a run starts
+*Today: a mistake in your pipeline setup — a step handing its work to a
+step that doesn't exist, a misspelled AI name, a retry loop that can't
+succeed — shows up halfway through a run, or not at all.*
+Every run will check your setup first and explain any problem in plain
+language before a single agent starts. A check that takes seconds protects
+the hours a wasted run would cost.
 
-### 8. End-of-run notifications — S/M
-**Pain:** runs take hours; nobody watches. Users find out a run failed the next morning.
-**Plan:** config `"notify": {"onEnd": "<command>", "onFail": "<command>"}` executed via spawnSync WITHOUT shell (argv-safe, consistent with the repo's Windows rules); a few env vars passed to the command (status, objective, failed step, artifacts dir). Users own the payload (slack/teams/email script) — the kit ships no integrations.
-**Lands in:** `flow.mjs` exit paths (succeeded / failed / still-running) + CONFIGURATION.md.
+### Every document, one click away
+*Today: reading the plan, the review or the test report means hunting for
+the right file in a folder.*
+Each step on the status page will link to the document it produced, so you
+read it right where you already are. Documents render simply — this is a
+reading pane, not a document platform.
 
-### 9. Agent fallback across retries — M
-**Pain:** `onFailGoto` retries with the SAME agent; if an agent is systematically bad at a step (e.g. codex chokes on a repo layout), retries burn the budget identically.
-**Plan:** `"agentFallback": ["codex", "claude"]` — attempt N uses agentFallback[min(N-1, len-1)]. The status page already shows the agent per attempt via `agentOf()`; wire overrides through it. Keep `--agent` flag precedence.
-**Lands in:** `flow.mjs` `agentOf()` + retry bookkeeping + CONFIGURATION.md.
+### A written record of every run
+*Today: the run's messages live only in the terminal and scroll away.*
+Every run will keep its own log — what started when, warnings, final
+outcomes — as a readable file on disk. Combined with run history below, it
+answers "what exactly happened overnight?" without replaying terminals.
 
-### 10. Batch / backlog mode — M
-**Pain:** one objective per invocation; real development has a list of features.
-**Plan:** `--batch <file.json>` (array of objectives, optional per-item config overrides); runs sequentially, one Orca Run per item, each with its own status snapshot (composes with #1's history); `--batch --dry-run` prints the whole plan. A top-level `batch-status.html` index links each run's page.
-**Lands in:** `flow.mjs` argv/main path + CONFIGURATION.md.
+### Every past run, side by side
+*Today: each new run replaces the status page of the one before it, so
+comparing runs is guesswork.*
+The status page will keep a history of recent runs: pick any of them and
+see it as it happened. "Which step failed last time?" and "how long did
+coding take this week versus last?" become questions you answer by
+looking.
 
----
+### Recovery without detective work
+*Today: after an interruption you must work out which step to resume from
+and type the exact command yourself.*
+Restart with `--from auto`: the kit works out where the last run stopped,
+tells you what it chose and why, and continues from exactly there.
 
-## HORIZON 3 — Longer arc
+## Next — speed and supervision
 
-### 11. Cross-worktree dashboard — L
-One index page listing every worktree's latest run (scan known worktrees' artifacts dirs for status snapshots; render read-only summary cards linking to each worktree's own page). Turns the kit into a team wall without any server.
+### Independent steps run side by side
+*Today: steps run strictly one after another, even when two of them depend
+on nothing but the plan.*
+Steps that don't depend on each other — detailed design and UI/UX design,
+for example — will run at the same time. On typical pipelines this cuts a
+fifth to a third off total run time, with the same results.
 
-### 12. Cost & usage tracking — M (depends on Orca CLI surface)
-Per-step wall-clock already exists; add token/usage if `orchestration` exposes it (dispatch-show/task records). Render per-step and per-agent aggregates on the page; export CSV in artifacts. Answer "which agent is worth it for which step" with data.
+### A ping when a run ends
+*Today: runs take hours, and you find out one failed the next morning.*
+You'll give the kit one command of your own — a message to your team chat,
+an email, whatever you already use — and it fires when a run finishes or
+fails, carrying the outcome. The kit ships no integrations itself; you
+plug in yours.
 
-### 13. Checklist write-back — M
-Let the page POST edits to `TASKS.md`... impossible under file:// without a server. Honest alternative: an "edit hint" (click a task → copy a Markdown snippet to paste into the file), or an opt-in tiny local HTTP listener (`--status-port`) that ONLY serves writes to checklist files. Needs a design decision on the zero-server principle — brainstorm before building.
+### A second opinion on retry
+*Today: when a step keeps failing, every retry uses the same AI — the same
+blind spots every time.*
+You'll name a bench per step ("try this AI first, then that one"), and
+each retry brings in the next one automatically. A stubborn step no longer
+burns its whole retry budget on a bad match.
 
-### 14. Warm agent pool — M/L
-Terminal create + quiet-detect warmup costs 12–30 s+ per step. Keep 1 warm terminal per (agent, worktree) alive across consecutive steps that use the same agent, reuse via `terminal send`, close on config change/flow end. Must respect liveness semantics (never reuse a terminal mid-dispatch).
+### Hand it a whole backlog
+*Today: one feature per run; real development is a list.*
+Give the kit a list of features and it works through them one by one,
+unattended, each with its own run record and status page. You review the
+results in the morning, in one place.
 
----
+## Later — the longer arc
 
-## Suggested sequencing
+### One dashboard for everything
+If you run the kit in several projects or branches, one page will list the
+latest run in each and link to its full status page — a wallboard for the
+team, still with no server to run.
 
-1. **#5 first** — it is a correctness gap (fields that do nothing on the main path), not a feature; small and restores config trust.
-2. **#4** — cheap insurance that makes every later config change safer.
-3. **#2 + #7** — visibility pair: see artifacts and logs without leaving the page; multiplies the value of the v1.1.0 Tasks card.
-4. **#3** — removes the biggest friction of long runs (manual resume).
-5. **#6, #8, #9, #10** in that order — each shrinks wall-clock or supervision cost of real runs.
-6. Horizon 3 items are opportunistic (#12 becomes attractive the moment Orca exposes usage data).
+### Know where the time goes
+The status page will show time spent per step and per AI, and — where
+Orca makes usage numbers available — what each consumed, with an export
+for your spreadsheet. "Which AI is worth it for which step?" becomes a
+question you answer with data instead of instinct.
 
-## Explicit non-goals (for now)
+### Edit the checklist from the page
+The live task checklist is display-only today. Letting you edit it from
+the page would mean relaxing our "no server, ever" rule, so this needs an
+open design decision first. We may ship a lighter alternative — click a
+task, get a ready-made edit to paste into the checklist — instead.
 
-- No bundled notification integrations, no bundled Markdown renderer, no server-by-default (#13's listener would be opt-in only).
-- No re-architecture of flow.mjs into modules — single-file is a feature (copy one folder, done).
-- No task-level gating: the checklist stays display-only (design decision from v1.1.0, revisited only with real-world evidence).
+### No waiting between steps
+*Today: every step spends its first stretch just getting its agent up and
+running.*
+The kit will keep an agent warm between consecutive steps that use the
+same one, trimming that dead time from every run. Carefully: an agent that
+is mid-job is never rushed or reused.
+
+## What we deliberately won't build
+
+- **A server or an installer.** We stay a single copy-paste folder that
+  needs only Node. If the checklist editor above ever needs a local
+  listener, it will be strictly opt-in and off by default.
+- **Bundled integrations.** No built-in team chat, email or other hookup;
+  you connect the tools you already use.
+- **Approval gates on the checklist.** The task checklist stays a live
+  view of what the coding agent is doing; the run will not stop and wait
+  for you to tick boxes.
+- **A "proper application."** No rewrite into a hosted service or a
+  multi-part product. One folder you copy is the product.
