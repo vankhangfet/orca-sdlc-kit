@@ -2,6 +2,7 @@
   "//": "flow.config.json — FULL SDLC PIPELINE CONFIG. This is the only file you edit.",
   "//pipeline": "Each entry is a STEP. Set 'enabled:false' to SKIP it. Array order = run order.",
   "//reads": "'reads' lists the ids of steps whose output this step needs. If a step is skipped, it is auto-removed from later steps' 'reads' (chain stays intact).",
+  "//progress": "optional: filename (in artifactsDir) of a Markdown task checklist this step's agent maintains (- [ ] / - [~] / - [x]); shown live on the status page. Pair it with {tasks} in the spec.",
   "//writes": "'writes' = the artifact filename this step produces (inside artifactsDir).",
   "//agent": "Agent for each step: claude, codex, opencode, gemini, cursor, grok (Orca catalog) or kiro-cli (Kiro terminal chat, run via the flow's terminal dispatch — needs kiro-cli on PATH and logged in).",
   "//onFailGoto": "If this step returns outcome=failed and has onFailGoto, jump back to that step to fix (up to maxRetries times).",
@@ -87,7 +88,7 @@
         "uiux-design"
       ],
       "onFailGoto": null,
-      "spec": "You are a coding agent. FIRST ACTION - TASK CHECKLIST: before writing any code, break the implementation down (from {reads}) into concrete tasks and write them as a Markdown checklist to {tasks} using exactly these markers: '- [ ]' not started, '- [~]' in progress, '- [x]' completed; one task per line, sub-tasks indented two spaces, nothing else on those lines. This file is read live by the pipeline's status page, so keep it current: mark a task '- [~]' the moment you start it and '- [x]' the moment you finish it - never batch updates at the end. Every task must be '- [x]' before you write {out}. Then implement fully according to {reads}. Follow the detailed design and mockups closely. If this task is being re-run after a failed review or test, also read TASKS.md, REVIEW.md, SECURITY_REVIEW.md, and TEST_REPORT.md in the artifacts dir and fix every issue reported there (update the checklist, not just the reports). When done, write a summary of the changes (which files, what, and why) to {out}. Do not expand scope beyond the design."
+      "spec": "You are a coding agent. FIRST ACTION - TASK CHECKLIST: before writing any code, break the implementation down (from {reads}) into concrete tasks and write them as a Markdown checklist to {tasks} using exactly these markers (if {tasks} already exists from an earlier attempt, read it first and continue it instead of rewriting): '- [ ]' not started, '- [~]' in progress, '- [x]' completed; one task per line, sub-tasks indented two spaces, nothing else on those lines. This file is read live by the pipeline's status page, so keep it current: mark a task '- [~]' the moment you start it and '- [x]' the moment you finish it - never batch updates at the end. Every task must be '- [x]' before you write {out}. Then implement fully according to {reads}. Follow the detailed design and mockups closely. If this task is being re-run after a failed review or test, also read {tasks}, REVIEW.md, SECURITY_REVIEW.md, and TEST_REPORT.md in the artifacts dir and fix every issue reported there (update the checklist, not just the reports). When done, write a summary of the changes (which files, what, and why) to {out}. Do not expand scope beyond the design."
     },
     {
       "id": "code-review",
