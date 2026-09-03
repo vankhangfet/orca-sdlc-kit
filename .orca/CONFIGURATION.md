@@ -96,7 +96,8 @@ into a list of input files and injects it into `{reads}` in the spec. A step wit
 **`spec`** — the prompt given to the agent. Three placeholders are substituted:
 - `{out}` -> the path this step must write (from `writes`).
 - `{reads}` -> a list of "Step title (file-path)" for the enabled inputs.
-- `{tasks}` -> the path of the step's task-checklist file (from `progress`; only substituted when the step declares one).
+- `{tasks}` -> the path of the step's task-checklist file (from `progress`; only
+  substituted when the step declares one).
 
 The orchestrator also prepends `OVERALL OBJECTIVE: <objective>` to every spec, so
 the agent always knows the overall goal regardless of where the step sits.
@@ -289,7 +290,8 @@ Every real run writes a self-updating dashboard next to the artifacts:
 
 It shows the objective, an overall badge (RUNNING / DONE / FAILED / UNKNOWN / STILL RUNNING — "still running" means the flow stopped with a step's terminal left open; resume with `--from`), a progress bar, and every pipeline step with its agent, live elapsed time, durations, retry attempts (`attempt 2`, ...), approval-gate waits (manual mode) and — at the end — the artifact list. Steps that declare a `progress` checklist also get a live **Tasks card** —
 per-task `○` queued / `◐` in progress / `✓` done, read straight from the file
-the coding agent ticks as it works. Steps excluded by `enabled:false`, `--only` or `--from` render as SKIPPED, except when a previous run's history (same config) exists in the same worktree: the page then merges it, so a `--from` resume shows one continuous picture (durations of earlier steps included).
+the step's agent ticks as it works. Until the file appears, the card shows a
+waiting hint instead. Steps excluded by `enabled:false`, `--only` or `--from` render as SKIPPED, except when a previous run's history (same config) exists in the same worktree: the page then merges it, so a `--from` resume shows one continuous picture (durations of earlier steps included).
 
 The page opens automatically when the run starts (`explorer.exe` on Windows, `open` on macOS, `xdg-open` on Linux). Turn that off with `--no-open-status`, or per-project with `"defaults": { "openStatus": false }`. If writing the page fails (e.g. a read-only folder) the run continues untouched — the dashboard never affects pipeline execution. `node .orca/flow.mjs --status-preview` renders a fixture page showing every state without a run — it cannot be combined with an objective or `--only`/`--from`/`--agent`; real runs write and open the page automatically and need no flag.
 

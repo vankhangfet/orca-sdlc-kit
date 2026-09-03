@@ -56,7 +56,7 @@ Everything lives in `.orca/flow.config.json` — no code edits, ever. The kit is
 |---|---|
 | Skip a step (e.g. no UI/UX) | set `"enabled": false` on that step — later steps adjust automatically |
 | Use a different AI for a step | edit `"agent"` — claude, codex, opencode, gemini, cursor, grok, kiro-cli |
-| Change what a step does | edit its `"spec"` text; `{out}` / `{reads}` are filled in for you |
+| Change what a step does | edit its `"spec"` text; `{out}` / `{reads}` / `{tasks}` are filled in for you |
 | Add my own step (e.g. a lint gate) | add an entry to the `"pipeline"` array — order in the array is the run order |
 | Retry harder on failures | raise `"maxRetries"` (how often review/test failures loop back to coding) |
 | Give a step more time | raise its `"timeoutMs"` (max silence) / `"hardTimeoutMs"` (absolute cap) |
