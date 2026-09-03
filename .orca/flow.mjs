@@ -703,13 +703,26 @@ const STATUS_HTML = `<!doctype html>
 // (anthropics/claude-code#15739) — hit hardest by the interactive grill
 // step. Skipping prompt history for flow-spawned claude agents removes the
 // lock churn. NOTE: the CLI gates on the exact string "true" (not "1").
-// Only the manual path can inject env; the cold-start fallback (--agent)
-// launches the TUI Orca-side and stays unprotected.
+// In auto-run, claude agents ALSO get --permission-mode bypassPermissions:
+// an unattended TUI must never block on an approval prompt. The flag is the
+// reliable channel because project-level settings cannot enable this mode
+// (Claude Code v2.1.257+); manual mode (autoRun:false) keeps default
+// prompting — the user is present and overseeing the terminal.
+// CLAUDE_AFK_TIMEOUT_MS dismisses the rare interactive dialog even bypass
+// cannot auto-approve (the AUTONOMY directive makes asking rare already).
+// A "claude ..." agent string keeps its user flags and still gets the wrap;
+// a permission flag in the string is respected, never duplicated.
+// Only the manual path can inject env/flags; the cold-start fallback
+// (--agent) launches the TUI Orca-side and stays unprotected.
 function agentCommand(agent) {
-  if (agent !== "claude") return agent;
+  const isClaude = agent === "claude" || agent.startsWith("claude ");
+  if (!isClaude) return agent;
+  let cmd = agent;
+  if (AUTO_RUN && !cmd.includes("--permission-mode") && !cmd.includes("--dangerously-skip-permissions"))
+    cmd += " --permission-mode bypassPermissions";
   return IS_WIN
-    ? `cmd /c "set CLAUDE_CODE_SKIP_PROMPT_HISTORY=true&& claude"`
-    : `env CLAUDE_CODE_SKIP_PROMPT_HISTORY=true claude`;
+    ? `cmd /c "set CLAUDE_CODE_SKIP_PROMPT_HISTORY=true&& set CLAUDE_AFK_TIMEOUT_MS=60000&& ${cmd}"`
+    : `env CLAUDE_CODE_SKIP_PROMPT_HISTORY=true CLAUDE_AFK_TIMEOUT_MS=60000 ${cmd}`;
 }
 
 function warmTerminal(agent) {
