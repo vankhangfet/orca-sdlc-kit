@@ -76,7 +76,15 @@ While the pipeline runs, the flow writes a live dashboard into the worktree: ope
 `<worktree>/.orca/artifacts/status.html` in a browser (it opens by itself when
 the run starts) and it updates on its own — which step is running,
 what is done, what comes next, timings, retry attempts, and the final artifact
-list. An interrupted run resumed with `--from` continues the same picture, with
+list.
+
+Steps that carry a task checklist (`progress` in config — the coding step does)
+also get a live **Tasks card**: the coding agent first breaks the plan into a
+checkbox list (`.orca/artifacts/TASKS.md`), then ticks each task off as it
+works — `○` queued, `◐` in progress, `✓` done — so mid-coding you always know
+what is done, what is in flight and what is left.
+
+An interrupted run resumed with `--from` continues the same picture, with
 earlier steps keeping their original durations. If the page can't be written
 (e.g. a read-only folder) the run continues untouched — the dashboard never
 affects the pipeline. Disable the auto-open with `--no-open-status` or

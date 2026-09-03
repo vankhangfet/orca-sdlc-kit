@@ -44,6 +44,7 @@ config field, with examples for common situations.
   "enabled": true,               // false = SKIP this step
   "agent": "codex",              // agent that runs the step
   "writes": "CHANGES.md",        // artifact filename this step writes (in artifactsDir)
+  "progress": "TASKS.md",        // (optional) task-checklist file this step keeps updated
   "reads": ["detailed-design"],  // ids of steps whose output this step needs
   "spec": "...{reads}...{out}...",// prompt given to the agent
   "onFailGoto": "coding",        // (optional) loop back here on outcome=failed
@@ -76,6 +77,17 @@ and flags may be appended, e.g. `"kiro-cli --trust-all-tools"` for unattended ru
 
 **`writes`** — filename (no path) the step writes its output to. The full path is
 `artifactsDir + "/" + writes`. This is what later steps read back.
+
+**`progress`** — (optional) filename (no path) of a Markdown task checklist the
+step's agent maintains inside `artifactsDir` (e.g. `TASKS.md`). While the step
+runs, the orchestrator polls the file and renders every checkbox line on the
+live status page: `- [ ]` not started, `- [~]` in progress, `- [x]` done
+(a 2+ space indent marks a sub-task). **Display only** — it never affects step
+outcomes, retries or liveness. The step's `spec` must tell the agent to write
+the file and keep it current; use the `{tasks}` placeholder in the spec to
+reference the path (substituted like `{out}`). The shipped configs' coding
+steps (`TASKS.md` / `FIX_TASKS.md`) contain ready-to-copy wording. A missing
+or malformed checklist is ignored silently — the run is never affected.
 
 **`reads`** — array of step `id`s this step depends on. The orchestrator turns it
 into a list of input files and injects it into `{reads}` in the spec. A step with
@@ -274,7 +286,9 @@ Every real run writes a self-updating dashboard next to the artifacts:
 - `<worktree>/<artifactsDir>/status.html` — open it in any browser; it refreshes itself every 2 seconds (works straight from disk — no server, no ports).
 - `<worktree>/<artifactsDir>/status.js` — the snapshot the page reads; rewritten by the orchestrator at every step event.
 
-It shows the objective, an overall badge (RUNNING / DONE / FAILED / UNKNOWN / STILL RUNNING — "still running" means the flow stopped with a step's terminal left open; resume with `--from`), a progress bar, and every pipeline step with its agent, live elapsed time, durations, retry attempts (`attempt 2`, ...), approval-gate waits (manual mode) and — at the end — the artifact list. Steps excluded by `enabled:false`, `--only` or `--from` render as SKIPPED, except when a previous run's history (same config) exists in the same worktree: the page then merges it, so a `--from` resume shows one continuous picture (durations of earlier steps included).
+It shows the objective, an overall badge (RUNNING / DONE / FAILED / UNKNOWN / STILL RUNNING — "still running" means the flow stopped with a step's terminal left open; resume with `--from`), a progress bar, and every pipeline step with its agent, live elapsed time, durations, retry attempts (`attempt 2`, ...), approval-gate waits (manual mode) and — at the end — the artifact list. Steps that declare a `progress` checklist also get a live **Tasks card** —
+per-task `○` queued / `◐` in progress / `✓` done, read straight from the file
+the coding agent ticks as it works. Steps excluded by `enabled:false`, `--only` or `--from` render as SKIPPED, except when a previous run's history (same config) exists in the same worktree: the page then merges it, so a `--from` resume shows one continuous picture (durations of earlier steps included).
 
 The page opens automatically when the run starts (`explorer.exe` on Windows, `open` on macOS, `xdg-open` on Linux). Turn that off with `--no-open-status`, or per-project with `"defaults": { "openStatus": false }`. If writing the page fails (e.g. a read-only folder) the run continues untouched — the dashboard never affects pipeline execution. `node .orca/flow.mjs --status-preview` renders a fixture page showing every state without a run — it cannot be combined with an objective or `--only`/`--from`/`--agent`; real runs write and open the page automatically and need no flag.
 
