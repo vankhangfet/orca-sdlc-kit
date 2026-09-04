@@ -10,6 +10,9 @@ CLAUDE.md
 # Dev fixture from --status-preview
 .orca/status-preview/
 
+# Dev fixture for usage-report helpers
+.orca/usage-test/
+
 # Internal docs (not published)
 docs/
 

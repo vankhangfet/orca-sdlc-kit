@@ -449,6 +449,79 @@ function finishStatus(overall) {
   writeStatus();
 }
 
+// ===== usage-report: pure helpers (extract-tested by .orca/usage-test/run-tests.mjs — keep dependency-free) =====
+// These functions reference NOTHING from module scope (no cfg/STATUS/fs/log) so
+// the test harness can lift the whole block out of the file with a regex and
+// execute it. Filesystem work stays in reportUsage() below the end marker.
+
+// Claude Code stores per-project transcripts in ~/.claude/projects/<slug>/ where
+// <slug> is the cwd with every non-alphanumeric char replaced by '-'.
+function claudeProjectSlug(p) {
+  return String(p || "").replace(/[^A-Za-z0-9]/g, "-") || "-";
+}
+// Compare filesystem paths across case and slash conventions (win32).
+function normPath(p) {
+  return String(p || "").replace(/\\/g, "/").toLowerCase().replace(/\/+$/, "");
+}
+// Claude Code session transcript (.jsonl, one JSON object per line):
+//  - entry.cwd / entry.timestamp (ISO) on every record
+//  - user entries: message.content = string | [{type:"text",text}]
+//  - assistant entries: message.usage { input_tokens, output_tokens,
+//    cache_read_input_tokens, cache_creation_input_tokens }
+function parseClaudeSession(text) {
+  const out = { agent: "claude", cwd: null, userText: "", events: [], subagent: false, firstTs: null, lastTs: null, stepId: null };
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!line.startsWith("{")) continue;
+    let j; try { j = JSON.parse(line); } catch { continue; }
+    const ts = j.timestamp ? Date.parse(j.timestamp) : null;
+    if (j.cwd && !out.cwd) out.cwd = j.cwd;
+    if (ts != null) {
+      if (out.firstTs == null || ts < out.firstTs) out.firstTs = ts;
+      if (out.lastTs == null || ts > out.lastTs) out.lastTs = ts;
+    }
+    if (j.type === "user" && j.message) {
+      const c = j.message.content;
+      const txt = typeof c === "string" ? c
+        : Array.isArray(c) ? c.filter((b) => b && typeof b.text === "string").map((b) => b.text).join("\n") : "";
+      if (txt && out.userText.length < 40000) out.userText += txt + "\n";
+    }
+    if (j.type === "assistant" && j.message && j.message.usage && ts != null) {
+      const u = j.message.usage;
+      out.events.push({ ts, in: u.input_tokens || 0, out: u.output_tokens || 0,
+        cr: u.cache_read_input_tokens || 0, cw: u.cache_creation_input_tokens || 0 });
+    }
+  }
+  return out;
+}
+// Codex session rollout (.jsonl): session_meta.payload.cwd; user text in
+// event_msg payloads of type "user_message" (.message); usage in
+// token_usage_record.payload.usage { input_tokens, cached_input_tokens,
+// cache_write_input_tokens, output_tokens }.
+function parseCodexSession(text) {
+  const out = { agent: "codex", cwd: null, userText: "", events: [], subagent: false, firstTs: null, lastTs: null, stepId: null };
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!line.startsWith("{")) continue;
+    let j; try { j = JSON.parse(line); } catch { continue; }
+    const ts = j.timestamp ? Date.parse(j.timestamp) : null;
+    const cwd = j.payload && j.payload.cwd ? j.payload.cwd : j.cwd;
+    if (cwd && !out.cwd) out.cwd = cwd;
+    if (ts != null) {
+      if (out.firstTs == null || ts < out.firstTs) out.firstTs = ts;
+      if (out.lastTs == null || ts > out.lastTs) out.lastTs = ts;
+    }
+    if (j.type === "event_msg" && j.payload && j.payload.type === "user_message" && typeof j.payload.message === "string") {
+      if (out.userText.length < 40000) out.userText += j.payload.message + "\n";
+    }
+    if (j.type === "token_usage_record" && j.payload && j.payload.usage && ts != null) {
+      const u = j.payload.usage;
+      out.events.push({ ts, in: u.input_tokens || 0, out: u.output_tokens || 0,
+        cr: u.cached_input_tokens || 0, cw: u.cache_write_input_tokens || 0 });
+    }
+  }
+  return out;
+}
+// ===== usage-report: pure helpers end =====
+
 // Parse a progress checklist (e.g. TASKS.md) an agent maintains mid-step.
 // Grammar: one checkbox per line — "- [ ]" todo, "- [~]" doing, "- [x]"/"- [X]"
 // done; an indent of 2+ spaces marks a sub-task. Every other line (headers,
