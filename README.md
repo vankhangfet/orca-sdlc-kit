@@ -2,11 +2,21 @@
 
 **Describe a feature in one sentence. Get back a planned, designed, coded, reviewed, tested and documented implementation.**
 
-A small "software team" of AI agents inside Orca ADE — planner, architect, coder, reviewers, tester, writer. You give the objective; they run the relay. Cross-platform (Windows / macOS / Linux), one folder, needs only Node.
+## Why this kit
+
+Driving AI coding agents by hand does not survive a real feature:
+
+- **You become the pipeline.** Copy the plan to the coder, paste the code to a reviewer, carry the feedback back — babysitting terminals, one prompt at a time, for every step of every task.
+- **Context drifts.** Each fresh chat forgets what the previous one decided. You re-explain the design every time, or the agent re-breaks what review just fixed.
+- **Quality is whatever the agent says it is.** Nothing forces a review, a security pass or tests to actually happen — and nothing sends the coder back when they fail.
+- **One harness carries everything.** Plan, code and docs in a single context window: one bad answer mid-project poisons everything downstream, and switching tools means rebuilding your whole workflow.
+- **A long run is a black box.** Is that 40-minute coding step working or hung? If your session dies at step 7 of 9, you start over from zero.
+
+With **Orca ADE** providing the runtime — disposable worktrees, agent terminals, run and task tracking — this kit turns that into an assembly line: a small "software team" of agents (planner, architect, coder, reviewers, tester, writer). Each does one job, writes its result to disk as readable Markdown, and hands it to the next; quality failures loop back automatically, independent steps run in parallel, a live dashboard shows every move, and an interrupted run resumes where it stopped. Cross-platform (Windows / macOS / Linux), one folder, needs only Node.
 
 Two ideas drive the whole kit:
 
-- **It works like a real SDLC.** Every step is a specialist that does one job, writes its result to disk as readable Markdown, and hands it to the next step. Review, security and test failures loop back to the coder automatically — the pipeline doesn't just generate code, it defends its quality. Independent steps even run at the same time: the two design passes work in parallel.
+- **It works like a real SDLC.** Not one agent improvising everything: a sequence of specialists with quality gates between them — review, security and test failures loop back to the coder automatically, so the pipeline doesn't just generate code, it defends its quality. Independent steps even run at the same time: the two design passes work in parallel.
 - **The harness is yours to swap.** Each step runs on whichever AI you pick — claude, codex, opencode, gemini, cursor, grok or kiro-cli — mixed freely across the pipeline. Enable, reorder or reassign a step in one JSON config; no code edits, ever.
 
 ## How it works
