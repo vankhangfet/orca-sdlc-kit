@@ -1156,8 +1156,9 @@ function settleMember(m, outcome, done) {
 }
 
 // Run one group to settlement of EVERY member. Silence/hard-cap semantics
-// per member are identical to the sequential runner (see runStep's comments
-// below); a hard-capped member settles as still-running and is dropped from
+// per member are identical to the sequential runner (see workerVitals and
+// launchMember above): timeoutMs = max silence, hardTimeoutMs = absolute
+// cap; a hard-capped member settles as still-running and is dropped from
 // the wait set — the pipeline then stops (main loop) with a resume hint.
 function runGroup(members) {
   for (const s of members) statusBegin(s.id);
@@ -1238,115 +1239,6 @@ function runGroup(members) {
   return M;
 }
 
-// Start the worker, then wait for worker_done — in SLICES, verifying between
-// slices that the worker is still alive. One fixed --wait cannot work: it
-// turns "agent slower than the budget" into a false outcome=unknown while the
-// agent is still working. Semantics after this fix:
-//   timeoutMs (per step / defaults) = max SILENCE before giving up on a worker
-//   hardTimeoutMs (default 4x timeoutMs) = cap even for a busy-but-endless
-//   worker; on hit, the terminal is LEFT OPEN and the flow stops with a
-//   resume hint (outcome=still-running).
-// Returns { outcome, note, terminal }.
-function runStep(step) {
-  const taskId = ensureTask(step);
-  log(`> ${step.title}  (agent=${agentOf(step)}, task=${taskId})`);
-  const { dispatchId, terminal } = startWorker(step, taskId);
-
-  // Manual-mode interactive steps sit idle while waiting for human answers —
-  // give them the same generous budgets as the grill interview.
-  const interactiveNow = !AUTO_RUN && step.interactive;
-  const baseIdleMs = timeoutOf(step);
-  const baseHardMs = step.hardTimeoutMs ?? cfg.defaults?.hardTimeoutMs ?? 4 * baseIdleMs;
-  const maxIdleMs = interactiveNow ? Math.max(baseIdleMs, 3600000) : baseIdleMs;
-  const hardCapMs = interactiveNow ? Math.max(baseHardMs, 14400000) : baseHardMs;
-  const SLICE_MS = Math.min(120000, maxIdleMs);
-  const startedAt = Date.now();
-  let lastBusy = Date.now();
-  let lastPreview;                 // undefined = not observed yet (baseline)
-  let done = null, note = "";
-  let quietWarned = false;         // warn once about a quiet-but-alive worker
-  while (true) {
-    refreshProgress(step);   // task checklist snapshot (display-only)
-    writeStatus();   // heartbeat: keep the page's "updated Xs ago" fresh each slice
-    const wait = orca(["orchestration", "check", "--run", RUN_ID, "--wait",
-      "--types", "worker_done,escalation,question", "--timeout-ms", String(SLICE_MS)],
-      { timeoutMs: SLICE_MS + 60000 });
-    const d = res(wait.json);
-    const did = pick(d, ["deliveryId", "delivery_id"]) ?? pick(d.delivery || {}, ["id"]);
-    const msgs = pick(d, ["messages", "msgs"]) || [];
-    done = msgs.find((m) => pick(m, ["type"]) === "worker_done") || null;
-    if (did) orca(["orchestration", "check", "--run", RUN_ID, "--ack", did]);
-    if (done) break;
-    // Surface questions/escalations, but they don't settle the step.
-    for (const m of msgs) {
-      const ty = pick(m, ["type"]);
-      if (ty === "question" || ty === "escalation")
-        log(`  [${ty}] ${pick(m, ["subject"]) || ""}`);
-    }
-
-    const v = workerVitals(taskId, terminal, dispatchId);
-    if (v.settled) {
-      // Drain any pending worker_done delivery first — both to prefer the
-      // message's own payload and so it cannot leak into the next step's
-      // wait (a bound Run replays unacknowledged deliveries).
-      const drain = orca(["orchestration", "check", "--run", RUN_ID, "--types", "worker_done"]);
-      const dr = res(drain.json);
-      const drid = pick(dr, ["deliveryId", "delivery_id"]) ?? pick(dr.delivery || {}, ["id"]);
-      const drained = (pick(dr, ["messages", "msgs"]) || []).find((m) => pick(m, ["type"]) === "worker_done") || null;
-      if (drid) orca(["orchestration", "check", "--run", RUN_ID, "--ack", drid]);
-      done = drained || { payload: JSON.stringify({ outcome: v.outcome }) };
-      break;
-    }
-    // Freshness: a CHANGING preview proves the TUI is rendering new content
-    // (working). A frozen preview for maxIdleMs = hung / parked at a static
-    // screen — even if lastOutputAt still ticks (idle repaints). Timestamps
-    // are only the fallback when no preview is exposed.
-    if (v.preview != null) {
-      if (lastPreview === undefined || v.preview !== lastPreview) {
-        lastPreview = v.preview;
-        lastBusy = Date.now();
-      }
-    } else if (v.lastBusyMs > 0 && Date.now() - v.lastBusyMs < maxIdleMs) {
-      lastBusy = Date.now();
-    }
-    const silenceMs = Date.now() - lastBusy;
-    // Hard cap first: absolute per-step limit, busy or quiet.
-    if (Date.now() - startedAt >= hardCapMs) {
-      log(`[warn] "${step.title}" not settled after ${Math.round((Date.now() - startedAt) / 60000)}min; ` +
-          `leaving its terminal open and stopping the pipeline.`);
-      return { outcome: "still-running", note: `not settled after ${Math.round((Date.now() - startedAt) / 60000)}min`, terminal };
-    }
-    // Silence alone is NOT proof of death: a worker deep in one long tool
-    // call renders a static screen for tens of minutes (verified incident:
-    // a 60-min code review was falsely failed at 15 min while its dispatch
-    // was alive, and the blind retry double-dispatched the task while the
-    // reviewer was still working). Only a POSITIVE failure (dispatch failed
-    // / worker_report) settles a step as failed; a quiet-but-alive dispatch
-    // is waited on up to the hard cap above, then left running.
-    if (silenceMs >= maxIdleMs && !quietWarned) {
-      quietWarned = true;
-      warn(`"${step.title}" quiet for ${Math.round(silenceMs / 60000)}min but its dispatch is alive (status=${v.status}) — ` +
-           `waiting up to the ${Math.round(hardCapMs / 60000)}min hard cap before giving up.`);
-      statusSet(step.id, { note: `quiet ${Math.round(silenceMs / 60000)}min but alive — waiting to the hard cap` });
-      writeStatus();
-    }
-  }
-  refreshProgress(step);   // final snapshot: catch the last ticks before worker_done
-  // Settled (done reported) => clean up. Manual path: the terminal is ours,
-  // close it. Cold path: the terminal is dispatch-owned, release it. On an
-  // unknown outcome keep everything for inspection (per Orca guidance).
-  if (done) {
-    if (terminal) {
-      const c = orca(["terminal", "close", "--terminal", terminal]);
-      if (!c.ok) warn(`terminal close '${step.title}' did not confirm: ${c.stderr || c.raw}`);
-    } else if (dispatchId) {
-      const rel = orca(["orchestration", "worker-release", "--dispatch", dispatchId]);
-      if (!rel.ok) warn(`worker-release '${step.title}' did not confirm: ${rel.stderr || rel.raw}`);
-    }
-  }
-  return { outcome: outcomeOf(done) || "unknown", note, terminal };
-}
-
 // Gate after a step (manual mode only — autoRun ignores gates entirely).
 // Blocks until the gate is resolved (or defaults.gateTimeoutMs passes).
 function runGate(step) {
@@ -1386,63 +1278,65 @@ function runGate(step) {
 }
 
 // =============================================================================
-// Main loop, with onFailGoto retries
+// Main loop over run-order groups, with onFailGoto retries
 // =============================================================================
 const retriesUsed = {};
-let i = 0;
-while (i < steps.length) {
-  const step = steps[i];
-  statusBegin(step.id);
-  const r = runStep(step);
-  const outcome = r.outcome;
-  statusEnd(step.id, outcome, r.note);
+let gi = 0;
+while (gi < groups.length) {
+  const results = runGroup(groups[gi]);   // settles EVERY member (incl. hard-capped)
 
-  if (outcome === "succeeded") {
-    log(`[ok] ${step.title} done -> ${outPath(step.writes)}`);
-    if (step.gate && !AUTO_RUN) runGate(step);
-    i++;
-    continue;
-  }
-
-  // Healthy but endless worker: the terminal stays open so it can finish.
-  // Tell the user exactly how to continue instead of looping or dying blindly.
-  if (outcome === "still-running") {
-    STATUS.overall = "still-running";   // die() only overwrites "running"
-    writeStatus();
-    const next = steps[i + 1];
-    die(`"${step.title}" ${r.note}. Its terminal ${r.terminal || "(dispatch-owned)"} was left OPEN to finish. ` +
-        `Watch it; once it reports done and writes ${outPath(step.writes)}, continue with:\n` +
-        `  node .orca/flow.mjs --from ${next ? next.id : step.id} "<objective>"`);
-  }
-
-  // Only a POSITIVE failed outcome may trigger the onFailGoto fix loop.
-  // Anything else ("unknown": silent worker, lost report) means we could not
-  // tell — a blind retry has double-dispatched a live task before (the
-  // reviewer was still working when the coder was re-started under it).
-  if (outcome !== "failed")
-    die(`"${step.title}" returned outcome=${outcome}${r.note ? ` (${r.note})` : ""}. ` +
-        `Not retrying without a definite failure — inspect the terminal/artifacts, then re-run with --from ${step.id}.`);
-
-  const gotoId = step.onFailGoto;
-  if (gotoId && enabledIds.has(gotoId)) {
-    const key = `${step.id}->${gotoId}`;
-    retriesUsed[key] = (retriesUsed[key] || 0) + 1;
-    if (retriesUsed[key] > MAX_RETRIES) {
-      die(`"${step.title}" failed and exhausted ${MAX_RETRIES} retries. See ${outPath(step.writes)}.`);
+  // Post-join outcome handling, in array order. The first terminal action
+  // (die / retry jump) wins; a retry re-runs the whole group anyway.
+  let jumped = false;
+  for (const r of results) {
+    if (r.outcome === "succeeded") {
+      log(`[ok] ${r.step.title} done -> ${outPath(r.step.writes)}`);
+      if (r.step.gate && !AUTO_RUN) runGate(r.step);
+      continue;
     }
-    log(`[fail] ${step.title} FAILED${r.note ? ` (${r.note})` : ""} -> back to "${byId[gotoId].title}" (attempt ${retriesUsed[key]}/${MAX_RETRIES})`);
-    const back = byId[gotoId];
-    // Reopen the coding task for another attempt. task-update has no --spec on this
-    // build, so we don't rewrite the spec; instead we drop a fix note into the report
-    // artifact the coding step already reads. The coding spec + the failing report
-    // (REVIEW/SECURITY_REVIEW/TEST_REPORT) tell the agent what to fix.
-    orca(["orchestration", "task-update", "--id", taskIds[gotoId], "--status", "ready",
-      "--result", JSON.stringify({ reason: `fix from ${step.id} #${retriesUsed[key]}`, see: outPath(step.writes) })]);
-    i = steps.findIndex((s) => s.id === gotoId);
-    continue;
-  }
 
-  die(`"${step.title}" returned outcome=${outcome}${r.note ? ` (${r.note})` : ""} and has no valid onFailGoto. Stopping.`);
+    // Healthy but endless worker: the terminal stays open so it can finish.
+    // Tell the user exactly how to continue instead of looping or dying blindly.
+    if (r.outcome === "still-running") {
+      STATUS.overall = "still-running";   // die() only overwrites "running"
+      writeStatus();
+      const nextGroup = groups[gi + 1];
+      const next = nextGroup ? nextGroup[0] : null;
+      die(`"${r.step.title}" ${r.note}. Its terminal ${r.terminal || "(dispatch-owned)"} was left OPEN to finish. ` +
+          `Watch it; once it reports done and writes ${outPath(r.step.writes)}, continue with:\n` +
+          `  node .orca/flow.mjs --from ${next ? next.id : r.step.id} "<objective>"`);
+    }
+
+    // Only a POSITIVE failed outcome may trigger the onFailGoto fix loop.
+    // Anything else ("unknown": silent worker, lost report) means we could not
+    // tell — a blind retry has double-dispatched a live task before (the
+    // reviewer was still working when the coder was re-started under it).
+    if (r.outcome !== "failed")
+      die(`"${r.step.title}" returned outcome=${r.outcome}${r.note ? ` (${r.note})` : ""}. ` +
+          `Not retrying without a definite failure — inspect the terminal/artifacts, then re-run with --from ${r.step.id}.`);
+
+    const gotoId = r.step.onFailGoto;
+    if (gotoId && enabledIds.has(gotoId)) {
+      const key = `${r.step.id}->${gotoId}`;
+      retriesUsed[key] = (retriesUsed[key] || 0) + 1;
+      if (retriesUsed[key] > MAX_RETRIES) {
+        die(`"${r.step.title}" failed and exhausted ${MAX_RETRIES} retries. See ${outPath(r.step.writes)}.`);
+      }
+      log(`[fail] ${r.step.title} FAILED${r.note ? ` (${r.note})` : ""} -> back to "${byId[gotoId].title}" (attempt ${retriesUsed[key]}/${MAX_RETRIES})`);
+      // Reopen the fix target for another attempt. task-update has no --spec
+      // on this build, so we drop a fix note into the result the target's
+      // next run reads (its spec + the failing report tell it what to fix).
+      orca(["orchestration", "task-update", "--id", taskIds[gotoId], "--status", "ready",
+        "--result", JSON.stringify({ reason: `fix from ${r.step.id} #${retriesUsed[key]}`, see: outPath(r.step.writes) })]);
+      gi = groups.findIndex((g) => g.some((m) => m.id === gotoId));   // re-run its group
+      jumped = true;
+      break;
+    }
+
+    die(`"${r.step.title}" returned outcome=${r.outcome}${r.note ? ` (${r.note})` : ""} and has no valid onFailGoto. Stopping.`);
+  }
+  if (jumped) continue;
+  gi++;
 }
 
 finishStatus("succeeded");
