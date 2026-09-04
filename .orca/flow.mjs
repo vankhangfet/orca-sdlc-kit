@@ -148,6 +148,61 @@ if (steps.length === 0) die("No steps to run (all skipped?).");
 
 const enabledIds = new Set(steps.map((s) => s.id));
 
+// --- Parallel groups: "parallelWith": "<id>" on a step runs it concurrently
+// with the named EARLIER step. Flat groups only (the target must not carry
+// parallelWith itself); members must sit contiguously after the target in
+// run order; the first step AFTER the group is the join barrier (it waits
+// for every member). Computed after --from/--only slicing: a member whose
+// target fell out of the run set degrades to sequential (warn, not die).
+for (const s of steps) {
+  if (!s.parallelWith) continue;
+  const id = s.parallelWith;
+  const t = byId[id];
+  if (!t) die(`step "${s.id}": parallelWith "${id}" is not a known step id.`);
+  if (t.enabled === false) die(`step "${s.id}": parallelWith "${id}" is disabled in the config.`);
+  if (!enabledIds.has(id)) {
+    warn(`step "${s.id}": parallelWith "${id}" is not part of this run — running it sequentially.`);
+    delete s.parallelWith;
+    continue;
+  }
+  if (steps.indexOf(t) > steps.indexOf(s))
+    die(`step "${s.id}": parallelWith "${id}" must appear EARLIER in the pipeline array.`);
+  if (t.parallelWith)
+    die(`step "${s.id}": parallelWith chains are not allowed — "${id}" itself declares parallelWith.`);
+  if (!AUTO_RUN && s.interactive)
+    die(`step "${s.id}": interactive steps cannot join a parallel group in manual mode.`);
+  const reads = new Set(effectiveReads(s));
+  if (reads.has(id))
+    die(`step "${s.id}" reads "${id}" — dependent steps cannot run in parallel with what they read.`);
+  for (const m of steps)
+    if (m.parallelWith === id && m !== s && reads.has(m.id))
+      die(`step "${s.id}" reads "${m.id}" — dependent steps cannot run in parallel.`);
+}
+
+// Run-order groups: [target, ...members] contiguously, singletons otherwise.
+const groups = (() => {
+  const membersOf = new Map();
+  for (const s of steps)
+    if (s.parallelWith) {
+      if (!membersOf.has(s.parallelWith)) membersOf.set(s.parallelWith, []);
+      membersOf.get(s.parallelWith).push(s);
+    }
+  const out = [];
+  for (let i = 0; i < steps.length;) {
+    const members = membersOf.get(steps[i].id);
+    if (!members) { out.push([steps[i]]); i++; continue; }
+    for (let k = 0; k < members.length; k++)
+      if (steps.indexOf(members[k]) !== i + 1 + k)
+        die(`parallel group of "${steps[i].id}" must be contiguous: keep every step with parallelWith:"${steps[i].id}" immediately after it in the pipeline.`);
+    out.push([steps[i], ...members]);
+    i += 1 + members.length;
+  }
+  return out;
+})();
+// Members of a >1 group (drives the status page's ∥ chip and the dry-run plan).
+const isParallel = new Set();
+for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id);
+
 // A step's reads. Steps in this run always count. Steps NOT part of this run
 // (dropped by --from/--only, or disabled) still count when their artifact file
 // already exists in the worktree — that is the RESUME case: `--from coding`
@@ -899,12 +954,17 @@ function printPlan() {
     if (s.onFailGoto && enabledIds.has(s.onFailGoto)) flags.push(`onFail->${s.onFailGoto}`);
     if (s.gate && !AUTO_RUN) flags.push("gate");
     if (s.interactive && !AUTO_RUN) flags.push("interactive");
+    if (s.parallelWith) flags.push(`parallel-with ${s.parallelWith}`);
+    else if (isParallel.has(s.id)) flags.push("parallel-group");
     console.log(
       `  ${i + 1}. ${s.title.padEnd(26)} agent=${agentOf(s).padEnd(9)} ` +
       `reads=[${reads.join(", ") || "-"}] writes=${s.writes}` +
       (flags.length ? `  {${flags.join(", ")}}` : "")
     );
   });
+  const pg = groups.filter((g) => g.length > 1);
+  if (pg.length)
+    log(`Parallel groups: ${pg.map((g) => g.map((m) => m.id).join(" ∥ ")).join("; ")} — each group starts together; the next step waits for all of them.`);
   const skipped = allSteps.filter((s) => !enabledIds.has(s.id)).map((s) => s.id);
   if (skipped.length) log(`Skipped: ${skipped.join(", ")}`);
 }
