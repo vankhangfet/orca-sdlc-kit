@@ -397,6 +397,7 @@ STATUS = {
   steps: allSteps.map((s) => ({
     id: s.id, title: s.title, agent: agentOf(s), writes: s.writes || null,
     progress: s.progress || null,
+    parallel: isParallel.has(s.id),
     status: enabledIds.has(s.id) ? "pending" : "skipped",
     attempt: 0, startedAt: null, endedAt: null, durationMs: null, note: null,
     tasks: null,
@@ -546,7 +547,8 @@ function openStatusPage() {
 
 // Dev fixture covering EVERY state, rendered without an Orca run. With the
 // shipped flow.config.json the index mapping is: grill skipped (real config),
-// planning/architecture succeeded, detailed-design RUNNING, uiux-design NEXT,
+// planning/architecture succeeded, detailed-design RUNNING, uiux-design NEXT
+// (both carry the ∥ parallel chip — they form the parallelWith group),
 // coding failed attempt 2, code-review awaiting approval, security-review
 // unknown, testing skipped, documentation pending.
 function previewStatus() {
@@ -629,6 +631,7 @@ const STATUS_HTML = `<!doctype html>
   .next { border-left:2px solid #58a6ff; padding-left:10px; }
   .chip { font-size:10px; font-weight:700; letter-spacing:.5px; color:#58a6ff; border:1px solid #1f3a5f; border-radius:4px; padding:1px 6px; margin-left:8px; vertical-align:1px; }
   .chip.retry { color:#d29922; border-color:#44361d; }
+  .chip.par { color:#a371f7; border-color:#372459; }
   .tcard-title { font-weight:600; margin-bottom:8px; margin-top:14px; }
   .tcard-title:first-child { margin-top:0; }
   .trow { display:flex; align-items:baseline; gap:8px; padding:3px 6px; font-size:13px; }
@@ -698,6 +701,7 @@ const STATUS_HTML = `<!doctype html>
         '<span class="glyph">' + (GLYPH[s.status] || "·") + "</span>" +
         '<span class="name">' + esc(s.title) +
         (i === nextIdx ? '<span class="chip">NEXT</span>' : "") +
+        (s.parallel ? '<span class="chip par">∥ parallel</span>' : "") +
         (s.attempt > 1 ? '<span class="chip retry">attempt ' + s.attempt + "</span>" : "") +
         "</span>" +
         '<span class="agent">' + esc(s.agent || "") + "</span>" +
