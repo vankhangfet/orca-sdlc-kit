@@ -1,17 +1,31 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Last updated: 2026-09-04 · Proposal only — no committed dates.
+Current release: **v1.4.0** · Last updated: 2026-09-04 · Proposal only — no committed dates.
 
-One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on this page can change a run's outcome, timeout or retry.
+One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on the status page can change a run's outcome, timeout or retry.
+
+## At a glance
+
+| Track | Milestone | Theme |
+|---|---|---|
+| Shipped | v1.4.0 | Status page redesign — pipeline rail + detail pane |
+| Shipped | v1.3.0 | Parallel steps (`parallelWith`) |
+| In focus | **v2.0** | Trust & visibility — the next major |
+| Queued | v1.4+ | Speed & supervision — minor releases |
+| Later | — | The longer arc |
 
 ## Shipped
 
-| Feature | What shipped |
-|---|---|
-| **Status page redesign** (v1.4.0) | Two-pane dashboard: a vertical pipeline rail (status dots, purple-bracketed parallel groups, retry/NEXT/gate chips, per-step agent + duration) and a detail pane — Now running cards with big live elapsed timers, notes (quiet-but-alive, fix-from) and task mini-bars, Up next, the Tasks checklist and artifact chips with ✓; a failed run names the failed step and the exact `--from` resume command. Display-only contract and file:// polling unchanged |
-| **Parallel steps** (v1.3.0) | `"parallelWith": "<id>"` runs a step concurrently with an earlier one (flat, contiguous, independent groups); per-task settlement via dispatch-show keeps concurrent workers distinct; join barrier at the next step; retries re-run the target's group. The shipped config runs detailed-design ∥ uiux-design |
+| Version | Feature | What shipped |
+|---|---|---|
+| v1.4.0 | **Status page redesign** | Two-pane dashboard: a vertical pipeline rail (status dots, purple-bracketed parallel groups, retry/NEXT/gate chips, per-step agent + duration) and a detail pane — Now running cards with big live elapsed timers, notes (quiet-but-alive, fix-from) and task mini-bars, Up next, the Tasks checklist and artifact chips with ✓; a failed run names the failed step and the exact `--from` resume command. Display-only contract and file:// polling unchanged |
+| v1.3.0 | **Parallel steps** | `"parallelWith": "<id>"` runs a step concurrently with an earlier one (flat, contiguous, independent groups); per-task settlement via dispatch-show keeps concurrent workers distinct; join barrier at the next step; retries re-run the target's group. The shipped config runs detailed-design ∥ uiux-design |
 
-## Now — trust & visibility (target: v1.2)
+## v2.0 — trust & visibility (in focus)
+
+The next major is about confidence: every option does what it says, every config
+mistake surfaces before an agent starts, and everything a run did stays
+inspectable long after the terminal closes.
 
 | Feature | What changes technically | Where |
 |---|---|---|
@@ -22,7 +36,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 | **Run history** | Snapshots kept per run (`status-<runId>.js`, last 20) + a run selector on the page; "which step failed last time" answered by looking | status page |
 | **Auto-resume** | `--from auto` loads the previous status snapshot + checks artifacts on disk, resumes at the first unsettled step, prints what it chose and why. Manual `--from <id>` keeps precedence | CLI flag |
 
-## Next — speed & supervision (target: v1.3+)
+## v1.4+ — speed & supervision (queued, minor releases)
 
 | Feature | What changes technically | Where |
 |---|---|---|
@@ -42,8 +56,8 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 ## Sequencing rationale
 
 1. **Trust first** — validation + the settings fix: an option that silently does nothing, and mistakes that surface mid-run, both erode confidence in everything else.
-2. **Visibility** — artifact viewer, run log, history: multiply the value of the v1.1.0 Tasks card without touching run logic.
-3. **Speed & supervision** — notify, fallback, batch (parallel steps shipped — see top): each shrinks wall-clock or human attention per run.
+2. **Visibility** — artifact viewer, run log, history: multiply the value of the Tasks card without touching run logic.
+3. **Speed & supervision** — notify, fallback, batch (parallel steps already shipped): each shrinks wall-clock or human attention per run.
 
 ## Not building (by design)
 
@@ -51,3 +65,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 - **Bundled integrations** — no built-in chat/email/webhook targets; you connect your own.
 - **Checklist gating** — the task checklist stays a live view; the run never waits on checkbox state.
 - **A multi-file rewrite** — `flow.mjs` stays one script; one folder you copy is the product.
+
+---
+
+*Where-column legend:* **config field** = editable in `.orca/*.config.json` · **CLI flag** = `node .orca/flow.mjs` option · **status page** = rendered from `status.js` · **artifact** = file in the worktree's artifacts dir · **flow startup** = executor logic in `flow.mjs`.
