@@ -2,6 +2,22 @@
 
 **Describe a feature in one sentence. Get back a planned, designed, coded, reviewed, tested and documented implementation.**
 
+## Contents
+
+- [Why this kit](#why-this-kit)
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+  - [1. Set up your project](#1-set-up-your-project)
+  - [2. Configure your pipeline](#2-configure-your-pipeline)
+  - [3. Change the harness](#3-change-the-harness)
+- [Cheat sheet](#cheat-sheet)
+- [The pipelines](#the-pipelines)
+- [Watch it run — the live status page](#watch-it-run--the-live-status-page)
+- [When something goes wrong](#when-something-goes-wrong)
+- [Contributing](#contributing)
+- [Roadmap](#roadmap)
+- [License](#license)
+
 ## Why this kit
 
 Driving AI coding agents by hand does not survive a real feature:
