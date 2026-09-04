@@ -66,6 +66,7 @@ Everything lives in `.orca/flow.config.json` — no code edits, ever. The kit is
 | Add my own step (e.g. a lint gate) | add an entry to the `"pipeline"` array — order in the array is the run order |
 | Retry harder on failures | raise `"maxRetries"` (how often review/test failures loop back to coding) |
 | Give a step more time | raise its `"timeoutMs"` (max silence) / `"hardTimeoutMs"` (absolute cap) |
+| Run two steps at the same time | set `"parallelWith": "<earlier-step-id>"` on the later step — both start together; the next step waits for both |
 | Run just part of the pipeline | `--only planning,architecture "..."` |
 | Continue after a crash or a long step | re-run with `--from coding` — earlier artifacts are reused |
 
@@ -128,6 +129,8 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 
 \* Disabled by default; enable per run with `--grill-me` or permanently in config.
 † In manual mode this step interviews you first (see `autoRun` above).
+
+Steps 3 and 4 run **concurrently** (`parallelWith`) — both read Architecture, and Coding waits for both.
 
 **Bug fix (`fixbug.config.json`):** Root Cause Analysis -> Fix Plan -> Bug Fix incl. regression test -> Fix Verification, looping back on failure (max 2 retries).
 

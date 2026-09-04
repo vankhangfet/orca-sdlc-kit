@@ -1,8 +1,14 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Last updated: 2026-09-03 · Proposal only — no committed dates.
+Last updated: 2026-09-04 · Proposal only — no committed dates.
 
 One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on this page can change a run's outcome, timeout or retry.
+
+## Shipped
+
+| Feature | What shipped |
+|---|---|
+| **Parallel steps** | `"parallelWith": "<id>"` runs a step concurrently with an earlier one (flat, contiguous, independent groups); per-task settlement via dispatch-show keeps concurrent workers distinct; join barrier at the next step; retries re-run the target's group. The shipped config runs detailed-design ∥ uiux-design |
 
 ## Now — trust & visibility (target: v1.2)
 
@@ -19,7 +25,6 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Feature | What changes technically | Where |
 |---|---|---|
-| **Parallel steps** | New field `"parallelWith": "<id>"` runs independent steps concurrently (e.g. detailed-design ∥ uiux-design); join barrier before any step that `reads` both; fix-loop behavior on a failed branch defined. ~20–30% off typical run wall-clock | config field |
 | **End-of-run notifications** | `"notify": {"onEnd": "<cmd>", "onFail": "<cmd>"}` — executed argv-safe (no shell), with status/objective/failed-step/artifacts-dir as env vars. No bundled integrations; you plug in your own webhook/script | config field |
 | **Agent fallback on retry** | `"agentFallback": ["codex", "claude"]` — attempt N uses agentFallback[N-1]; the page already shows the agent per attempt. `--agent` flag keeps precedence | config field |
 | **Batch mode** | `--batch backlog.json` — array of objectives run sequentially, one Orca Run each, its own status snapshot per item; `--batch --dry-run` previews the whole queue | CLI flag |
@@ -37,7 +42,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 1. **Trust first** — validation + the settings fix: an option that silently does nothing, and mistakes that surface mid-run, both erode confidence in everything else.
 2. **Visibility** — artifact viewer, run log, history: multiply the value of the v1.1.0 Tasks card without touching run logic.
-3. **Speed & supervision** — parallel, notify, fallback, batch: each shrinks wall-clock or human attention per run.
+3. **Speed & supervision** — notify, fallback, batch (parallel steps shipped — see top): each shrinks wall-clock or human attention per run.
 
 ## Not building (by design)
 

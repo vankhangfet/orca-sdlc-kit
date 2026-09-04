@@ -48,6 +48,7 @@ config field, with examples for common situations.
   "reads": ["detailed-design"],  // ids of steps whose output this step needs
   "spec": "...{reads}...{out}...",// prompt given to the agent
   "onFailGoto": "coding",        // (optional) loop back here on outcome=failed
+  "parallelWith": "",            // (optional) id of an EARLIER step to run concurrently with
   "gate": false,                 // (optional) true = wait for approval after the step
   "model": "",                   // (optional) claude/codex/cursor only
   "effort": "",                  // (optional) requires model
@@ -107,6 +108,30 @@ the agent always knows the overall goal regardless of where the step sits.
 **`onFailGoto`** — (optional) the `id` of an earlier step. When the current step
 returns `outcome=failed`, the orchestrator loops back to that step to fix things,
 then resumes. Set to `null` or omit to disable. Loop count is bounded by `maxRetries`.
+
+**`parallelWith`** — (optional) id of an **earlier** step this step runs **concurrently**
+with. Both start together as one group; the first step *after* the group waits for
+every member (join barrier) — typically a step that `reads` both, like `coding`
+reading the two design docs. Rules (validated at startup and by `--dry-run`):
+
+- The target must exist, be enabled, and appear earlier in the `pipeline` array.
+- The group must be **contiguous**: every step declaring `parallelWith` against the
+  target sits immediately after it. No chains (the target itself must not declare
+  `parallelWith`). A group may hold more than two members.
+- Members must be **independent**: no member may `reads` another member.
+- `interactive` steps cannot join a group in manual mode (two simultaneous
+  terminal interviews would interleave).
+- If `--only`/`--from` drops the target from the run, the member runs sequentially
+  (warning, not an error) — the resume story is unchanged: `--from uiux-design`
+  picks up an existing `DETAILED_DESIGN.md` via section 4's artifact-exists rule.
+
+Failure semantics: outcomes are handled after the whole group settles, in array
+order. A hard-capped member settles as still-running (terminal left open) and the
+flow stops with the usual `--from` resume hint; a `failed` member follows the
+normal `onFailGoto` rules — note a retry re-runs the target's **whole group**.
+Settlement is per-task (`dispatch-show --task`), so concurrent workers cannot be
+confused for each other. The status page marks group members with a `∥ parallel`
+chip.
 
 **`gate`** — (optional) `true` means that after the step finishes, the orchestrator
 creates a **decision gate** and prints a `gate-resolve` command; the pipeline waits
@@ -207,6 +232,15 @@ its hard cap. Raise the cap when a full implementation legitimately runs long:
 ```jsonc
 { "id": "coding", "hardTimeoutMs": 7200000 /* 2 h */ }
 ```
+
+### 3.9. Run two steps at the same time
+Independent steps that both depend on the same input can run concurrently — the
+shipped config does this for the two design passes (both read Architecture,
+Coding waits for both):
+```jsonc
+{ "id": "uiux-design", "parallelWith": "detailed-design", /* ... */ }
+```
+Saves the length of the shorter step; verify the grouping with `--dry-run`.
 
 ---
 
@@ -325,5 +359,6 @@ entry. If `--dry-run` reports "Could not read flow.config.json", check those two
 - `enabled`: `true` · `false`
 - `gate`: `true` · `false`
 - `onFailGoto`: any `id` earlier in the pipeline, or `null`
+- `parallelWith`: an earlier step `id` (members run concurrently; the next step waits for all)
 - `reads`: array of `id`s (empty `[]` for a starting step)
 - time: milliseconds (15 min = `900000`, 30 min = `1800000`)
