@@ -6,7 +6,7 @@ A small "software team" of AI agents inside Orca ADE — planner, architect, cod
 
 Two ideas drive the whole kit:
 
-- **It works like a real SDLC.** Every step is a specialist that does one job, writes its result to disk as readable Markdown, and hands it to the next step. Review, security and test failures loop back to the coder automatically — the pipeline doesn't just generate code, it defends its quality.
+- **It works like a real SDLC.** Every step is a specialist that does one job, writes its result to disk as readable Markdown, and hands it to the next step. Review, security and test failures loop back to the coder automatically — the pipeline doesn't just generate code, it defends its quality. Independent steps even run at the same time: the two design passes work in parallel.
 - **The harness is yours to swap.** Each step runs on whichever AI you pick — claude, codex, opencode, gemini, cursor, grok or kiro-cli — mixed freely across the pipeline. Enable, reorder or reassign a step in one JSON config; no code edits, ever.
 
 ## How it works
@@ -32,6 +32,8 @@ flowchart LR
     T -- pass --> W[Documentation]
     W --> O["Working code + docs<br/>in your repo"]
 ```
+
+The two design steps (`Detailed design` and `UI / UX`) start together and run **concurrently** — one `parallelWith` line in the config; Coding waits for both. Any independent pair of steps can do this.
 
 Two things make this safe rather than a black box:
 
