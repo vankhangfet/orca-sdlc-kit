@@ -2,7 +2,12 @@
 
 **Describe a feature in one sentence. Get back a planned, designed, coded, reviewed, tested and documented implementation.**
 
-A small "software team" of AI agents inside Orca ADE — planner, architect, coder, reviewers, tester, writer. You give the objective; they run the relay. Every step is switched on/off, re-ordered or reassigned in one config file. Cross-platform (Windows / macOS / Linux), needs only Node.
+A small "software team" of AI agents inside Orca ADE — planner, architect, coder, reviewers, tester, writer. You give the objective; they run the relay. Cross-platform (Windows / macOS / Linux), one folder, needs only Node.
+
+Two ideas drive the whole kit:
+
+- **It works like a real SDLC.** Every step is a specialist that does one job, writes its result to disk as readable Markdown, and hands it to the next step. Review, security and test failures loop back to the coder automatically — the pipeline doesn't just generate code, it defends its quality.
+- **The harness is yours to swap.** Each step runs on whichever AI you pick — claude, codex, opencode, gemini, cursor, grok or kiro-cli — mixed freely across the pipeline. Enable, reorder or reassign a step in one JSON config; no code edits, ever.
 
 ## How it works
 
@@ -33,7 +38,9 @@ Two things make this safe rather than a black box:
 - **Everything is left on disk.** Each step writes a readable Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result.
 - **Quality failures loop back.** If review, security review or tests find problems, the coder is sent back to fix them — automatically, up to a bounded number of retries.
 
-## Set up your project
+## Quick start
+
+### 1. Set up your project
 
 1. Copy `orca.yaml` and the `.orca/` folder into your project root.
 2. Add `.orca/artifacts/` to your `.gitignore`.
@@ -48,14 +55,13 @@ node .orca/flow.mjs "Build a login page"             # the real run
 
 Optional Orca button — Settings -> Quick Commands (scope **Project**): `Run SDLC flow` -> `node .orca/flow.mjs "Objective"`.
 
-## Configure it for your project
+### 2. Configure your pipeline
 
 Everything lives in `.orca/flow.config.json` — no code edits, ever. The kit is stack-agnostic; to force a specific tool, name it in a step's `spec` (e.g. "run tests with pytest").
 
 | I want to... | Do this |
 |---|---|
 | Skip a step (e.g. no UI/UX) | set `"enabled": false` on that step — later steps adjust automatically |
-| Use a different AI for a step | edit `"agent"` — claude, codex, opencode, gemini, cursor, grok, kiro-cli |
 | Change what a step does | edit its `"spec"` text; `{out}` / `{reads}` / `{tasks}` are filled in for you |
 | Add my own step (e.g. a lint gate) | add an entry to the `"pipeline"` array — order in the array is the run order |
 | Retry harder on failures | raise `"maxRetries"` (how often review/test failures loop back to coding) |
@@ -68,38 +74,40 @@ Two knobs cover the rest:
 - **`autoRun` (default `true`) — how much it asks you.** `true`: start it and walk away — agents never ask, they decide and record assumptions in the artifact for you to audit later; gates are ignored, and Claude Code agents run with permission bypass (full tool access; one-time per-machine acceptance on first use) so nothing waits for a click. `false` (manual mode): agents may ask in their terminal; steps with `"gate": true` pause for your approval, and steps with `"interactive": true` (the shipped Architecture step) interview you — one question at a time, confirming every decision before writing.
 - **The worktree (default: auto-detected) — where it runs.** Agents run in the Orca worktree of the folder you launch from. Pin only when launching from outside the target: `--worktree name:lab2` for one run, `ORCA_FLOW_WORKTREE` for your machine. A wrong pin fails immediately with the list of valid worktrees — never mid-run.
 
+### 3. Change the harness
+
+Any step, any agent — it is one field in the step's config entry:
+
+```json
+{
+  "id": "coding",
+  "title": "Coding",
+  "agent": "codex",
+  "spec": "..."
+}
+```
+
+- **Supported agents:** `claude`, `codex`, `opencode`, `gemini`, `cursor`, `grok`, `kiro-cli`. The shipped config already mixes them — coding on codex, testing on opencode, the rest on claude.
+- **For one run only:** `node .orca/flow.mjs --agent coding=claude "Objective"` — the config stays untouched.
+- **Agent flags work too:** a value like `"claude --model x"` keeps your flags, and multi-word values like `"kiro-cli --trust-all-tools"` are passed through as-is.
+
 Full field reference (timeouts, models, custom steps, the fix loop): [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md).
 
-## Watch it run — the live status page
+## Cheat sheet
 
-Start a run and a dashboard opens itself in your browser —
-`<worktree>/.orca/artifacts/status.html` — and keeps updating on its own while
-the agents work: which step is running, what is done, what comes next, timings,
-retry attempts and the final artifact list. No refresh button, no server; the
-page re-reads its snapshot from disk every couple of seconds.
+```bash
+node .orca/flow.mjs "Objective"                     # the whole pipeline
+node .orca/flow.mjs --dry-run "Objective"           # preview only — always try this first
+node .orca/flow.mjs --status-preview                # sample dashboard only — never with an objective
+node .orca/flow.mjs --from coding "Objective"       # resume / skip the design phase
+node .orca/flow.mjs --only planning,architecture "Objective"
+node .orca/flow.mjs --grill-me "Objective"          # interview me before planning
+node .orca/flow.mjs --agent coding=claude "Objective"   # one-off agent swap for a step
+node .orca/flow.mjs --config fixbug.config.json "Bug report"
+node .orca/flow.mjs --worktree name:lab "Objective" # only when launching from outside the target
+```
 
-![The Orca Flow status dashboard: pipeline steps on top, and below it the live
-Tasks card showing each implementation task as ○ queued, ◐ in progress or
-✓ done](img/status_dashboard.png)
-
-The star of the mid-run view is that **Tasks card**. Steps that carry a task
-checklist (`progress` in config — the coding step does) show every
-implementation task as a checkbox list (`.orca/artifacts/TASKS.md`) that the
-coding agent ticks off as it works — `○` queued, `◐` in progress, `✓` done —
-so mid-coding you always know what is done, what is in flight and what is left,
-without opening a single file.
-
-An interrupted run resumed with `--from` continues the same picture, with
-earlier steps keeping their original durations. If the page can't be written
-(e.g. a read-only folder) the run continues untouched — the dashboard never
-affects the pipeline. Disable the auto-open with `--no-open-status` or
-`"defaults": { "openStatus": false }`.
-
-Want a peek without starting a run? `node .orca/flow.mjs --status-preview`
-writes a sample dashboard showing every state to `.orca/status-preview/`.
-It is a fixture only — never combine it with an objective or
-`--only`/`--from`/`--agent` (the flow refuses the mix). Real runs need no
-flag: the page opens by itself.
+Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow.config.json`, then run normally.
 
 ## The pipelines
 
@@ -127,21 +135,29 @@ flag: the page opens by itself.
 node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavior, how to reproduce>"
 ```
 
-## Cheat sheet
+## Watch it run — the live status page
 
-```bash
-node .orca/flow.mjs "Objective"                     # the whole pipeline
-node .orca/flow.mjs --dry-run "Objective"           # preview only — always try this first
-node .orca/flow.mjs --status-preview                # sample dashboard only — never with an objective
-node .orca/flow.mjs --from coding "Objective"       # resume / skip the design phase
-node .orca/flow.mjs --only planning,architecture "Objective"
-node .orca/flow.mjs --grill-me "Objective"          # interview me before planning
-node .orca/flow.mjs --agent coding=claude "Objective"
-node .orca/flow.mjs --config fixbug.config.json "Bug report"
-node .orca/flow.mjs --worktree name:lab "Objective" # only when launching from outside the target
-```
+Start a run and a dashboard opens itself in your browser —
+`<worktree>/.orca/artifacts/status.html` — and keeps updating on its own while
+the agents work: which step is running, what is done, what comes next, timings,
+retry attempts and the final artifact list. No refresh button, no server.
 
-Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow.config.json`, then run normally.
+![The Orca Flow status dashboard: pipeline steps on top, and below it the live
+Tasks card showing each implementation task as ○ queued, ◐ in progress or
+✓ done](img/status_dashboard.png)
+
+The star of the mid-run view is that **Tasks card**: steps with a task
+checklist (`progress` in config — the coding step has one) show every
+implementation task as `○` queued, `◐` in progress or `✓` done
+(`.orca/artifacts/TASKS.md`), ticked off live by the coding agent — so you
+always know what is done and what is left without opening a single file.
+
+A run resumed with `--from` continues the same picture, earlier steps keeping
+their original durations. If the page can't be written the run continues
+untouched — the dashboard never affects the pipeline. Peek without a run:
+`node .orca/flow.mjs --status-preview` (never combined with an objective or
+`--only`/`--from`/`--agent`). Disable auto-open with `--no-open-status` or
+`"defaults": { "openStatus": false }`.
 
 ## When something goes wrong
 
@@ -153,9 +169,26 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 - **CLI flags differ on your Orca version** — check `orca skills get orchestration --full`.
 - **Claude agent crashes with `EBADF ... history.jsonl.lock` (Windows)** — known Claude Code bug ([#15739](https://github.com/anthropics/claude-code/issues/15739)); the flow already spawns Claude agents in a way that avoids it. If it still happens, close other Claude Code sessions during interactive steps, or update Claude Code.
 
+## Contributing
+
+Issues and pull requests are welcome at [github.com/vankhangfet/orca-sdlc-kit](https://github.com/vankhangfet/orca-sdlc-kit). A few ground rules keep the kit what it is:
+
+- **Pipeline behavior belongs in the configs.** New behavior means a new field in `flow.config.json` / `fixbug.config.json` plus a paragraph in [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md) — not new logic in `flow.mjs`.
+- **Docs ship with the change.** Update `README.md` and `.orca/CONFIGURATION.md` in the same PR as any behavior change.
+- **Conventional commits** (`feat:`, `fix:`, `docs:`, ...). Never commit `docs/` (internal notes) or `.orca/artifacts/` (runtime output) — both are gitignored.
+- **Verify before you push.** There is no build or test toolchain; the loop is:
+
+```bash
+node --check .orca/flow.mjs                                                        # syntax
+node -e "JSON.parse(require('fs').readFileSync('.orca/flow.config.json','utf8'))"   # config validity
+node .orca/flow.mjs --dry-run --worktree name:lab2 "objective"                     # plan preview (this repo is not a worktree)
+```
+
+Looking for something to pick up? [ROADMAP.md](ROADMAP.md) lists what's planned — and, just as important, what will *not* be built.
+
 ## Roadmap
 
-What's next — run history and an artifact viewer for the status page, auto-resume, parallel steps, notifications, agent fallback on retries, batch runs and more: [ROADMAP.md](ROADMAP.md).
+Next up: config validation before any agent starts, an artifact viewer and run history on the status page, auto-resume, parallel steps, notifications and batch runs — see [ROADMAP.md](ROADMAP.md).
 
 ## License
 
