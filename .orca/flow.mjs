@@ -473,7 +473,8 @@ function parseClaudeSession(text) {
   for (const line of String(text || "").split(/\r?\n/)) {
     if (!line.startsWith("{")) continue;
     let j; try { j = JSON.parse(line); } catch { continue; }
-    const ts = j.timestamp ? Date.parse(j.timestamp) : null;
+    const parsed = j.timestamp ? Date.parse(j.timestamp) : NaN;
+    const ts = Number.isFinite(parsed) ? parsed : null;
     if (j.cwd && !out.cwd) out.cwd = j.cwd;
     if (ts != null) {
       if (out.firstTs == null || ts < out.firstTs) out.firstTs = ts;
@@ -502,7 +503,8 @@ function parseCodexSession(text) {
   for (const line of String(text || "").split(/\r?\n/)) {
     if (!line.startsWith("{")) continue;
     let j; try { j = JSON.parse(line); } catch { continue; }
-    const ts = j.timestamp ? Date.parse(j.timestamp) : null;
+    const parsed = j.timestamp ? Date.parse(j.timestamp) : NaN;
+    const ts = Number.isFinite(parsed) ? parsed : null;
     const cwd = j.payload && j.payload.cwd ? j.payload.cwd : j.cwd;
     if (cwd && !out.cwd) out.cwd = cwd;
     if (ts != null) {
