@@ -12,7 +12,7 @@ Driving AI coding agents by hand does not survive a real feature:
 - **One harness carries everything.** Plan, code and docs in a single context window: one bad answer mid-project poisons everything downstream, and switching tools means rebuilding your whole workflow.
 - **A long run is a black box.** Is that 40-minute coding step working or hung? If your session dies at step 7 of 9, you start over from zero.
 
-With **Orca ADE** providing the runtime — disposable worktrees, agent terminals, run and task tracking — this kit turns that into an assembly line: a small "software team" of agents (planner, architect, coder, reviewers, tester, writer). Each does one job, writes its result to disk as readable Markdown, and hands it to the next; quality failures loop back automatically, independent steps run in parallel, a live dashboard shows every move, and an interrupted run resumes where it stopped. Cross-platform (Windows / macOS / Linux), one folder, needs only Node.
+With **[Orca ADE](https://www.onorca.dev/)** providing the runtime — disposable worktrees, agent terminals, run and task tracking — this kit turns that into an assembly line: a small "software team" of agents (planner, architect, coder, reviewers, tester, writer). Each does one job, writes its result to disk as readable Markdown, and hands it to the next; quality failures loop back automatically, independent steps run in parallel, a live dashboard shows every move, and an interrupted run resumes where it stopped. Cross-platform (Windows / macOS / Linux), one folder, needs only Node.
 
 Two ideas drive the whole kit:
 
@@ -56,7 +56,7 @@ Two things make this safe rather than a black box:
 
 **Prerequisites — Orca comes first.** This kit has no runtime of its own: it drives agents inside **Orca ADE** terminals and worktrees, so nothing runs without it. Before starting, make sure you have:
 
-- **Orca ADE installed and signed in** — the kit spawns agent terminals, worktrees and Runs through it; no Orca, no run.
+- **[Orca ADE](https://www.onorca.dev/) installed and signed in** — the kit spawns agent terminals, worktrees and Runs through it; no Orca, no run.
 - **Node.js** (any recent version) — the orchestrator is one Node script, zero npm dependencies.
 - **The agent CLIs you plan to use** — e.g. `claude`, `codex`, `opencode` — installed and logged in; Orca launches whatever the config names.
 
