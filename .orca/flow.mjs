@@ -555,6 +555,7 @@ function previewStatus() {
   const S = JSON.parse(JSON.stringify(STATUS));
   S.meta.runId = "preview-run-0000";
   S.meta.worktree = WT || WT_PIN || "(preview)";
+  S.meta.objective = S.meta.objective || "Build a login page with email + Google sign-in (sample)";
   S.meta.startedAt = Date.now() - 3720000;
   S.meta.updatedAt = Date.now();
   S.overall = "running";
@@ -600,38 +601,60 @@ const STATUS_HTML = `<!doctype html>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background:#0d1017; color:#d7dce4; font:14px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif; padding:24px; }
-  .wrap { max-width: 860px; margin: 0 auto; }
+  .wrap { max-width: 980px; margin: 0 auto; }
   .card { background:#151a23; border:1px solid #232b38; border-radius:10px; padding:18px 20px; margin-bottom:14px; }
-  .objective { font-size:16px; font-weight:600; margin-bottom:6px; word-wrap:break-word; }
-  .meta { color:#8b949e; font-size:12px; display:flex; flex-wrap:wrap; gap:14px; }
-  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.5px; margin-bottom:8px; }
+  .hdrow { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .objective { font-size:16px; font-weight:700; color:#fff; word-wrap:break-word; }
+  .meta { color:#8b949e; font-size:12px; display:flex; flex-wrap:wrap; gap:14px; margin-top:6px; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.5px; flex:none; }
   .badge.running { background:#0c2d1b; color:#3fb950; border:1px solid #1d4428; animation:pulse 1s infinite; }
   .badge.succeeded { background:#0c2d1b; color:#3fb950; border:1px solid #1d4428; }
   .badge.failed, .badge.unknown { background:#2d0c0e; color:#f85149; border:1px solid #442126; }
   .badge.still-running { background:#2d230c; color:#d29922; border:1px solid #44361d; }
   @keyframes pulse { 50% { opacity:.55; } }
-  .bar { height:8px; background:#21262d; border-radius:4px; overflow:hidden; margin:10px 0 2px; }
+  .bar { height:6px; background:#21262d; border-radius:3px; overflow:hidden; margin-top:10px; }
   .bar > i { display:block; height:100%; background:#3fb950; transition:width .4s; }
   .count { color:#8b949e; font-size:12px; }
-  .step { display:flex; align-items:center; gap:12px; padding:10px 6px; border-bottom:1px solid #1c2330; flex-wrap:wrap; }
-  .step:last-child { border-bottom:none; }
-  .glyph { width:22px; text-align:center; font-weight:700; flex:none; }
-  .name { font-weight:600; }
-  .step.pending .name, .step.skipped .name { color:#6e7681; font-weight:400; }
-  .step.skipped .name { text-decoration: line-through; }
-  .agent { color:#58a6ff; font-size:12px; flex:none; min-width:86px; }
-  .dur { color:#8b949e; font-size:12px; margin-left:auto; flex:none; font-variant-numeric:tabular-nums; }
-  .note { color:#d29922; font-size:12px; flex-basis:100%; }
-  .step.running .glyph, .step.running .name { color:#3fb950; }
-  .step.running .glyph { animation:pulse 1s infinite; }
-  .step.succeeded .glyph { color:#3fb950; }
-  .step.failed .glyph, .step.failed .name { color:#f85149; }
-  .step.unknown .glyph { color:#8b949e; }
-  .step.waiting-approval .glyph, .step.waiting-approval .name { color:#d29922; }
-  .next { border-left:2px solid #58a6ff; padding-left:10px; }
-  .chip { font-size:10px; font-weight:700; letter-spacing:.5px; color:#58a6ff; border:1px solid #1f3a5f; border-radius:4px; padding:1px 6px; margin-left:8px; vertical-align:1px; }
+  .main { display:flex; padding:0; overflow:hidden; align-items:stretch; }
+  .rail { flex:0 0 250px; border-right:1px solid #1c2330; padding:14px; min-width:0; }
+  .pane { flex:1 1 auto; min-width:0; padding:14px 16px; }
+  .label { color:#8b949e; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin:0 0 8px; }
+  .pane .label:not(:first-child) { margin-top:16px; }
+  .tl { position:relative; }
+  .tl::before { content:""; position:absolute; left:5px; top:10px; bottom:10px; width:2px; background:#21262d; }
+  .tstep { position:relative; display:flex; gap:10px; padding:4px 0; }
+  .tdot { flex:none; width:12px; height:12px; border-radius:50%; margin-top:4px; background:#0d1017; z-index:1; box-shadow:0 0 0 3px #151a23; }
+  .tdot.done { background:#3fb950; }
+  .tdot.run { background:#d29922; animation:pulse 1s infinite; }
+  .tdot.pend { background:#30363d; }
+  .tdot.fail { background:#f85149; }
+  .tdot.dim { background:#30363d; opacity:.55; }
+  .tt { min-width:0; flex:1; }
+  .tt b { display:block; font-size:12.5px; font-weight:600; }
+  .tt b.st-pend { color:#6e7681; font-weight:400; }
+  .tt b.st-run { color:#d29922; }
+  .tt b.st-fail { color:#f85149; }
+  .tt b.st-dim { color:#6e7681; font-weight:400; text-decoration:line-through; }
+  .tt b.st-unk { color:#8b949e; font-weight:400; }
+  .tsub { color:#8b949e; font-size:10.5px; display:flex; gap:6px; flex-wrap:wrap; }
+  .tsub .a { color:#58a6ff; }
+  .pgrp { margin:2px 0 2px -8px; padding-left:8px; border-left:2px solid #a371f7; background:linear-gradient(90deg, rgba(163,113,247,.08), transparent 70%); }
+  .chip { display:inline-block; font-size:9px; font-weight:700; letter-spacing:.5px; border:1px solid #1f3a5f; color:#58a6ff; border-radius:4px; padding:1px 6px; margin-left:6px; vertical-align:1px; }
   .chip.retry { color:#d29922; border-color:#44361d; }
   .chip.par { color:#a371f7; border-color:#372459; }
+  .nowcard { background:#151a23; border:1px solid #238636; border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+  .nowcard.warn { border-color:#44361d; }
+  .nowcard .nh { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .nowcard .t { font-size:16px; font-weight:700; color:#fff; }
+  .nowcard .a { color:#58a6ff; font-size:12px; }
+  .nowcard .e { margin-left:auto; color:#3fb950; font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .nowcard .note { color:#d29922; font-size:12px; margin-top:6px; }
+  .minibar { height:5px; background:#21262d; border-radius:3px; overflow:hidden; margin-top:8px; }
+  .minibar > i { display:block; height:100%; background:#a371f7; transition:width .4s; }
+  .tcount { color:#8b949e; font-size:11px; margin-top:4px; }
+  .upnext { display:flex; align-items:baseline; gap:8px; color:#8b949e; font-size:12.5px; padding:3px 0; flex-wrap:wrap; }
+  .upnext .t { color:#d7dce4; font-weight:600; }
+  .upnext .a { color:#58a6ff; }
   .tcard-title { font-weight:600; margin-bottom:8px; margin-top:14px; }
   .tcard-title:first-child { margin-top:0; }
   .trow { display:flex; align-items:baseline; gap:8px; padding:3px 6px; font-size:13px; }
@@ -644,24 +667,33 @@ const STATUS_HTML = `<!doctype html>
   .trow.doing .tglyph { animation:pulse 1s infinite; }
   .trow.todo .tglyph, .trow.todo .ttext { color:#6e7681; }
   .thint { color:#8b949e; font-size:12px; font-style:italic; }
-  .arts { font-size:12px; color:#8b949e; word-break:break-all; }
+  .artchip { display:inline-block; color:#d7dce4; background:#0d1017; border:1px solid #1c2330; border-radius:4px; padding:1px 6px; margin:2px 4px 2px 0; font-size:11.5px; word-break:break-all; }
+  .artchip.dim { color:#6e7681; }
+  .artdone { color:#3fb950; margin-right:4px; font-weight:700; }
+  @media (max-width:760px) {
+    .main { flex-direction:column; }
+    .rail { flex:none; border-right:none; border-bottom:1px solid #1c2330; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card" id="head"></div>
-  <div class="card" id="list"></div>
-  <div class="card" id="tasks" style="display:none"></div>
-  <div class="card arts" id="arts" style="display:none"></div>
+  <div class="card main">
+    <div class="rail" id="rail"></div>
+    <div class="pane" id="pane"></div>
+  </div>
 </div>
 <script>
 (function () {
   var S = null;
-  var GLYPH = { pending:"○", running:"▶", succeeded:"✓", failed:"✗",
-                skipped:"⊘", unknown:"?", "waiting-approval":"⏸" };
   var LABEL = { pending:"PENDING", running:"RUNNING", succeeded:"DONE", failed:"FAILED",
                 skipped:"SKIPPED", unknown:"UNKNOWN", "waiting-approval":"AWAITING APPROVAL",
                 "still-running":"STILL RUNNING" };
+  var DOT = { succeeded:"done", running:"run", "waiting-approval":"run", failed:"fail",
+              pending:"pend", skipped:"dim", unknown:"dim" };
+  var TC = { succeeded:"", running:"st-run", "waiting-approval":"st-run", failed:"st-fail",
+             pending:"st-pend", skipped:"st-dim", unknown:"st-unk" };
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
     return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]; }); }
   function dur(ms) {
@@ -671,47 +703,135 @@ const STATUS_HTML = `<!doctype html>
     return h ? h + "h " + String(m).padStart(2, "0") + "m" : m + "m " + String(s).padStart(2, "0") + "s";
   }
   function since(ts) { return ts ? Math.max(0, Date.now() - ts) : null; }
+  function isLive(s) { return s.status === "running" || s.status === "waiting-approval"; }
+
+  function railStep(s, idx, nextIdx) {
+    var d = isLive(s) ? dur(since(s.startedAt)) : (s.status === "skipped" ? "" : dur(s.durationMs));
+    return '<div class="tstep"><span class="tdot ' + (DOT[s.status] || "pend") + '"></span>' +
+      '<div class="tt"><b class="' + (TC[s.status] || "") + '">' + esc(s.title) +
+      (s.parallel ? '<span class="chip par">∥</span>' : "") +
+      (idx === nextIdx ? '<span class="chip">NEXT</span>' : "") +
+      (s.attempt > 1 ? '<span class="chip retry">attempt ' + s.attempt + "</span>" : "") +
+      "</b>" +
+      '<div class="tsub">' + (s.agent ? '<span class="a">' + esc(s.agent) + "</span>" : "") +
+      (d ? "<span>" + d + "</span>" : "") +
+      (s.status === "waiting-approval" ? '<span style="color:#d29922">gate open</span>' : "") +
+      "</div></div></div>";
+  }
+
   function render() {
     if (!S) return;
-    var runIdx = -1;
+    var act = [], lastRun = -1;
     for (var k = 0; k < S.steps.length; k++) {
-      var rs = S.steps[k].status;
-      if (rs === "running" || rs === "waiting-approval") { runIdx = k; break; }
+      if (isLive(S.steps[k])) { act.push(S.steps[k]); lastRun = k; }
     }
     var nextIdx = -1;
-    if (runIdx >= 0) for (var j = runIdx + 1; j < S.steps.length; j++)
+    for (var j = lastRun + 1; j < S.steps.length; j++)
       if (S.steps[j].status === "pending") { nextIdx = j; break; }
     var done = 0;
     S.steps.forEach(function (s) { if (s.status === "succeeded" || s.status === "skipped") done++; });
     var pct = S.steps.length ? Math.round((done / S.steps.length) * 100) : 0;
+    var countExtra = "";
+    if (act.length === 1)
+      countExtra = " · " + (act[0].title || "") + (act[0].attempt > 1 ? " (attempt " + act[0].attempt + ")" : "");
+    else if (act.length > 1) countExtra = " · " + act.length + " steps in parallel";
+
+    // --- header ---
     document.getElementById("head").innerHTML =
-      '<div class="badge ' + esc(S.overall) + '">' + esc(LABEL[S.overall] || String(S.overall || "").toUpperCase()) + "</div>" +
-      '<div class="objective">' + esc(S.meta.objective || "(no objective)") + "</div>" +
+      '<div class="hdrow"><span class="badge ' + esc(S.overall) + '">' +
+      esc(LABEL[S.overall] || String(S.overall || "").toUpperCase()) + '</span>' +
+      '<span class="objective">' + esc(S.meta.objective || "(no objective)") + "</span></div>" +
       '<div class="meta"><span>run: ' + esc(String(S.meta.runId || "").slice(0, 8)) + "</span>" +
       "<span>worktree: " + esc(S.meta.worktree || "-") + "</span>" +
       "<span>config: " + esc(S.meta.config || "-") + "</span>" +
       "<span>elapsed: " + dur(since(S.meta.startedAt)) + "</span>" +
       "<span>updated " + Math.max(0, Math.round((Date.now() - S.meta.updatedAt) / 1000)) + "s ago</span></div>" +
       '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
-      '<div class="count">' + done + "/" + S.steps.length + " steps done</div>";
-    var html = "";
-    S.steps.forEach(function (s, i) {
-      var liveDur = (s.status === "running" || s.status === "waiting-approval") ? dur(since(s.startedAt)) : dur(s.durationMs);
-      html += '<div class="step ' + esc(s.status) + (i === nextIdx ? " next" : "") + '">' +
-        '<span class="glyph">' + (GLYPH[s.status] || "·") + "</span>" +
-        '<span class="name">' + esc(s.title) +
-        (i === nextIdx ? '<span class="chip">NEXT</span>' : "") +
-        (s.parallel ? '<span class="chip par">∥ parallel</span>' : "") +
-        (s.attempt > 1 ? '<span class="chip retry">attempt ' + s.attempt + "</span>" : "") +
-        "</span>" +
-        '<span class="agent">' + esc(s.agent || "") + "</span>" +
-        '<span class="dur">' + liveDur + "</span>" +
-        (s.note ? '<span class="note">' + esc(s.note) + "</span>" : "") +
+      '<div class="count">' + done + "/" + S.steps.length + " steps" + countExtra + "</div>";
+
+    // --- rail: vertical pipeline timeline, parallel runs bracketed ---
+    var rail = "";
+    var i = 0;
+    while (i < S.steps.length) {
+      if (S.steps[i].parallel) {
+        var j2 = i;
+        while (j2 < S.steps.length && S.steps[j2].parallel) j2++;
+        rail += '<div class="pgrp">';
+        for (var q = i; q < j2; q++) rail += railStep(S.steps[q], q, nextIdx);
+        rail += "</div>";
+        i = j2;
+        continue;
+      }
+      rail += railStep(S.steps[i], i, nextIdx);
+      i++;
+    }
+    document.getElementById("rail").innerHTML =
+      '<div class="label">Pipeline</div><div class="tl">' + rail + "</div>";
+
+    // --- pane: now running / summary, up next, tasks, artifacts ---
+    var pane = "";
+    if (act.length) {
+      pane += '<div class="label">Now running</div>';
+      act.forEach(function (s) {
+        pane += '<div class="nowcard' + (s.note ? " warn" : "") + '">' +
+          '<div class="nh"><span class="t">' + esc(s.title) + "</span>" +
+          '<span class="a">' + esc(s.agent || "") + "</span>" +
+          (s.attempt > 1 ? '<span class="chip retry">attempt ' + s.attempt + "</span>" : "") +
+          '<span class="e">' + dur(since(s.startedAt)) + "</span></div>" +
+          (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "");
+        if (s.tasks && s.tasks.length) {
+          var tdone = 0;
+          s.tasks.forEach(function (t) { if (t.status === "done") tdone++; });
+          var tpct = s.tasks.length ? Math.round((tdone / s.tasks.length) * 100) : 0;
+          pane += '<div class="minibar"><i style="width:' + tpct + '%"></i></div>' +
+            '<div class="tcount">tasks ' + tdone + "/" + s.tasks.length + "</div>";
+        } else if (s.progress) {
+          pane += '<div class="thint">waiting for ' + esc(s.progress) + " — the agent has not written its task list yet</div>";
+        }
+        pane += "</div>";
+      });
+    } else {
+      var failedStep = null, lastEnd = 0;
+      S.steps.forEach(function (s) {
+        if (!failedStep && s.status === "failed") failedStep = s;
+        if (s.endedAt && s.endedAt > lastEnd) lastEnd = s.endedAt;
+      });
+      var total = (S.meta.startedAt && lastEnd) ? dur(lastEnd - S.meta.startedAt) : "";
+      pane += '<div class="nowcard" style="border-color:#232b38">' +
+        '<div class="nh"><span class="badge ' + esc(S.overall) + '">' +
+        esc(LABEL[S.overall] || String(S.overall || "").toUpperCase()) + "</span>" +
+        '<span class="t">' + done + "/" + S.steps.length + " steps" +
+        (total ? " · " + total + " total" : "") + "</span></div>" +
+        (failedStep ? '<div class="note">' + esc(failedStep.title) +
+          (failedStep.note ? " — " + esc(failedStep.note) : "") +
+          " — re-run with --from " + esc(failedStep.id) + "</div>" : "") +
         "</div>";
-    });
-    document.getElementById("list").innerHTML = html;
+    }
+
+    if (nextIdx >= 0) {
+      pane += '<div class="label">Up next</div>';
+      var cluster = [S.steps[nextIdx]];
+      if (S.steps[nextIdx].parallel) {
+        var m = nextIdx + 1;
+        while (m < S.steps.length && S.steps[m].parallel && S.steps[m].status === "pending") {
+          cluster.push(S.steps[m]); m++;
+        }
+      }
+      cluster.forEach(function (s) {
+        pane += '<div class="upnext"><span>→</span><span class="t">' + esc(s.title) + "</span>" +
+          '<span class="a">' + esc(s.agent || "") + "</span>" +
+          (s.parallel ? '<span class="chip par">∥</span>' : "") + "</div>";
+      });
+      if (act.length)
+        pane += '<div class="upnext" style="color:#6e7681">starts when the ' + act.length +
+          " running step" + (act.length > 1 ? "s settle" : " settles") + "</div>";
+    }
+
     var tasksHtml = "";
-    S.steps.forEach(function (s) {
+    var ordered = S.steps.slice().sort(function (a, b) {
+      return (isLive(a) ? 0 : 1) - (isLive(b) ? 0 : 1);
+    });
+    ordered.forEach(function (s) {
       if (s.tasks && s.tasks.length) {
         var tdone = 0;
         s.tasks.forEach(function (t) { if (t.status === "done") tdone++; });
@@ -724,19 +844,22 @@ const STATUS_HTML = `<!doctype html>
             '<span class="tglyph">' + (t.status === "done" ? "✓" : t.status === "doing" ? "◐" : "○") + "</span>" +
             '<span class="ttext">' + esc(t.text) + "</span></div>";
         });
-      } else if (s.progress && s.status === "running") {
+      } else if (s.progress && isLive(s)) {
         tasksHtml += '<div class="tcard-title">Tasks — ' + esc(s.title) + "</div>" +
           '<div class="thint">waiting for ' + esc(s.progress) + " — the agent has not written its task list yet</div>";
       }
     });
-    var tcard = document.getElementById("tasks");
-    if (tasksHtml) { tcard.style.display = ""; tcard.innerHTML = tasksHtml; }
-    else { tcard.style.display = "none"; }
-    var arts = document.getElementById("arts");
-    if (S.artifacts && S.artifacts.length) {
-      arts.style.display = "";
-      arts.innerHTML = "<b>Artifacts</b><br>" + S.artifacts.map(esc).join(" · ");
-    }
+    if (tasksHtml) pane += '<div class="label">Tasks</div>' + tasksHtml;
+
+    var arts = "";
+    S.steps.forEach(function (s) {
+      if (!s.writes) return;
+      arts += (s.status === "succeeded" ? '<span class="artdone">✓</span>' : "") +
+        '<span class="artchip' + (s.status === "succeeded" ? "" : " dim") + '">' + esc(s.writes) + "</span>";
+    });
+    if (arts) pane += '<div class="label">Artifacts</div>' + arts;
+
+    document.getElementById("pane").innerHTML = pane;
   }
   window.__ON_STATUS = function () { S = window.__STATUS; render(); };
   setInterval(render, 1000);   // running timers + "updated Xs ago" stay fresh

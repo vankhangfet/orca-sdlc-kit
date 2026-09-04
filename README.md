@@ -147,9 +147,11 @@ Start a run and a dashboard opens itself in your browser —
 the agents work: which step is running, what is done, what comes next, timings,
 retry attempts and the final artifact list. No refresh button, no server.
 
-![The Orca Flow status dashboard: pipeline steps on top, and below it the live
-Tasks card showing each implementation task as ○ queued, ◐ in progress or
-✓ done](img/status_dashboard.png)
+![The Orca Flow status dashboard: a vertical pipeline timeline on the left (a
+dot per step — green done, amber running, red failed — with parallel steps
+bracketed), and on the right live cards: the step(s) running now with big
+elapsed timers, what's up next, the Tasks checklist (○ queued, ◐ in progress,
+✓ done) and the artifact list](img/status_dashboard.png)
 
 The star of the mid-run view is that **Tasks card**: steps with a task
 checklist (`progress` in config — the coding step has one) show every

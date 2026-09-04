@@ -12,3 +12,6 @@ CLAUDE.md
 
 # Internal docs (not published)
 docs/
+
+# Visual brainstorm companion (local only)
+.superpowers/
