@@ -54,6 +54,12 @@ Two things make this safe rather than a black box:
 
 ### 1. Set up your project
 
+**Prerequisites — Orca comes first.** This kit has no runtime of its own: it drives agents inside **Orca ADE** terminals and worktrees, so nothing runs without it. Before starting, make sure you have:
+
+- **Orca ADE installed and signed in** — the kit spawns agent terminals, worktrees and Runs through it; no Orca, no run.
+- **Node.js** (any recent version) — the orchestrator is one Node script, zero npm dependencies.
+- **The agent CLIs you plan to use** — e.g. `claude`, `codex`, `opencode` — installed and logged in; Orca launches whatever the config names.
+
 1. Copy `orca.yaml` and the `.orca/` folder into your project root.
 2. Add `.orca/artifacts/` to your `.gitignore`.
 3. In Orca: Settings -> Experimental -> enable **Orchestration** (verify with `orca status --json`).
