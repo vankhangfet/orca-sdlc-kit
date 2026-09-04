@@ -522,6 +522,101 @@ function parseCodexSession(text) {
   }
   return out;
 }
+// Step signatures for session attribution. The spec HEAD (text before the first
+// {out}/{reads}/{tasks} placeholder) is the discriminator: it is unique per step
+// and cannot appear in another step's session via {reads} substitution (which
+// injects titles + artifact PATHS, not spec text). The resolved {out} path is a
+// weak secondary — later steps cite earlier artifacts in their reads.
+function stepSignatures(stepsIn, outPathFn) {
+  const sigs = [];
+  for (const s of stepsIn) {
+    if (!s || !s.id || !s.spec) continue;
+    const resolved = outPathFn(s.writes || "");
+    const head = String(s.spec).split(/{(?:out|reads|tasks)}/)[0];
+    sigs.push({ id: s.id, out: resolved, spec: head.length >= 12 ? head : "" });
+  }
+  return sigs;
+}
+function matchSessionToStep(session, sigs) {
+  if (!session.userText) return null;
+  const heads = new Set(), outs = new Set();
+  for (const g of sigs) {
+    if (g.spec && session.userText.includes(g.spec)) heads.add(g.id);
+    if (g.out && session.userText.includes(g.out)) outs.add(g.id);
+    }
+  if (heads.size === 1) return [...heads][0];
+  if (heads.size > 1) return null;            // ambiguous — never guess
+  return outs.size === 1 ? [...outs][0] : null;
+}
+// Attribution + summation. Rules (spec §Attribution):
+//  - prior-run steps (window entirely before this run) are NOT recounted
+//  - current attempt = the matched session with the latest first event;
+//    earlier matched sessions are "+N extra attempts" (their windows were
+//    overwritten in status) and count within [runStart, reportTs]
+//  - window filter [startedAt-60s, endedAt+120s] keeps only this attempt's
+//    tokens; no endedAt (unfinished) -> [startedAt-60s, reportTs]
+//  - subagent transcripts (no spec preamble) go to the unique step window
+//    containing their last event, else to the run-level unattributed bucket
+//  - unmatched regular sessions are ignored (user-run agents in the worktree)
+function attributeAndSum(input) {
+  const { steps: stepsIn, sessions, runStart, reportTs, adapters } = input;
+  const WIN_PRE = 60000, WIN_POST = 120000;
+  const zero = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
+  const addEvs = (acc, evs, lo, hi) => {
+    for (const e of evs) if (e.ts >= lo && e.ts <= hi) {
+      acc.in += e.in; acc.out += e.out; acc.cacheRead += e.cr; acc.cacheWrite += e.cw;
+    }
+  };
+  const perStep = {};
+  for (const st of stepsIn) perStep[st.id] = { ...zero, total: 0, note: null };
+  const unattributed = { ...zero, count: 0 };
+
+  const byStep = new Map();
+  for (const s of sessions) {
+    if (s.subagent || !s.stepId) continue;
+    if (!byStep.has(s.stepId)) byStep.set(s.stepId, []);
+    byStep.get(s.stepId).push(s);
+  }
+
+  for (const st of stepsIn) {
+    const u = perStep[st.id];
+    if (st.status === "pending" || st.status === "skipped") continue;   // never ran — no row noise
+    if (st.startedAt != null && st.startedAt < runStart - WIN_PRE) { u.note = "prior run"; continue; }
+    const mine = byStep.get(st.id) || [];
+    if (!mine.length) { u.note = adapters.includes(st.agent) ? "no session found" : "no adapter"; continue; }
+    mine.sort((a, b) => (a.firstTs ?? 0) - (b.firstTs ?? 0));
+    const extras = mine.slice(0, -1);
+    const cur = mine[mine.length - 1];
+    const lo = (st.startedAt ?? cur.firstTs ?? runStart) - WIN_PRE;
+    const hi = st.endedAt != null ? st.endedAt + WIN_POST : reportTs;
+    addEvs(u, cur.events, lo, hi);
+    const notes = [];
+    if (st.endedAt == null) notes.push("unfinished");
+    if (extras.length) {
+      for (const x of extras) addEvs(u, x.events, runStart, reportTs);
+      notes.push("+" + extras.length + " extra attempt" + (extras.length > 1 ? "s" : ""));
+    }
+    u.note = notes.join("; ") || null;
+  }
+
+  for (const s of sessions) {
+    if (!s.subagent) continue;
+    const hits = stepsIn.filter((st) => st.startedAt != null && st.endedAt != null &&
+      s.lastTs != null && s.lastTs >= st.startedAt - WIN_PRE && s.lastTs <= st.endedAt + WIN_POST);
+    if (hits.length === 1) addEvs(perStep[hits[0].id], s.events, -Infinity, Infinity);
+    else { unattributed.count++; addEvs(unattributed, s.events, -Infinity, Infinity); }
+  }
+
+  const totals = { ...zero };
+  for (const id in perStep) for (const k of ["in", "out", "cacheRead", "cacheWrite"]) totals[k] += perStep[id][k];
+  for (const k of ["in", "out", "cacheRead", "cacheWrite"]) totals[k] += unattributed[k];
+  for (const id in perStep) {
+    const u = perStep[id];
+    u.total = u.in + u.out + u.cacheRead + u.cacheWrite;
+  }
+  totals.total = totals.in + totals.out + totals.cacheRead + totals.cacheWrite;
+  return { perStep, totals, unattributed };
+}
 // ===== usage-report: pure helpers end =====
 
 // Parse a progress checklist (e.g. TASKS.md) an agent maintains mid-step.
