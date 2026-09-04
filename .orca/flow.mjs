@@ -1100,6 +1100,144 @@ function workerVitals(taskId, terminal, dispatchId) {
   return v;
 }
 
+// =============================================================================
+// Group execution: launch every member's worker, then ONE shared wait loop.
+// A single step is a group of one — semantics identical to the sequential
+// runner. The critical difference from a per-step loop: the run-scoped
+// `check --wait` can return ANY member's worker_done, so messages are only
+// credited to a member when they name its task id; per-task `workerVitals`
+// remains the authoritative settlement source either way.
+// =============================================================================
+
+// Create the task + start the worker; return the per-member bookkeeping.
+// Budgets mirror the sequential semantics exactly (manual-mode interactive
+// steps get the raised silence/hard caps).
+function launchMember(step) {
+  const taskId = ensureTask(step);
+  log(`> ${step.title}  (agent=${agentOf(step)}, task=${taskId})`);
+  const { dispatchId, terminal } = startWorker(step, taskId);
+  const interactiveNow = !AUTO_RUN && step.interactive;
+  const baseIdleMs = timeoutOf(step);
+  const baseHardMs = step.hardTimeoutMs ?? cfg.defaults?.hardTimeoutMs ?? 4 * baseIdleMs;
+  const maxIdleMs = interactiveNow ? Math.max(baseIdleMs, 3600000) : baseIdleMs;
+  return {
+    step, taskId, dispatchId, terminal,
+    maxIdleMs,
+    hardCapMs: interactiveNow ? Math.max(baseHardMs, 14400000) : baseHardMs,
+    sliceMs: Math.min(120000, maxIdleMs),
+    startedAt: Date.now(), lastBusy: Date.now(), lastPreview: undefined,
+    quietWarned: false, settled: false, done: null, note: "", outcome: null,
+  };
+}
+
+// The worker_done payload may name its task; a run-scoped wait cannot
+// otherwise tell two concurrent workers apart. No task id on the message =>
+// credit only when exactly ONE member is unsettled (the old single-step
+// behavior, preserved for singleton groups).
+const taskOfMsg = (m) => pick(m, ["taskId", "task_id", "task"]);
+
+// Settle one member: final progress snapshot, terminal cleanup, status row.
+// still-running members keep their terminal open (done=null) — that is the
+// point of the hard-cap exit.
+function settleMember(m, outcome, done) {
+  m.settled = true;
+  m.outcome = outcome;
+  m.done = done || null;
+  refreshProgress(m.step);   // final snapshot: catch the last ticks
+  statusEnd(m.step.id, outcome, m.note);
+  if (!m.done) return;
+  if (m.terminal) {
+    const c = orca(["terminal", "close", "--terminal", m.terminal]);
+    if (!c.ok) warn(`terminal close '${m.step.title}' did not confirm: ${c.stderr || c.raw}`);
+  } else if (m.dispatchId) {
+    const rel = orca(["orchestration", "worker-release", "--dispatch", m.dispatchId]);
+    if (!rel.ok) warn(`worker-release '${m.step.title}' did not confirm: ${rel.stderr || rel.raw}`);
+  }
+}
+
+// Run one group to settlement of EVERY member. Silence/hard-cap semantics
+// per member are identical to the sequential runner (see runStep's comments
+// below); a hard-capped member settles as still-running and is dropped from
+// the wait set — the pipeline then stops (main loop) with a resume hint.
+function runGroup(members) {
+  for (const s of members) statusBegin(s.id);
+  const M = members.map(launchMember);
+  while (true) {
+    const open = M.filter((m) => !m.settled);
+    if (!open.length) break;
+    const slice = Math.min(...open.map((m) => m.sliceMs));
+    for (const m of open) refreshProgress(m.step);
+    writeStatus();   // heartbeat: keep the page's "updated Xs ago" fresh each slice
+    const wait = orca(["orchestration", "check", "--run", RUN_ID, "--wait",
+      "--types", "worker_done,escalation,question", "--timeout-ms", String(slice)],
+      { timeoutMs: slice + 60000 });
+    const d = res(wait.json);
+    const did = pick(d, ["deliveryId", "delivery_id"]) ?? pick(d.delivery || {}, ["id"]);
+    const msgs = pick(d, ["messages", "msgs"]) || [];
+    if (did) orca(["orchestration", "check", "--run", RUN_ID, "--ack", did]);
+    // Surface questions/escalations, but they don't settle any member.
+    for (const msg of msgs) {
+      const ty = pick(msg, ["type"]);
+      if (ty === "question" || ty === "escalation")
+        log(`  [${ty}] ${pick(msg, ["subject"]) || ""}`);
+    }
+    for (const m of open) {
+      // 1) Fast path: a worker_done message attributable to THIS member.
+      const wd = msgs.find((msg) => {
+        if (pick(msg, ["type"]) !== "worker_done") return false;
+        const mt = taskOfMsg(msg);
+        return mt === m.taskId || (mt == null && open.length === 1);
+      });
+      if (wd) { settleMember(m, outcomeOf(wd) || "unknown", wd); continue; }
+      // 2) Authoritative per-task settlement.
+      const v = workerVitals(m.taskId, m.terminal, m.dispatchId);
+      if (v.settled) {
+        // Drain a pending worker_done first — prefer the message's own
+        // payload, and ack it so it cannot leak into the next group's wait
+        // (a bound Run replays unacknowledged deliveries).
+        const drain = orca(["orchestration", "check", "--run", RUN_ID, "--types", "worker_done"]);
+        const dr = res(drain.json);
+        const drid = pick(dr, ["deliveryId", "delivery_id"]) ?? pick(dr.delivery || {}, ["id"]);
+        const drained = (pick(dr, ["messages", "msgs"]) || [])
+          .find((msg) => pick(msg, ["type"]) === "worker_done" && taskOfMsg(msg) === m.taskId) || null;
+        if (drid) orca(["orchestration", "check", "--run", RUN_ID, "--ack", drid]);
+        settleMember(m, (drained && outcomeOf(drained)) || v.outcome || "unknown",
+          drained || { payload: JSON.stringify({ outcome: v.outcome }) });
+        continue;
+      }
+      // 3) Liveness/freshness per member (identical to the sequential loop):
+      // a CHANGING preview proves the TUI is working; a frozen preview for
+      // maxIdleMs = hung / parked (timestamps are fallback only).
+      if (v.preview != null) {
+        if (m.lastPreview === undefined || v.preview !== m.lastPreview) {
+          m.lastPreview = v.preview;
+          m.lastBusy = Date.now();
+        }
+      } else if (v.lastBusyMs > 0 && Date.now() - v.lastBusyMs < m.maxIdleMs) {
+        m.lastBusy = Date.now();
+      }
+      const silenceMs = Date.now() - m.lastBusy;
+      // Hard cap first: absolute per-member limit, busy or quiet.
+      if (Date.now() - m.startedAt >= m.hardCapMs) {
+        log(`[warn] "${m.step.title}" not settled after ${Math.round((Date.now() - m.startedAt) / 60000)}min; ` +
+            `leaving its terminal open and stopping the pipeline.`);
+        m.note = `not settled after ${Math.round((Date.now() - m.startedAt) / 60000)}min`;
+        settleMember(m, "still-running", null);
+        continue;
+      }
+      // Silence alone is NOT proof of death (see runStep's comment).
+      if (silenceMs >= m.maxIdleMs && !m.quietWarned) {
+        m.quietWarned = true;
+        warn(`"${m.step.title}" quiet for ${Math.round(silenceMs / 60000)}min but its dispatch is alive (status=${v.status}) — ` +
+             `waiting up to the ${Math.round(m.hardCapMs / 60000)}min hard cap before giving up.`);
+        statusSet(m.step.id, { note: `quiet ${Math.round(silenceMs / 60000)}min but alive — waiting to the hard cap` });
+      }
+    }
+  }
+  writeStatus();
+  return M;
+}
+
 // Start the worker, then wait for worker_done — in SLICES, verifying between
 // slices that the worker is still alive. One fixed --wait cannot work: it
 // turns "agent slower than the budget" into a false outcome=unknown while the
