@@ -1,6 +1,6 @@
 # Orca SDLC Flow Kit
 
-**Describe a feature in one sentence. Get back a planned, designed, coded, reviewed, tested and documented implementation.**
+**Turn software development into a pipeline of AI agents whose work you can actually verify and control — every step's result lands on disk as readable output, every run is watchable live, token usage is accounted per run, and quality failures loop back automatically.**
 
 ## Contents
 
