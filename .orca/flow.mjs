@@ -874,13 +874,15 @@ function previewStatus() {
       s.status = "succeeded"; s.attempt = 1;
       s.startedAt = t - 3720000 + idx * 600000; s.endedAt = s.startedAt + 240000 + idx * 30000;
       s.durationMs = s.endedAt - s.startedAt;
+      s.usage = { in: 12340 + idx * 800, out: 8900 + idx * 500, cacheRead: 210000 + idx * 1000, cacheWrite: 0, total: 231240 + idx * 2300, note: null };
     } else if (idx === 3) { s.status = "running"; s.attempt = 1; s.startedAt = t - 757000; }
     else if (idx === 4) { /* stays pending — renders the NEXT chip */ }
-    else if (idx === 5) { s.status = "failed"; s.attempt = 2; s.startedAt = t - 600000; s.endedAt = t - 300000; s.durationMs = 300000; s.note = "tests failed (preview fixture)"; }
+    else if (idx === 5) { s.status = "failed"; s.attempt = 2; s.startedAt = t - 600000; s.endedAt = t - 300000; s.durationMs = 300000; s.note = "tests failed (preview fixture)"; s.usage = { in: 40200, out: 15800, cacheRead: 660000, cacheWrite: 12000, total: 728000, note: "+1 extra attempt" }; }
     else if (idx === 6) { s.status = "waiting-approval"; s.attempt = 1; s.startedAt = t - 120000; s.note = "gate open (preview fixture)"; }
     else if (idx === 7) { s.status = "unknown"; s.attempt = 1; s.note = "no worker_done seen (preview fixture)"; }
     else if (idx === 8) { s.status = "skipped"; }
   });
+  S.meta.usage = { in: 52780, out: 25200, cacheRead: 880000, cacheWrite: 12000, total: 972980 };
   // Exercise the real parser + the Tasks card: the first step with a
   // `progress` file (coding in the shipped config, fix-coding in fixbug)
   // gets a sample checklist parsed by parseProgress itself.
@@ -1011,6 +1013,7 @@ const STATUS_HTML = `<!doctype html>
     return h ? h + "h " + String(m).padStart(2, "0") + "m" : m + "m " + String(s).padStart(2, "0") + "s";
   }
   function since(ts) { return ts ? Math.max(0, Date.now() - ts) : null; }
+  function tok(n) { if (n == null) return ""; if (n >= 1e6) return (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return (n / 1e3).toFixed(1) + "k"; return String(n); }
   function isLive(s) { return s.status === "running" || s.status === "waiting-approval"; }
 
   function railStep(s, idx, nextIdx) {
@@ -1023,6 +1026,7 @@ const STATUS_HTML = `<!doctype html>
       "</b>" +
       '<div class="tsub">' + (s.agent ? '<span class="a">' + esc(s.agent) + "</span>" : "") +
       (d ? "<span>" + d + "</span>" : "") +
+      (s.usage && s.usage.total != null ? "<span>" + tok(s.usage.total) + " tok</span>" : "") +
       (s.status === "waiting-approval" ? '<span style="color:#d29922">gate open</span>' : "") +
       "</div></div></div>";
   }
@@ -1053,6 +1057,7 @@ const STATUS_HTML = `<!doctype html>
       "<span>worktree: " + esc(S.meta.worktree || "-") + "</span>" +
       "<span>config: " + esc(S.meta.config || "-") + "</span>" +
       "<span>elapsed: " + dur(since(S.meta.startedAt)) + "</span>" +
+      (S.meta.usage && S.meta.usage.total != null ? "<span>tokens: " + tok(S.meta.usage.total) + "</span>" : "") +
       "<span>updated " + Math.max(0, Math.round((Date.now() - S.meta.updatedAt) / 1000)) + "s ago</span></div>" +
       '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
       '<div class="count">' + done + "/" + S.steps.length + " steps" + countExtra + "</div>";
@@ -1114,6 +1119,17 @@ const STATUS_HTML = `<!doctype html>
           (failedStep.note ? " — " + esc(failedStep.note) : "") +
           " — re-run with --from " + esc(failedStep.id) + "</div>" : "") +
         "</div>";
+    if (S.meta.usage && S.meta.usage.total != null) {
+      pane += '<div class="label">Token usage</div>';
+      S.steps.forEach(function (s) {
+        if (!s.usage || s.usage.total == null) return;
+        pane += '<div class="upnext"><span class="t">' + esc(s.title) + '</span><span class="a">' + esc(s.agent || "") + '</span>' +
+          '<span>in ' + tok(s.usage.in) + " · out " + tok(s.usage.out) + " · cacheR " + tok(s.usage.cacheRead) + " · cacheW " + tok(s.usage.cacheWrite) + '</span>' +
+          '<span><b>' + tok(s.usage.total) + '</b> tok</span>' +
+          (s.usage.note ? '<span style="color:#6e7681">(' + esc(s.usage.note) + ")</span>" : "") + "</div>";
+      });
+      pane += '<div class="upnext" style="color:#6e7681">run total: <b style="color:#d7dce4">' + tok(S.meta.usage.total) + "</b> tok</div>";
+    }
     }
 
     if (nextIdx >= 0) {
