@@ -47,7 +47,8 @@
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdirSync, existsSync, writeFileSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync, writeFileSync, readdirSync, statSync, appendFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -71,6 +72,9 @@ const die = (m) => {
     // Deliberately bypasses the STATUS_FAILED latch: a transient mid-run write
     // failure (e.g. AV file lock) may have healed by exit — last-chance write.
     try { writeStatusTo(statusDir(), STATUS); } catch { }
+    // Usage report is best-effort: never mask the real error, never change the
+    // exit code. It re-writes status.js with usage fields on success.
+    try { reportUsage(); } catch (e) { warn(`[usage] report skipped (${e.message})`); }
   }
   process.exit(1);
 };
@@ -652,6 +656,98 @@ function renderUsageSection(r) {
   return lines.join("\n");
 }
 // ===== usage-report: pure helpers end =====
+
+// --- usage-report glue (fs + module state; runs at run end only) ---
+// Post-run collector: scans the agents' local session logs for THIS worktree
+// and THIS run, attributes tokens to steps, appends USAGE.md and writes the
+// numbers back into the status snapshot. Display-only: every failure warns
+// and moves on — it can never change the run's outcome or exit code.
+function reportUsage() {
+  if (!STATUS?.meta?.runId) return;                       // no run ever started
+  const runStart = STATUS.meta.startedAt || STATUS.meta.updatedAt;
+  if (!runStart) return;
+  const nowTs = Date.now();
+  const adapters = ["claude", "codex"];
+  const wtNorm = normPath(WT_PATH || ".");
+  const home = process.env.ORCA_FLOW_USAGE_HOME || homedir();
+
+  const sessions = [];
+  const mtimeOk = (p) => {
+    try { const m = statSync(p).mtimeMs; return m >= runStart - 300000 && m <= nowTs + 60000; }
+    catch { return false; }
+  };
+  // Generic scan: every .jsonl in `dir` (mtime-filtered, cwd-checked), parsed
+  // with parseFn. isSubagentFn(name) flags transcripts with no step preamble.
+  const readSessions = (dir, parseFn, isSubagentFn) => {
+    let names = [];
+    try { names = readdirSync(dir); } catch { return; }
+    for (const name of names) {
+      if (!name.endsWith(".jsonl")) continue;
+      const p = join(dir, name);
+      if (!mtimeOk(p)) continue;
+      let s; try { s = parseFn(readFileSync(p, "utf8")); } catch { continue; }
+      if (!s.events.length) continue;
+      if (!s.cwd || normPath(s.cwd) !== wtNorm) continue;  // another project's session
+      if (isSubagentFn(name)) s.subagent = true;
+      sessions.push(s);
+    }
+  };
+
+  // Claude: prefer the worktree's slug dir; fall back to scanning every project
+  // dir (the cwd check inside each file keeps the fallback exact). agent-*.jsonl
+  // in the slug dir are Claude Code subagent transcripts — flagged for
+  // window-containment attribution.
+  const claudeRoot = join(home, ".claude", "projects");
+  if (existsSync(claudeRoot)) {
+    const slugDir = join(claudeRoot, claudeProjectSlug(WT_PATH || "."));
+    if (existsSync(slugDir)) readSessions(slugDir, parseClaudeSession, (n) => n.startsWith("agent-"));
+    else for (const d of readdirSync(claudeRoot, { withFileTypes: true })) {
+      if (d.isDirectory()) readSessions(join(claudeRoot, d.name), parseClaudeSession, () => false);
+    }
+  }
+  // Codex: rollout files under sessions/YYYY/MM/DD (zero-padded, local dates).
+  const codexRoot = join(home, ".codex", "sessions");
+  if (existsSync(codexRoot)) {
+    const day = new Date(runStart - 300000); day.setHours(0, 0, 0, 0);
+    const end = new Date(nowTs); end.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 40 && day <= end; i++) {
+      const dir = join(codexRoot, String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, "0"), String(day.getDate()).padStart(2, "0"));
+      if (existsSync(dir)) readSessions(dir, parseCodexSession, () => false);
+      day.setDate(day.getDate() + 1);
+    }
+  }
+
+  const sigs = stepSignatures(allSteps, outPath);
+  for (const s of sessions) if (!s.subagent) s.stepId = matchSessionToStep(s, sigs);
+  const engine = attributeAndSum({
+    steps: STATUS.steps.map((st) => ({ id: st.id, agent: st.agent, startedAt: st.startedAt, endedAt: st.endedAt, status: st.status })),
+    sessions, runStart, reportTs: nowTs, adapters,
+  });
+
+  // usage only when tokens were actually counted (design: no-numbers rows are
+  // rendered as "—" with the note, never as zeros); notes travel separately.
+  for (const st of STATUS.steps) {
+    const u = engine.perStep[st.id];
+    st.usage = u && u.total > 0 ? { in: u.in, out: u.out, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite, total: u.total, note: u.note } : null;
+  }
+  if (engine.totals.total > 0) STATUS.meta.usage = engine.totals;
+
+  try {
+    const mdPath = join(statusDir(), "USAGE.md");
+    const had = existsSync(mdPath);
+    const lastEnd = Math.max(0, ...STATUS.steps.map((s) => s.endedAt || 0));
+    const section = renderUsageSection({
+      runId: STATUS.meta.runId, endedIso: new Date(nowTs).toLocaleString("en-US"),
+      overall: STATUS.overall, objective: STATUS.meta.objective, config: STATUS.meta.config,
+      rows: STATUS.steps.map((st) => ({ title: st.id, agent: st.agent, usage: st.usage, durationMs: st.durationMs, note: engine.perStep[st.id]?.note })),
+      totals: engine.totals, unattributedCount: engine.unattributed.count,
+      runDurationMs: lastEnd ? lastEnd - STATUS.meta.startedAt : null,
+    });
+    appendFileSync(mdPath, (had ? "" : `# Token usage — ${WT || WT_PATH || "worktree"}\n\nPer-run token consumption per pipeline step, read from Claude Code / Codex session logs after each run. Other agents (opencode, gemini, cursor, grok, kiro-cli) have no adapter yet and report no numbers.\n\n`) + section + "\n", "utf8");
+    log(`[usage] ${mdPath} — run total ${engine.totals.total.toLocaleString("en-US")} tokens`);
+  } catch (e) { warn(`[usage] USAGE.md write failed (${e.message})`); }
+  try { writeStatusTo(statusDir(), STATUS); } catch { }   // page picks up usage on reload
+}
 
 // Parse a progress checklist (e.g. TASKS.md) an agent maintains mid-step.
 // Grammar: one checkbox per line — "- [ ]" todo, "- [~]" doing, "- [x]"/"- [X]"
@@ -1673,3 +1769,4 @@ while (gi < groups.length) {
 finishStatus("succeeded");
 log("Pipeline COMPLETE. Artifacts in " + ART_DIR + ":");
 for (const s of steps) log(`  ${s.title.padEnd(26)} -> ${s.writes}`);
+try { reportUsage(); } catch (e) { warn(`[usage] report skipped (${e.message})`); }
