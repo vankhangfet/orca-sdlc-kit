@@ -629,6 +629,28 @@ function attributeAndSum(input) {
   totals.total = totals.in + totals.out + totals.cacheRead + totals.cacheWrite;
   return { perStep, totals, unattributed };
 }
+const fmtDurMs = (ms) => {
+  const s = Math.max(0, Math.round(Number(ms || 0) / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m ${String(ss).padStart(2, "0")}s`;
+};
+// One USAGE.md section per run (appended at the bottom of the file).
+function renderUsageSection(r) {
+  const n = (v) => (v == null ? "—" : v.toLocaleString("en-US"));
+  const lines = [];
+  lines.push(`## Run ${r.runId} — ${r.endedIso} — ${r.overall} — ${String(r.objective || "").slice(0, 80)} (${r.config})`);
+  lines.push("");
+  lines.push("| Step | Agent | In | Out | Cache R | Cache W | Total | Duration | Note |");
+  lines.push("|---|---|---:|---:|---:|---:|---:|---:|---|");
+  for (const row of r.rows) {
+    const u = row.usage;
+    lines.push(`| ${row.title} | ${row.agent} | ${u ? n(u.in) : "—"} | ${u ? n(u.out) : "—"} | ${u ? n(u.cacheRead) : "—"} | ${u ? n(u.cacheWrite) : "—"} | ${u ? n(u.total) : "—"} | ${row.durationMs != null ? fmtDurMs(row.durationMs) : "—"} | ${row.note || u?.note || ""} |`);
+  }
+  const t = r.totals;
+  lines.push(`| **Total** | | ${n(t.in)} | ${n(t.out)} | ${n(t.cacheRead)} | ${n(t.cacheWrite)} | **${n(t.total)}** | ${r.runDurationMs != null ? fmtDurMs(r.runDurationMs) : "—"} | ${r.unattributedCount ? `${r.unattributedCount} subagent file(s) unattributed` : ""} |`);
+  lines.push("");
+  return lines.join("\n");
+}
 // ===== usage-report: pure helpers end =====
 
 // Parse a progress checklist (e.g. TASKS.md) an agent maintains mid-step.
