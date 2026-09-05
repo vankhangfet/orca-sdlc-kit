@@ -328,6 +328,30 @@ It shows the objective with an overall badge (RUNNING / DONE / FAILED / UNKNOWN 
 
 The page opens automatically when the run starts (`explorer.exe` on Windows, `open` on macOS, `xdg-open` on Linux). Turn that off with `--no-open-status`, or per-project with `"defaults": { "openStatus": false }`. If writing the page fails (e.g. a read-only folder) the run continues untouched — the dashboard never affects pipeline execution. `node .orca/flow.mjs --status-preview` renders a fixture page showing every state without a run — it cannot be combined with an objective or `--only`/`--from`/`--agent`; real runs write and open the page automatically and need no flag.
 
+### 5.4. Token usage (USAGE.md + status fields)
+
+`flow.mjs` collects token usage automatically when a run ends (both the success
+path and any `die()` exit): it reads Claude Code (`~/.claude/projects/<slug>/`)
+and Codex (`~/.codex/sessions/YYYY/MM/DD/`) session transcripts whose `cwd` is
+the run's worktree, attributes them to steps by matching each step's spec text,
+and writes:
+
+- `<artifactsDir>/USAGE.md` — one appended section per run with a per-step
+  table (In / Out / Cache R / Cache W / Total / Duration) and a run Total row.
+- `status.js` — `steps[].usage = { in, out, cacheRead, cacheWrite, total, note }`
+  and `meta.usage = { in, out, cacheRead, cacheWrite, total }`; the page shows
+  per-step chips, a run total and a finished-run breakdown.
+
+Notes: `USAGE.md` is a reserved artifact filename (startup validation of
+`writes` collisions is a separate planned feature — avoid the name manually).
+Attribution is by the step's spec head (the text before the first
+`{out}`/`{reads}`/`{tasks}` placeholder) so parallel same-agent steps stay
+distinct; earlier retry attempts count as "+N extra attempts"; steps carried
+over from a previous run (`--from`) are not recounted. Token display is
+post-hoc: numbers appear when the run ends, never mid-run. Set
+`ORCA_FLOW_USAGE_HOME` to redirect the log-root lookup (testing). No config
+field enables/disables this — it is automatic and display-only.
+
 ---
 
 ## 6. Environment variables
@@ -335,6 +359,7 @@ The page opens automatically when the run starts (`explorer.exe` on Windows, `op
 | Variable | Effect |
 |----------|--------|
 | `ORCA_CLI_COMMAND` | Set the orca CLI path/executable name if it can't be auto-detected |
+| `ORCA_FLOW_USAGE_HOME` | Redirect the token-usage log-root lookup (`~/.claude`, `~/.codex` are then read under this dir instead of the OS home) — testing aid for the usage report; see section 5.4 |
 
 ---
 

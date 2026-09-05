@@ -1,6 +1,6 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Current release: **v1.4.0** · Last updated: 2026-09-04 · Proposal only — no committed dates.
+Current release: **v1.5.0** · Last updated: 2026-09-05 · Proposal only — no committed dates.
 
 One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on the status page can change a run's outcome, timeout or retry.
 
@@ -8,6 +8,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Track | Milestone | Theme |
 |---|---|---|
+| Shipped | v1.5.0 | Token usage tracking |
 | Shipped | v1.4.0 | Status page redesign — pipeline rail + detail pane |
 | Shipped | v1.3.0 | Parallel steps (`parallelWith`) |
 | In focus | **v2.0** | Trust & visibility — the next major |
@@ -18,6 +19,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Version | Feature | What shipped |
 |---|---|---|
+| v1.5.0 | **Cost & usage tracking** | After every run (success or die) token usage per step is collected from Claude Code / Codex session logs (`~/.claude/projects`, `~/.codex/sessions`), appended to `USAGE.md` in the artifacts dir, and written to the status page (`steps[].usage`, `meta.usage` — rail chips + finished-run breakdown). Spec-matching attributes parallel same-agent steps; retries count as extra attempts; agents without adapters show "—" |
 | v1.4.0 | **Status page redesign** | Two-pane dashboard: a vertical pipeline rail (status dots, purple-bracketed parallel groups, retry/NEXT/gate chips, per-step agent + duration) and a detail pane — Now running cards with big live elapsed timers, notes (quiet-but-alive, fix-from) and task mini-bars, Up next, the Tasks checklist and artifact chips with ✓; a failed run names the failed step and the exact `--from` resume command. Display-only contract and file:// polling unchanged |
 | v1.3.0 | **Parallel steps** | `"parallelWith": "<id>"` runs a step concurrently with an earlier one (flat, contiguous, independent groups); per-task settlement via dispatch-show keeps concurrent workers distinct; join barrier at the next step; retries re-run the target's group. The shipped config runs detailed-design ∥ uiux-design |
 
@@ -49,7 +51,6 @@ inspectable long after the terminal closes.
 | Feature | What changes technically |
 |---|---|
 | **Cross-worktree dashboard** | One index page scanning known worktrees' artifacts dirs; read-only summary cards linking to each worktree's own page — a team wallboard, still no server |
-| **Cost & usage tracking** | Per-step / per-agent wall-clock on the page, plus usage numbers where the Orca CLI exposes them (dispatch/task records); CSV export in the artifacts dir |
 | **Checklist write-back** | Editing `TASKS.md` from the page requires a local listener — breaks the no-server default. Likely ships as a lighter alternative (click a task → ready-made snippet to paste). Open design decision |
 | **Warm agent pool** | Reuse one warmed terminal across consecutive steps that use the same agent, instead of create + quiet-detect per step; never reused mid-dispatch |
 

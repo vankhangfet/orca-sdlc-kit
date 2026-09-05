@@ -61,10 +61,11 @@ flowchart LR
 
 The two design steps (`Detailed design` and `UI / UX`) start together and run **concurrently** — one `parallelWith` line in the config; Coding waits for both. Any independent pair of steps can do this.
 
-Two things make this safe rather than a black box:
+Three things make this safe rather than a black box:
 
 - **Everything is left on disk.** Each step writes a readable Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result.
 - **Quality failures loop back.** If review, security review or tests find problems, the coder is sent back to fix them — automatically, up to a bounded number of retries.
+- **Token usage per run.** After each run ends (success or failure), token consumption per step (input / output / cache) is read from the Claude Code and Codex session logs, appended to `.orca/artifacts/USAGE.md` in the worktree, and shown on the status page (per-step chips, run total, and a breakdown on the finished-run summary). Fully automatic and display-only; agents without an adapter (opencode, gemini, cursor, grok, kiro-cli) show "—". Token numbers are post-hoc: they appear on the page when the run ends, not while it runs.
 
 ## Quick start
 
@@ -164,6 +165,8 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 \* Disabled by default; enable per run with `--grill-me` or permanently in config.
 † In manual mode this step interviews you first (see `autoRun` above).
 
+Beside the steps' own artifacts, the flow writes one file of its own into the same dir: `USAGE.md`, the cumulative per-run token report — one section per run, appended automatically when the run ends (reserved name: don't use it as a step `writes` value).
+
 Steps 3 and 4 run **concurrently** (`parallelWith`) — both read Architecture, and Coding waits for both.
 
 **Bug fix (`fixbug.config.json`):** Root Cause Analysis -> Fix Plan -> Bug Fix incl. regression test -> Fix Verification, looping back on failure (max 2 retries).
@@ -190,6 +193,11 @@ checklist (`progress` in config — the coding step has one) show every
 implementation task as `○` queued, `◐` in progress or `✓` done
 (`.orca/artifacts/TASKS.md`), ticked off live by the coding agent — so you
 always know what is done and what is left without opening a single file.
+
+After a run ends, the page also shows its token usage: a compact total per
+step in the rail, the run total in the header, and a per-step in / out /
+cache-read / cache-write breakdown on the summary card. Steps without numbers
+show nothing — `USAGE.md` in the artifacts dir is the detailed record.
 
 A run resumed with `--from` continues the same picture, earlier steps keeping
 their original durations. If the page can't be written the run continues
