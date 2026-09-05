@@ -331,15 +331,19 @@ The page opens automatically when the run starts (`explorer.exe` on Windows, `op
 ### 5.4. Token usage (USAGE.md + status fields)
 
 `flow.mjs` collects token usage automatically when a run ends (both the success
-path and any `die()` exit): it reads Claude Code (`~/.claude/projects/<slug>/`)
-and Codex (`~/.codex/sessions/YYYY/MM/DD/`) session transcripts whose `cwd` is
-the run's worktree, attributes them to steps by matching each step's spec text,
-and writes:
+path and any error exit — even a crashed run): it reads Claude Code
+(`~/.claude/projects/<slug>/`) and Codex (`~/.codex/sessions/YYYY/MM/DD/`)
+session transcripts whose `cwd` is the run's worktree, attributes the tokens to
+steps by matching each step's spec text, and writes:
 
 - `<artifactsDir>/USAGE.md` — one appended section per run with a per-step
-  table (In / Out / Cache R / Cache W / Total / Duration) and a run Total row.
+  table of numeric columns (In / Out / Cache R / Cache W / Total / Duration;
+  plus Step, Agent and Note) and a run Total row. Note values include "no
+  adapter", "no session found", "+N extra attempts", and on the Total row "N
+  subagent file(s) unattributed".
 - `status.js` — `steps[].usage = { in, out, cacheRead, cacheWrite, total, note }`
-  and `meta.usage = { in, out, cacheRead, cacheWrite, total }`; the page shows
+  and `meta.usage = { in, out, cacheRead, cacheWrite, total }` (`steps[].usage`
+  is absent (not zeroed) when a step counted no tokens); the page shows
   per-step chips, a run total and a finished-run breakdown.
 
 Notes: `USAGE.md` is a reserved artifact filename (startup validation of
@@ -349,8 +353,9 @@ Attribution is by the step's spec head (the text before the first
 distinct; earlier retry attempts count as "+N extra attempts"; steps carried
 over from a previous run (`--from`) are not recounted. Token display is
 post-hoc: numbers appear when the run ends, never mid-run. Set
-`ORCA_FLOW_USAGE_HOME` to redirect the log-root lookup (testing). No config
-field enables/disables this — it is automatic and display-only.
+`ORCA_FLOW_USAGE_HOME` to redirect the log-root lookup — `~/.claude` and
+`~/.codex` are then read under this directory instead of the OS home (testing).
+No config field enables/disables this — it is automatic and display-only.
 
 ---
 
@@ -359,7 +364,7 @@ field enables/disables this — it is automatic and display-only.
 | Variable | Effect |
 |----------|--------|
 | `ORCA_CLI_COMMAND` | Set the orca CLI path/executable name if it can't be auto-detected |
-| `ORCA_FLOW_USAGE_HOME` | Redirect the token-usage log-root lookup (`~/.claude`, `~/.codex` are then read under this dir instead of the OS home) — testing aid for the usage report; see section 5.4 |
+| `ORCA_FLOW_USAGE_HOME` | Read agent session logs under this directory instead of the OS home (testing; see 5.4) |
 
 ---
 

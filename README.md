@@ -65,7 +65,7 @@ Three things make this safe rather than a black box:
 
 - **Everything is left on disk.** Each step writes a readable Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result.
 - **Quality failures loop back.** If review, security review or tests find problems, the coder is sent back to fix them — automatically, up to a bounded number of retries.
-- **Token usage per run.** After each run ends (success or failure), token consumption per step (input / output / cache) is read from the Claude Code and Codex session logs, appended to `.orca/artifacts/USAGE.md` in the worktree, and shown on the status page (per-step chips, run total, and a breakdown on the finished-run summary). Fully automatic and display-only; agents without an adapter (opencode, gemini, cursor, grok, kiro-cli) show "—". Token numbers are post-hoc: they appear on the page when the run ends, not while it runs.
+- **Every run is accounted for.** When a run ends, what each step consumed (input / output / cache tokens) is written to `USAGE.md` in the artifacts folder and totalled on the status page — you always know what a run cost you. Numbers for steps on other agents (opencode, gemini, cursor, grok, kiro-cli) are not available yet.
 
 ## Quick start
 
@@ -165,7 +165,7 @@ Manual mode (approval gates + interviews): set `"autoRun": false` in `.orca/flow
 \* Disabled by default; enable per run with `--grill-me` or permanently in config.
 † In manual mode this step interviews you first (see `autoRun` above).
 
-Beside the steps' own artifacts, the flow writes one file of its own into the same dir: `USAGE.md`, the cumulative per-run token report — one section per run, appended automatically when the run ends (reserved name: don't use it as a step `writes` value).
+Alongside the steps' own artifacts, the flow writes one file of its own into the same dir: `USAGE.md`, the cumulative per-run token report — one section per run, appended automatically when the run ends (reserved name: don't use it as a step `writes` value).
 
 Steps 3 and 4 run **concurrently** (`parallelWith`) — both read Architecture, and Coding waits for both.
 
