@@ -531,7 +531,7 @@ function stepSignatures(stepsIn, outPathFn) {
   const sigs = [];
   for (const s of stepsIn) {
     if (!s || !s.id || !s.spec) continue;
-    const resolved = outPathFn(s.writes || "");
+    const resolved = s.writes ? outPathFn(s.writes) : "";
     const head = String(s.spec).split(/{(?:out|reads|tasks)}/)[0];
     sigs.push({ id: s.id, out: resolved, spec: head.length >= 12 ? head : "" });
   }
@@ -550,13 +550,17 @@ function matchSessionToStep(session, sigs) {
 }
 // Attribution + summation. Rules (spec §Attribution):
 //  - prior-run steps (window entirely before this run) are NOT recounted
-//  - current attempt = the matched session with the latest first event;
-//    earlier matched sessions are "+N extra attempts" (their windows were
-//    overwritten in status) and count within [runStart, reportTs]
+//  - per-session attempt class (spec rule 4): a matched session whose events
+//    all precede the recorded window is an "+N extra attempt" (its window
+//    was overwritten in status) and counts within [runStart, reportTs];
+//    every other matched session counts within the window filter below —
+//    including a post-settle re-match of the spec (manual retype)
 //  - window filter [startedAt-60s, endedAt+120s] keeps only this attempt's
 //    tokens; no endedAt (unfinished) -> [startedAt-60s, reportTs]
 //  - subagent transcripts (no spec preamble) go to the unique step window
-//    containing their last event, else to the run-level unattributed bucket
+//    containing their last event, else to the run-level unattributed bucket;
+//    transcripts from earlier runs are skipped entirely (their run's own
+//    USAGE.md section already counted them)
 //  - unmatched regular sessions are ignored (user-run agents in the worktree)
 function attributeAndSum(input) {
   const { steps: stepsIn, sessions, runStart, reportTs, adapters } = input;
@@ -584,23 +588,31 @@ function attributeAndSum(input) {
     if (st.startedAt != null && st.startedAt < runStart - WIN_PRE) { u.note = "prior run"; continue; }
     const mine = byStep.get(st.id) || [];
     if (!mine.length) { u.note = adapters.includes(st.agent) ? "no session found" : "no adapter"; continue; }
-    mine.sort((a, b) => (a.firstTs ?? 0) - (b.firstTs ?? 0));
-    const extras = mine.slice(0, -1);
-    const cur = mine[mine.length - 1];
-    const lo = (st.startedAt ?? cur.firstTs ?? runStart) - WIN_PRE;
+    const lo = (st.startedAt ?? mine[0]?.firstTs ?? runStart) - WIN_PRE;
     const hi = st.endedAt != null ? st.endedAt + WIN_POST : reportTs;
-    addEvs(u, cur.events, lo, hi);
     const notes = [];
-    if (st.endedAt == null) notes.push("unfinished");
-    if (extras.length) {
-      for (const x of extras) addEvs(u, x.events, runStart, reportTs);
-      notes.push("+" + extras.length + " extra attempt" + (extras.length > 1 ? "s" : ""));
+    let extras = 0;
+    for (const x of mine) {
+      if (x.lastTs != null && x.lastTs < lo) {
+        // older retry attempt whose window was overwritten in status — count
+        // within this run's bounds (spec rule 4: events precede the window)
+        addEvs(u, x.events, runStart, reportTs);
+        extras++;
+      } else {
+        // current attempt OR a post-settle re-match of the spec (manual
+        // retype): the window filter alone decides what counts
+        addEvs(u, x.events, lo, hi);
+      }
     }
+    if (st.endedAt == null) notes.push("unfinished");
+    if (extras) notes.push("+" + extras + " extra attempt" + (extras > 1 ? "s" : ""));
     u.note = notes.join("; ") || null;
   }
 
   for (const s of sessions) {
     if (!s.subagent) continue;
+    // earlier run's spend — that run's own USAGE.md section already counted it
+    if (s.lastTs == null || s.lastTs < runStart - WIN_PRE) continue;
     const hits = stepsIn.filter((st) => st.startedAt != null && st.endedAt != null &&
       s.lastTs != null && s.lastTs >= st.startedAt - WIN_PRE && s.lastTs <= st.endedAt + WIN_POST);
     if (hits.length === 1) addEvs(perStep[hits[0].id], s.events, -Infinity, Infinity);
