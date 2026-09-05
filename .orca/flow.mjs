@@ -693,23 +693,30 @@ function reportUsage() {
     }
   };
 
-  // Claude: prefer the worktree's slug dir; fall back to scanning every project
-  // dir (the cwd check inside each file keeps the fallback exact). agent-*.jsonl
-  // in the slug dir are Claude Code subagent transcripts — flagged for
-  // window-containment attribution.
   const claudeRoot = join(home, ".claude", "projects");
   if (existsSync(claudeRoot)) {
+    // agent-*.jsonl are Claude Code subagent transcripts (no step preamble of
+    // their own) — flagged for window-containment attribution in BOTH paths.
+    const isSub = (n) => n.startsWith("agent-");
     const slugDir = join(claudeRoot, claudeProjectSlug(WT_PATH || "."));
-    if (existsSync(slugDir)) readSessions(slugDir, parseClaudeSession, (n) => n.startsWith("agent-"));
-    else for (const d of readdirSync(claudeRoot, { withFileTypes: true })) {
-      if (d.isDirectory()) readSessions(join(claudeRoot, d.name), parseClaudeSession, () => false);
+    if (existsSync(slugDir)) readSessions(slugDir, parseClaudeSession, isSub);
+    else {
+      // slug drift (e.g. case-drived dirs from Git Bash sessions): scan every
+      // project dir — the cwd check inside each file keeps the fallback exact.
+      let dirs = [];
+      try { dirs = readdirSync(claudeRoot, { withFileTypes: true }); } catch { }
+      for (const d of dirs)
+        if (d.isDirectory()) readSessions(join(claudeRoot, d.name), parseClaudeSession, isSub);
     }
   }
   // Codex: rollout files under sessions/YYYY/MM/DD (zero-padded, local dates).
   const codexRoot = join(home, ".codex", "sessions");
   if (existsSync(codexRoot)) {
-    const day = new Date(runStart - 300000); day.setHours(0, 0, 0, 0);
-    const end = new Date(nowTs); end.setHours(0, 0, 0, 0);
+    // ±1 day of slack: the folder-date convention (local vs UTC midnight)
+    // varies across codex versions; the cwd + event-window filters reject
+    // whatever the extra day folders add.
+    const day = new Date(runStart - 300000); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - 1);
+    const end = new Date(nowTs); end.setHours(0, 0, 0, 0); end.setDate(end.getDate() + 1);
     for (let i = 0; i < 40 && day <= end; i++) {
       const dir = join(codexRoot, String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, "0"), String(day.getDate()).padStart(2, "0"));
       if (existsSync(dir)) readSessions(dir, parseCodexSession, () => false);
@@ -746,7 +753,7 @@ function reportUsage() {
     appendFileSync(mdPath, (had ? "" : `# Token usage — ${WT || WT_PATH || "worktree"}\n\nPer-run token consumption per pipeline step, read from Claude Code / Codex session logs after each run. Other agents (opencode, gemini, cursor, grok, kiro-cli) have no adapter yet and report no numbers.\n\n`) + section + "\n", "utf8");
     log(`[usage] ${mdPath} — run total ${engine.totals.total.toLocaleString("en-US")} tokens`);
   } catch (e) { warn(`[usage] USAGE.md write failed (${e.message})`); }
-  try { writeStatusTo(statusDir(), STATUS); } catch { }   // page picks up usage on reload
+  try { STATUS.meta.updatedAt = nowTs; writeStatusTo(statusDir(), STATUS); } catch { }   // page picks up usage on reload
 }
 
 // Parse a progress checklist (e.g. TASKS.md) an agent maintains mid-step.
