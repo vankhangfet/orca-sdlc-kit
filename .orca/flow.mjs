@@ -701,7 +701,7 @@ function reportUsage() {
     const slugDir = join(claudeRoot, claudeProjectSlug(WT_PATH || "."));
     if (existsSync(slugDir)) readSessions(slugDir, parseClaudeSession, isSub);
     else {
-      // slug drift (e.g. case-drived dirs from Git Bash sessions): scan every
+      // slug drift (e.g. case-drifted dirs from Git Bash sessions): scan every
       // project dir — the cwd check inside each file keeps the fallback exact.
       let dirs = [];
       try { dirs = readdirSync(claudeRoot, { withFileTypes: true }); } catch { }
@@ -709,7 +709,8 @@ function reportUsage() {
         if (d.isDirectory()) readSessions(join(claudeRoot, d.name), parseClaudeSession, isSub);
     }
   }
-  // Codex: rollout files under sessions/YYYY/MM/DD (zero-padded, local dates).
+  // Codex: rollout files under sessions/YYYY/MM/DD (zero-padded; folder-date
+  // convention varies — see the slack comment inside).
   const codexRoot = join(home, ".codex", "sessions");
   if (existsSync(codexRoot)) {
     // ±1 day of slack: the folder-date convention (local vs UTC midnight)
