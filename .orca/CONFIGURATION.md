@@ -331,7 +331,7 @@ The page opens automatically when the run starts (`explorer.exe` on Windows, `op
 ### 5.4. Token usage (USAGE.md + status fields)
 
 `flow.mjs` collects token usage automatically when a run ends (both the success
-path and any error exit — even a crashed run): it reads Claude Code
+path and any error exit): it reads Claude Code
 (`~/.claude/projects/<slug>/`) and Codex (`~/.codex/sessions/YYYY/MM/DD/`)
 session transcripts whose `cwd` is the run's worktree, attributes the tokens to
 steps by matching each step's spec text, and writes:
@@ -343,7 +343,7 @@ steps by matching each step's spec text, and writes:
   subagent file(s) unattributed".
 - `status.js` — `steps[].usage = { in, out, cacheRead, cacheWrite, total, note }`
   and `meta.usage = { in, out, cacheRead, cacheWrite, total }` (`steps[].usage`
-  is absent (not zeroed) when a step counted no tokens); the page shows
+  is `null` (never zeros) when a step counted no tokens); the page shows
   per-step chips, a run total and a finished-run breakdown.
 
 Notes: `USAGE.md` is a reserved artifact filename (startup validation of
