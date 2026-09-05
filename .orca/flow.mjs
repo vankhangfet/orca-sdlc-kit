@@ -882,7 +882,14 @@ function previewStatus() {
     else if (idx === 7) { s.status = "unknown"; s.attempt = 1; s.note = "no worker_done seen (preview fixture)"; }
     else if (idx === 8) { s.status = "skipped"; }
   });
-  S.meta.usage = { in: 52780, out: 25200, cacheRead: 880000, cacheWrite: 12000, total: 972980 };
+  // derive run totals from the fabricated rows so the preview never shows
+  // arithmetic the real writer (meta.usage = Σ steps) could not produce
+  const used = S.steps.filter((s) => s.usage);
+  if (used.length) S.meta.usage = used.reduce((a, s) => ({
+    in: a.in + s.usage.in, out: a.out + s.usage.out,
+    cacheRead: a.cacheRead + s.usage.cacheRead, cacheWrite: a.cacheWrite + s.usage.cacheWrite,
+    total: a.total + s.usage.total,
+  }), { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
   // Exercise the real parser + the Tasks card: the first step with a
   // `progress` file (coding in the shipped config, fix-coding in fixbug)
   // gets a sample checklist parsed by parseProgress itself.
@@ -1013,7 +1020,7 @@ const STATUS_HTML = `<!doctype html>
     return h ? h + "h " + String(m).padStart(2, "0") + "m" : m + "m " + String(s).padStart(2, "0") + "s";
   }
   function since(ts) { return ts ? Math.max(0, Date.now() - ts) : null; }
-  function tok(n) { if (n == null) return ""; if (n >= 1e6) return (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return (n / 1e3).toFixed(1) + "k"; return String(n); }
+  function tok(n) { if (n == null) return ""; n = Number(n); if (!isFinite(n) || n < 0) return ""; if (n >= 1e6) return (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return (n / 1e3).toFixed(1) + "k"; return String(n); }
   function isLive(s) { return s.status === "running" || s.status === "waiting-approval"; }
 
   function railStep(s, idx, nextIdx) {
@@ -1026,7 +1033,7 @@ const STATUS_HTML = `<!doctype html>
       "</b>" +
       '<div class="tsub">' + (s.agent ? '<span class="a">' + esc(s.agent) + "</span>" : "") +
       (d ? "<span>" + d + "</span>" : "") +
-      (s.usage && s.usage.total != null ? "<span>" + tok(s.usage.total) + " tok</span>" : "") +
+      (s.usage && s.usage.total > 0 ? "<span>" + tok(s.usage.total) + " tok</span>" : "") +
       (s.status === "waiting-approval" ? '<span style="color:#d29922">gate open</span>' : "") +
       "</div></div></div>";
   }
@@ -1057,7 +1064,7 @@ const STATUS_HTML = `<!doctype html>
       "<span>worktree: " + esc(S.meta.worktree || "-") + "</span>" +
       "<span>config: " + esc(S.meta.config || "-") + "</span>" +
       "<span>elapsed: " + dur(since(S.meta.startedAt)) + "</span>" +
-      (S.meta.usage && S.meta.usage.total != null ? "<span>tokens: " + tok(S.meta.usage.total) + "</span>" : "") +
+      (S.meta.usage && S.meta.usage.total > 0 ? "<span>tokens: " + tok(S.meta.usage.total) + "</span>" : "") +
       "<span>updated " + Math.max(0, Math.round((Date.now() - S.meta.updatedAt) / 1000)) + "s ago</span></div>" +
       '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
       '<div class="count">' + done + "/" + S.steps.length + " steps" + countExtra + "</div>";
@@ -1119,17 +1126,17 @@ const STATUS_HTML = `<!doctype html>
           (failedStep.note ? " — " + esc(failedStep.note) : "") +
           " — re-run with --from " + esc(failedStep.id) + "</div>" : "") +
         "</div>";
-    if (S.meta.usage && S.meta.usage.total != null) {
-      pane += '<div class="label">Token usage</div>';
-      S.steps.forEach(function (s) {
-        if (!s.usage || s.usage.total == null) return;
-        pane += '<div class="upnext"><span class="t">' + esc(s.title) + '</span><span class="a">' + esc(s.agent || "") + '</span>' +
-          '<span>in ' + tok(s.usage.in) + " · out " + tok(s.usage.out) + " · cacheR " + tok(s.usage.cacheRead) + " · cacheW " + tok(s.usage.cacheWrite) + '</span>' +
-          '<span><b>' + tok(s.usage.total) + '</b> tok</span>' +
-          (s.usage.note ? '<span style="color:#6e7681">(' + esc(s.usage.note) + ")</span>" : "") + "</div>";
-      });
-      pane += '<div class="upnext" style="color:#6e7681">run total: <b style="color:#d7dce4">' + tok(S.meta.usage.total) + "</b> tok</div>";
-    }
+      if (S.meta.usage && S.meta.usage.total > 0) {
+        pane += '<div class="label">Token usage</div>';
+        S.steps.forEach(function (s) {
+          if (!s.usage || !(s.usage.total > 0)) return;
+          pane += '<div class="upnext"><span class="t">' + esc(s.title) + '</span><span class="a">' + esc(s.agent || "") + '</span>' +
+            '<span>in ' + tok(s.usage.in) + " · out " + tok(s.usage.out) + " · cacheR " + tok(s.usage.cacheRead) + " · cacheW " + tok(s.usage.cacheWrite) + '</span>' +
+            '<span><b>' + tok(s.usage.total) + '</b> tok</span>' +
+            (s.usage.note ? '<span style="color:#6e7681">(' + esc(s.usage.note) + ")</span>" : "") + "</div>";
+        });
+        pane += '<div class="upnext" style="color:#6e7681">run total: <b style="color:#d7dce4">' + tok(S.meta.usage.total) + "</b> tok</div>";
+      }
     }
 
     if (nextIdx >= 0) {
