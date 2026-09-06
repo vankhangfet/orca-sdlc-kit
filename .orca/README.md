@@ -7,6 +7,8 @@ root) into your project and run:
 node .orca/flow.mjs "Your objective"
 ```
 
+Installed via `npx github:vankhangfet/orca-sdlc-kit`? You already have all of this.
+
 | File | What it is |
 |------|------------|
 | `flow.mjs` | The orchestrator — reads the config, drives the agents. You never edit it. |

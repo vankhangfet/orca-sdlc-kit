@@ -85,7 +85,7 @@ Three things make this safe rather than a black box:
 npx github:vankhangfet/orca-sdlc-kit
 ```
 
-Copies the kit (`.orca/flow.mjs`, both pipeline configs, the reference docs, `orca.yaml`) into the project and adds `.orca/artifacts/` to `.gitignore`. Re-running keeps files you already have — your config edits survive upgrades; add `--force` to overwrite them with the shipped versions.
+Copies the kit (`.orca/flow.mjs`, both pipeline configs, the reference docs, `orca.yaml`) into the project and adds `.orca/artifacts/` to `.gitignore`. Re-running only adds files you don't already have — your edits are never touched; `--force` resets everything (your configs included) to the shipped versions.
 
 **Option B — manual copy:**
 
