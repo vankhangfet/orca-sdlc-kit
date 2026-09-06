@@ -77,11 +77,26 @@ Three things make this safe rather than a black box:
 - **Node.js** (any recent version) — the orchestrator is one Node script, zero npm dependencies.
 - **The agent CLIs you plan to use** — e.g. `claude`, `codex`, `opencode` — installed and logged in; Orca launches whatever the config names.
 
+**Install the kit into your project — either way works:**
+
+**Option A — one command (npx):**
+
+```bash
+npx github:vankhangfet/orca-sdlc-kit
+```
+
+Copies the kit (`.orca/flow.mjs`, both pipeline configs, the reference docs, `orca.yaml`) into the project and adds `.orca/artifacts/` to `.gitignore`. Re-running keeps files you already have — your config edits survive upgrades; add `--force` to overwrite them with the shipped versions.
+
+**Option B — manual copy:**
+
 1. Copy `orca.yaml` and the `.orca/` folder into your project root.
 2. Add `.orca/artifacts/` to your `.gitignore`.
-3. In Orca: Settings -> Experimental -> enable **Orchestration** (verify with `orca status --json`).
-4. Create a worktree in Orca — the hook prepares `.orca/artifacts` for you.
-5. Preview, then run:
+
+**Then get Orca ready and run — the same for both options:**
+
+1. In Orca: Settings -> Experimental -> enable **Orchestration** (verify with `orca status --json`).
+2. Create a worktree in Orca — the hook prepares `.orca/artifacts` for you.
+3. Preview, then run:
 
 ```bash
 node .orca/flow.mjs --dry-run "Build a login page"   # shows the plan, calls nothing
