@@ -1,0 +1,25 @@
+{
+  "name": "orca-sdlc-kit",
+  "version": "0.1.0",
+  "description": "Orca SDLC Flow Kit — a pipeline of AI agents inside Orca ADE whose every step lands on disk as verifiable output. This package is only the installer (npx scaffolding); the kit itself is one zero-dependency Node script that stays in your project.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vankhangfet/orca-sdlc-kit.git"
+  },
+  "bin": {
+    "orca-sdlc-kit": "bin/init.mjs"
+  },
+  "files": [
+    ".orca/flow.mjs",
+    ".orca/flow.config.json",
+    ".orca/fixbug.config.json",
+    ".orca/CONFIGURATION.md",
+    ".orca/README.md",
+    "orca.yaml",
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
