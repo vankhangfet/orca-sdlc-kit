@@ -175,7 +175,15 @@ for (const s of steps) {
     die(`step "${s.id}": parallelWith chains are not allowed — "${id}" itself declares parallelWith.`);
   if (!AUTO_RUN && s.interactive)
     die(`step "${s.id}": interactive steps cannot join a parallel group in manual mode.`);
-  const reads = new Set(effectiveReads(s));
+  // Declared reads only — NOT effectiveReads(): this loop runs at MODULE LOAD,
+  // before the worktree/ORCA bindings further down exist, and effectiveReads()
+  // soft-resolves the worktree whenever a read points at a step outside this
+  // run (--from/--only/enabled:false) — that path dies in their temporal dead
+  // zone (#3). Verdict-identical regardless: the checks below only query ids
+  // that are IN this run (the target passed the enabledIds guard above; every
+  // member is in `steps`), and enabled ids survive effectiveReads' filter with
+  // no filesystem access.
+  const reads = new Set((s.reads || []).filter((id) => byId[id]));
   if (reads.has(id))
     die(`step "${s.id}" reads "${id}" — dependent steps cannot run in parallel with what they read.`);
   for (const m of steps)
