@@ -1,6 +1,6 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Current release: **v1.5.0** · Last updated: 2026-09-05 · Proposal only — no committed dates.
+Current release: **v1.5.1** · Last updated: 2026-09-10 · Proposal only — no committed dates.
 
 One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on the status page can change a run's outcome, timeout or retry.
 
@@ -8,17 +8,19 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Track | Milestone | Theme |
 |---|---|---|
+| Shipped | v1.5.1 | Stability release — npx install + resume/retry/usage bug fixes |
 | Shipped | v1.5.0 | Token usage tracking |
 | Shipped | v1.4.0 | Status page redesign — pipeline rail + detail pane |
 | Shipped | v1.3.0 | Parallel steps (`parallelWith`) |
 | In focus | **v2.0** | Trust & visibility — the next major |
-| Queued | v1.4+ | Speed & supervision — minor releases |
+| Queued | v2.0.x | Speed & supervision — minor releases in the v2 line |
 | Later | — | The longer arc |
 
 ## Shipped
 
 | Version | Feature | What shipped |
 |---|---|---|
+| v1.5.1 | **Stability release** | One-command install via `npx github:vankhangfet/orca-sdlc-kit`; bug fixes: `--from` no longer crashes at import on pipelines using `parallelWith`, `onFailGoto` fix-loops complete (settled tasks reopened before replay), and token usage reports real numbers again (Claude transcripts no longer suppressed, new Codex `token_count` records parsed without double-counting, nested subagent transcripts scanned). Per-harness model configuration (`model` per step + `defaults.model`, `"default"` = agent's own) landed on `main` right after the tag — ships with the next release |
 | v1.5.0 | **Token usage tracking** | After every run (success or die) token usage per step is collected from Claude Code / Codex session logs (`~/.claude/projects`, `~/.codex/sessions`), appended to `USAGE.md` in the artifacts dir, and written to the status page (`steps[].usage`, `meta.usage` — rail chips + finished-run breakdown). Spec-matching attributes parallel same-agent steps; retries count as extra attempts; agents without adapters show "—"; CSV export from the old roadmap note was dropped |
 | v1.4.0 | **Status page redesign** | Two-pane dashboard: a vertical pipeline rail (status dots, purple-bracketed parallel groups, retry/NEXT/gate chips, per-step agent + duration) and a detail pane — Now running cards with big live elapsed timers, notes (quiet-but-alive, fix-from) and task mini-bars, Up next, the Tasks checklist and artifact chips with ✓; a failed run names the failed step and the exact `--from` resume command. Display-only contract and file:// polling unchanged |
 | v1.3.0 | **Parallel steps** | `"parallelWith": "<id>"` runs a step concurrently with an earlier one (flat, contiguous, independent groups); per-task settlement via dispatch-show keeps concurrent workers distinct; join barrier at the next step; retries re-run the target's group. The shipped config runs detailed-design ∥ uiux-design |
@@ -31,14 +33,14 @@ inspectable long after the terminal closes.
 
 | Feature | What changes technically | Where |
 |---|---|---|
-| **Settings that always take effect** | `model` / `effort` step fields are honored on the primary dispatch path (today only the cold-start fallback reads them — a fix, not a feature) | config fields |
+| **Settings that always take effect** | ✅ `model` done — per-step `"model"` + `defaults.model` are honored on the primary dispatch path (`"default"` = the agent's own model, nothing passed; a model flag inside the `agent` string still wins; landed on `main` post-v1.5.1). Still open: `effort` on the primary path | config fields |
 | **Config validation before any agent starts** | Rejects: `reads` referencing unknown ids, `onFailGoto` pointing forward or into a cycle, unknown agent names, duplicate ids, `writes`/`progress` filename collisions. Runs in every mode, not just `--dry-run` | flow startup |
 | **Artifact viewer** | Each step row links to the Markdown file it produced; the page lazy-loads it via the same `file://` script-polling trick as `status.js`. Styled preformatted text — no Markdown engine | status page |
 | **Run log** | Every run appends to `FLOW_LOG.md` in the artifacts dir: step transitions, warnings, gate hints, durations — the console, persisted | artifact |
 | **Run history** | Snapshots kept per run (`status-<runId>.js`, last 20) + a run selector on the page; "which step failed last time" answered by looking | status page |
 | **Auto-resume** | `--from auto` loads the previous status snapshot + checks artifacts on disk, resumes at the first unsettled step, prints what it chose and why. Manual `--from <id>` keeps precedence | CLI flag |
 
-## v1.4+ — speed & supervision (queued, minor releases)
+## v2.0.x — speed & supervision (queued, minor releases in the v2 line)
 
 | Feature | What changes technically | Where |
 |---|---|---|
