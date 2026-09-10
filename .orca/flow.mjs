@@ -1501,7 +1501,18 @@ initStatus();
 // Create a task per step, keep taskId for reuse on retries
 const taskIds = {};
 function ensureTask(step) {
-  if (taskIds[step.id]) return taskIds[step.id];
+  if (taskIds[step.id]) {
+    // Reuse on an onFailGoto jump: the cached task settled on its previous
+    // attempt — failed for the gate that demanded the fix, completed for the
+    // fix target and any replayed group siblings — and Orca dispatches only
+    // READY tasks. Reopen it or the replay dies on dispatch (#2). Both
+    // completed->ready and failed->ready are accepted; a status-only update
+    // preserves the recorded result, so the fix note the jump block seeds on
+    // the target survives this second, idempotent update.
+    const u = orca(["orchestration", "task-update", "--id", taskIds[step.id], "--status", "ready"]);
+    if (!u.ok) warn(`reopen of task '${step.title}' (${taskIds[step.id]}) did not confirm: ${u.stderr || u.raw}`);
+    return taskIds[step.id];
+  }
   // Title becomes the first line of the spec (this build has no --task-title flag).
   const spec = `# ${step.title}\n\n${renderSpec(step)}`;
   const r = orca(["orchestration", "task-create", "--run", RUN_ID, "--spec", spec]);
