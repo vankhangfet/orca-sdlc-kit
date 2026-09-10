@@ -30,6 +30,7 @@ config field, with examples for common situations.
 | `defaults.startGraceMs` | number | no (default 90000) | After delivering a prompt, how long to watch the TUI for proof it was consumed before re-sending (some TUIs drop input pasted during boot) |
 | `defaults.sendAttempts` | number | no (default 3) | Max prompt deliveries into a warmed terminal before falling back to a cold `worker-start` |
 | `defaults.worktree` | string | no (default: auto-detect from the invoking directory) | Worktree selector where agents run. Leave unset for auto-detect (recommended — works whenever the flow is launched from inside an Orca-managed worktree). Pin (`name:lab2`, `path:C:\\...`) only when launching from OUTSIDE the target worktree. Per-run override: `--worktree <selector>`; per-machine: `ORCA_FLOW_WORKTREE` env. Precedence: flag > env > config > auto-detect. A pinned selector is validated before the run starts — a wrong pin fails fast with the available worktrees listed. |
+| `defaults.model` | string | no (default `"default"`) | Pipeline-wide model for every step; a step's own `model` overrides it. `"default"`/missing = keep each agent's own default model (no flag passed). See `model` under Step structure |
 | `defaults.openStatus` | boolean | no (default `true`) | Auto-open the run's live status page (`status.html` in the worktree's artifacts dir) in your browser when a real run starts. Dry-runs never write or open it. Per-run off-switch: `--no-open-status` (flag wins over config) |
 | `pipeline` | array | **yes** | The steps; **array order = run order** |
 
@@ -50,8 +51,8 @@ config field, with examples for common situations.
   "onFailGoto": "coding",        // (optional) loop back here on outcome=failed
   "parallelWith": "",            // (optional) id of an EARLIER step to run concurrently with
   "gate": false,                 // (optional) true = wait for approval after the step
-  "model": "",                   // (optional) claude/codex/cursor only
-  "effort": "",                  // (optional) requires model
+  "model": "default",            // (optional) "default"/missing = agent's own model; else passed as --model
+  "effort": "",                  // (optional) cold-start fallback only; requires model
   "timeoutMs": 1800000,           // (optional) override max-silence for this step
   "hardTimeoutMs": 7200000        // (optional) absolute cap for this step (default 4x timeoutMs)
 }
@@ -76,7 +77,7 @@ Unlike the catalog agents it cannot use the cold-start `worker-start` fallback,
 and flags may be appended, e.g. `"kiro-cli --trust-all-tools"` for unattended runs).
 (Confirm the catalog for your Orca build with `orca skills get orchestration --full`.)
 
-A `"claude ..."` value with extra CLI flags (e.g. `"claude --model haiku"`) is supported: the flow keeps your flags and adds its own wrap — in auto-run it also appends the permission bypass unless you already set a permission flag yourself. Keep flag values free of quotes and `%` signs; the string is passed through the Windows command wrap verbatim.
+A `"claude ..."` value with extra CLI flags (e.g. `"claude --model haiku"`) is supported: the flow keeps your flags and adds its own wrap — in auto-run it also appends the permission bypass unless you already set a permission flag yourself, and a model flag in the string wins over the config's `model` (the flow never appends its own). Keep flag values free of quotes and `%` signs; the string is passed through the Windows command wrap verbatim.
 
 **`writes`** — filename (no path) the step writes its output to. The full path is
 `artifactsDir + "/" + writes`. This is what later steps read back.
@@ -150,8 +151,20 @@ constraints, and deployment. Timeouts are raised automatically (60 min silence /
 it is **ignored when `autoRun: true`** — the step then runs fully autonomously
 and records its assumptions in the artifact instead.
 
-**`model` / `effort`** — (optional) apply to `claude`, `codex`, `cursor` only.
-`effort` (e.g. `"high"`) requires `model`. Leave empty to use the agent's default.
+**`model`** — (optional) model for this step's agent, as a string. Resolution:
+`step.model` if set, else `defaults.model` (pipeline-wide). The value
+`"default"` — also missing or empty — means **use the agent's own default
+model: nothing is passed to the CLI** (this is the default configuration).
+Any other value is passed as `--model <value>` when the TUI is launched (the
+manual dispatch path) and as `--model` to Orca's `worker-start` on the
+cold-start fallback. A model flag already inside the `agent` string (e.g.
+`"claude --model haiku"`) always wins — the config never duplicates or
+overrides it. `kiro-cli` has no model selection: a non-default model there is
+ignored with a warning. The dry-run plan shows the effective model as
+`model=<name>` on each step line.
+
+**`effort`** — (optional) passed as `--effort` on the cold-start fallback
+(`worker-start`) only; requires `model`.
 
 **`timeoutMs`** — (optional) override `defaults.timeoutMs` for this step. This is the
 **max-silence** budget: the orchestrator waits in slices and keeps waiting as long as
@@ -386,6 +399,7 @@ entry. If `--dry-run` reports "Could not read flow.config.json", check those two
 - `enabled`: `true` · `false`
 - `gate`: `true` · `false`
 - `onFailGoto`: any `id` earlier in the pipeline, or `null`
+- `model`: `"default"` (agent's own model, nothing passed — also when missing/empty) or any model name string (passed as `--model`)
 - `parallelWith`: an earlier step `id` (members run concurrently; the next step waits for all)
 - `reads`: array of `id`s (empty `[]` for a starting step)
 - time: milliseconds (15 min = `900000`, 30 min = `1800000`)

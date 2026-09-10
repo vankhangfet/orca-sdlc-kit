@@ -7,9 +7,11 @@
   "//autoRun": "true (default) = fully automatic, no user confirmation; claude agents start with permission bypass. See flow.config.json for details.",
   "autoRun": true,
   "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree. See flow.config.json for details.",
+  "//model": "Optional \"model\" per step, or \"defaults.model\" for the whole pipeline. \"default\"/missing = the agent's own default model. See flow.config.json for details.",
   "defaults": {
     "timeoutMs": 900000,
-    "worktree": null
+    "worktree": null,
+    "model": "default"
   },
   "pipeline": [
     {

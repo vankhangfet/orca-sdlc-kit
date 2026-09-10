@@ -285,6 +285,25 @@ const pick = (o, keys) => { for (const k of keys) if (o && o[k] != null) return 
 const res = (j) => (j && j.result) ? j.result : (j || {});
 let RUN_ID = null;               // result.run.id from run-create; passed as --run everywhere
 const agentOf = (step) => opt.agentOverrides[step.id] || step.agent;
+// Effective model for a step: step.model overrides defaults.model. "default"
+// (or missing/empty) = leave the agent on its own default model — no flag.
+const modelOf = (step) => {
+  const m = step.model !== undefined ? step.model : cfg.defaults?.model;
+  const t = m == null ? "" : String(m).trim();
+  return t && t !== "default" ? t : null;
+};
+// A model flag inside the agent string wins over the config's model (user
+// flags are respected, never duplicated); kiro-cli has no model selection.
+const MODEL_FLAG_RE = /(^|\s)(--model|-m)(\s|=|$)/;
+const isKiroCmd = (a) => a === "kiro-cli" || a.startsWith("kiro-cli ");
+// The model that will actually reach the CLI for this step (null = agent default).
+const effectiveModel = (step) => {
+  const m = modelOf(step);
+  if (!m) return null;
+  const a = agentOf(step);
+  if (isKiroCmd(a) || MODEL_FLAG_RE.test(a)) return null;
+  return m;
+};
 const timeoutOf = (step) => step.timeoutMs || DEFAULT_TIMEOUT;
 
 // Blocking sleep (Node allows Atomics.wait on the main thread).
@@ -1267,7 +1286,13 @@ const STATUS_HTML = `<!doctype html>
 // a permission flag in the string is respected, never duplicated.
 // Only the manual path can inject env/flags; the cold-start fallback
 // (--agent) launches the TUI Orca-side and stays unprotected.
-function agentCommand(agent) {
+function agentCommand(agent, model = null) {
+  // Model flag FIRST, before the claude wrap below, so it lands inside the
+  // wrapped command. A model flag already in the agent string wins; kiro-cli
+  // (Kiro terminal chat) has no model selection — warn and run without it.
+  if (model && !MODEL_FLAG_RE.test(agent) && !isKiroCmd(agent)) agent += ` --model ${model}`;
+  else if (model && isKiroCmd(agent) && !MODEL_FLAG_RE.test(agent))
+    warn(`step model "${model}" ignored: kiro-cli has no model selection.`);
   const isClaude = agent === "claude" || agent.startsWith("claude ");
   if (!isClaude) return agent;
   let cmd = agent;
@@ -1290,9 +1315,9 @@ function agentCommand(agent) {
     : `env CLAUDE_AFK_TIMEOUT_MS=60000 ${cmd}`;
 }
 
-function warmTerminal(agent) {
+function warmTerminal(agent, model = null) {
   const startedAt = Date.now();
-  const c = orca(["terminal", "create", "--worktree", resolveWorktree(), "--command", agentCommand(agent)]);
+  const c = orca(["terminal", "create", "--worktree", resolveWorktree(), "--command", agentCommand(agent, model)]);
   const cr = res(c.json);
   const handle = pick(cr, ["handle", "terminalHandle"]) || pick(cr.terminal || {}, ["handle"]);
   if (!c.ok || !handle) {
@@ -1326,7 +1351,7 @@ function warmTerminal(agent) {
 // Manual path: returns { dispatchId, terminal } or null. See the comment
 // block above for why we cannot use worker-start's injection on this setup.
 function manualStart(step, taskId) {
-  const term = warmTerminal(agentOf(step));
+  const term = warmTerminal(agentOf(step), modelOf(step));
   if (!term) return null;
 
   // Tracking dispatch WITHOUT --inject: no injection, no acceptance window.
@@ -1406,10 +1431,11 @@ function manualStart(step, taskId) {
 // where the agent TUI boots within Orca's short dispatch_input window.
 function coldStart(step, taskId) {
   let retryOf = null;
+  const model = modelOf(step);   // same resolution as the manual path (defaults + "default" = no-op)
   for (let attempt = 0; attempt <= START_RETRIES; attempt++) {
     const args = ["orchestration", "worker-start", "--task", taskId, "--run", RUN_ID,
       "--worktree", resolveWorktree(), "--agent", agentOf(step)];
-    if (step.model) args.push("--model", step.model);
+    if (model) args.push("--model", model);
     if (step.effort) args.push("--effort", step.effort);
     if (step.startTimeoutMs) args.push("--timeout-ms", String(step.startTimeoutMs));
     if (retryOf) args.push("--retry-of", retryOf);
@@ -1451,6 +1477,7 @@ function printPlan() {
   log("Pipeline to run (in order):");
   steps.forEach((s, i) => {
     const reads = effectiveReads(s);
+    const model = effectiveModel(s);
     const flags = [];
     if (s.onFailGoto && enabledIds.has(s.onFailGoto)) flags.push(`onFail->${s.onFailGoto}`);
     if (s.gate && !AUTO_RUN) flags.push("gate");
@@ -1458,7 +1485,8 @@ function printPlan() {
     if (s.parallelWith) flags.push(`parallel-with ${s.parallelWith}`);
     else if (isParallel.has(s.id)) flags.push("parallel-group");
     console.log(
-      `  ${i + 1}. ${s.title.padEnd(26)} agent=${agentOf(s).padEnd(9)} ` +
+      `  ${i + 1}. ${s.title.padEnd(26)} agent=${agentOf(s).padEnd(9)}` +
+      `${model ? ` model=${model}` : ""} ` +
       `reads=[${reads.join(", ") || "-"}] writes=${s.writes}` +
       (flags.length ? `  {${flags.join(", ")}}` : "")
     );
