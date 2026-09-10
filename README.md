@@ -1,5 +1,11 @@
 # Orca SDLC Flow Kit
 
+<a href="https://deepwiki.com/vankhangfet/orca-sdlc-kit"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+<a href="https://github.com/vankhangfet/orca-sdlc-kit"><img src="https://img.shields.io/github/stars/vankhangfet/orca-sdlc-kit?style=flat-square" alt="GitHub Stars"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3b82f6?style=flat-square" alt="License"></a>
+<a href="https://github.com/vankhangfet/orca-sdlc-kit/tags"><img src="https://img.shields.io/github/v/tag/vankhangfet/orca-sdlc-kit?style=flat-square" alt="Release"></a>
+<a href="https://x.com/vankhangfet"><img src="https://img.shields.io/badge/Follow-%40vankhangfet-1DA1F2?style=flat-square&logo=x" alt="Follow on X"></a>
+
 **Turn software development into a pipeline of AI agents whose work you can actually verify and control — every step's result lands on disk as readable output, every run is watchable live, token usage is accounted per run, and quality failures loop back automatically.**
 
 ## Contents
