@@ -507,11 +507,26 @@ function parseClaudeSession(text) {
   return out;
 }
 // Codex session rollout (.jsonl): session_meta.payload.cwd; user text in
-// event_msg payloads of type "user_message" (.message); usage in
-// token_usage_record.payload.usage { input_tokens, cached_input_tokens,
-// cache_write_input_tokens, output_tokens }.
+// event_msg payloads of type "user_message" (.message); usage arrives as
+// EITHER record depending on codex build:
+//  - token_usage_record.payload.usage
+//      { input_tokens, cached_input_tokens, cache_write_input_tokens,
+//        output_tokens }
+//  - event_msg/token_count, payload.info.last_token_usage = PER-TURN delta
+//      { input_tokens, cached_input_tokens, output_tokens,
+//        reasoning_output_tokens }
+//    (info.total_token_usage beside it is a RUNNING total — never summed).
+// Codex semantics differ from Claude's sibling buckets (measured on real
+// rollouts: a record's own total_tokens always equals input + output):
+//  - cached_input_tokens is a SUBSET of input_tokens, so we keep only the
+//    non-cached remainder in `in` — summing buckets never double-counts;
+//  - output_tokens already INCLUDES reasoning_output_tokens — it is not
+//    added again.
+// Some builds emit BOTH record types with identical numbers in one rollout;
+// when any token_count matched, the token_usage_record lines are dropped.
 function parseCodexSession(text) {
   const out = { agent: "codex", cwd: null, userText: "", events: [], subagent: false, firstTs: null, lastTs: null, stepId: null };
+  const oldEvents = [], countEvents = [];
   for (const line of String(text || "").split(/\r?\n/)) {
     if (!line.startsWith("{")) continue;
     let j; try { j = JSON.parse(line); } catch { continue; }
@@ -526,12 +541,16 @@ function parseCodexSession(text) {
     if (j.type === "event_msg" && j.payload && j.payload.type === "user_message" && typeof j.payload.message === "string") {
       if (out.userText.length < 40000) out.userText += j.payload.message + "\n";
     }
-    if (j.type === "token_usage_record" && j.payload && j.payload.usage && ts != null) {
-      const u = j.payload.usage;
-      out.events.push({ ts, in: u.input_tokens || 0, out: u.output_tokens || 0,
-        cr: u.cached_input_tokens || 0, cw: u.cache_write_input_tokens || 0 });
+    const isNew = j.type === "event_msg" && j.payload && j.payload.type === "token_count" && j.payload.info;
+    const usage = isNew ? j.payload.info.last_token_usage
+      : j.type === "token_usage_record" && j.payload ? j.payload.usage : null;
+    if (usage && ts != null) {
+      const inp = usage.input_tokens || 0, cached = usage.cached_input_tokens || 0;
+      (isNew ? countEvents : oldEvents).push({ ts, in: Math.max(0, inp - cached), out: usage.output_tokens || 0,
+        cr: cached, cw: usage.cache_write_input_tokens || 0 });
     }
   }
+  out.events = countEvents.length ? countEvents : oldEvents;
   return out;
 }
 // Step signatures for session attribution. The spec HEAD (text before the first
@@ -703,18 +722,30 @@ function reportUsage() {
 
   const claudeRoot = join(home, ".claude", "projects");
   if (existsSync(claudeRoot)) {
-    // agent-*.jsonl are Claude Code subagent transcripts (no step preamble of
-    // their own) — flagged for window-containment attribution in BOTH paths.
+    // Claude Code writes subagent transcripts in two layouts across versions:
+    // old builds next to the session file as agent-*.jsonl, current builds one
+    // level down at <slug>/<session-id>/subagents/agent-*.jsonl (#5) — scan
+    // both. Every file under subagents/ is a subagent transcript (no step
+    // preamble of its own), flagged for window-containment attribution in
+    // BOTH paths.
     const isSub = (n) => n.startsWith("agent-");
+    const readClaudeDir = (dir) => {
+      readSessions(dir, parseClaudeSession, isSub);
+      let ents = [];
+      try { ents = readdirSync(dir, { withFileTypes: true }); } catch { }
+      for (const e of ents)
+        if (e.isDirectory())
+          readSessions(join(dir, e.name, "subagents"), parseClaudeSession, () => true);
+    };
     const slugDir = join(claudeRoot, claudeProjectSlug(WT_PATH || "."));
-    if (existsSync(slugDir)) readSessions(slugDir, parseClaudeSession, isSub);
+    if (existsSync(slugDir)) readClaudeDir(slugDir);
     else {
       // slug drift (e.g. case-drifted dirs from Git Bash sessions): scan every
       // project dir — the cwd check inside each file keeps the fallback exact.
       let dirs = [];
       try { dirs = readdirSync(claudeRoot, { withFileTypes: true }); } catch { }
       for (const d of dirs)
-        if (d.isDirectory()) readSessions(join(claudeRoot, d.name), parseClaudeSession, isSub);
+        if (d.isDirectory()) readClaudeDir(join(claudeRoot, d.name));
     }
   }
   // Codex: rollout files under sessions/YYYY/MM/DD (zero-padded; folder-date
@@ -1247,12 +1278,16 @@ function agentCommand(agent) {
   // auto-continuing it after 60s matches that directive's semantics. In
   // manual mode the human answers in the terminal — interview steps budget
   // 60 min idle — so the var must stay unset there.
-  const env = AUTO_RUN
-    ? "CLAUDE_CODE_SKIP_PROMPT_HISTORY=true CLAUDE_AFK_TIMEOUT_MS=60000"
-    : "CLAUDE_CODE_SKIP_PROMPT_HISTORY=true";
+  // CLAUDE_CODE_SKIP_PROMPT_HISTORY is deliberately NOT injected anymore: on
+  // Claude Code >= 2.1.263 it disables session transcript persistence outright
+  // (~/.claude/projects/<slug>/*.jsonl never appears), which starves the usage
+  // report (#5). The Windows history.jsonl.lock EBADF crash it dodged
+  // (anthropics/claude-code#15739) no longer reproduces on current builds; a
+  // machine that still hits it can export the var in its own shell.
+  if (!AUTO_RUN) return cmd;   // manual mode: no env wrapper at all
   return IS_WIN
-    ? `cmd /c "set ${env.replaceAll(" ", "&& set ")}&& ${cmd}"`
-    : `env ${env} ${cmd}`;
+    ? `cmd /c "set CLAUDE_AFK_TIMEOUT_MS=60000&& ${cmd}"`
+    : `env CLAUDE_AFK_TIMEOUT_MS=60000 ${cmd}`;
 }
 
 function warmTerminal(agent) {
