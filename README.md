@@ -6,7 +6,7 @@
 <a href="https://github.com/vankhangfet/orca-sdlc-kit/tags"><img src="https://img.shields.io/github/v/tag/vankhangfet/orca-sdlc-kit?style=flat-square" alt="Release"></a>
 <a href="https://x.com/vankhangfet"><img src="https://img.shields.io/badge/Follow-%40vankhangfet-1DA1F2?style=flat-square&logo=x" alt="Follow on X"></a>
 
-**A pipeline of AI agents that plans, codes, reviews, tests and documents — every result lands on disk, every run is watchable live, quality failures loop back automatically.**
+**A pipeline of AI agents that plans, codes, reviews, tests and documents — the whole pipeline (steps, agents, models, retries, parallel groups) defined in one JSON config, no code ever; results land on disk, runs are watchable live, quality failures loop back automatically.**
 
 ![The Orca Flow status dashboard: a vertical pipeline timeline on the left (a
 dot per step — green done, amber running, red failed — with parallel steps
@@ -15,6 +15,8 @@ elapsed timers, what's up next, the Tasks checklist (○ queued, ◐ in progress
 ✓ done) and the artifact list](img/status_dashboard.png)
 
 *The live status page — opens in your browser when a run starts and updates itself while the agents work. [Details](#watch-it-run--the-live-status-page).*
+
+**Customize everything in `.orca/flow.config.json`** — add or reorder steps, swap any step's agent, pick models per step, set retries and timeouts, run steps in parallel: plain JSON, zero code. [See how](#2-configure-your-pipeline).
 
 ## Contents
 
