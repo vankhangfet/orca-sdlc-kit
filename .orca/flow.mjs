@@ -1640,6 +1640,26 @@ function workerVitals(taskId, terminal, dispatchId) {
   return v;
 }
 
+// Parked-prompt signatures (#4). --permission-mode bypassPermissions does NOT
+// bypass the machine's own permissions.ask rules, and folder-trust / CLI-update
+// dialogs stop a worker the same way: the TUI parks on a question only a human
+// can answer while the flow, seeing a frozen preview, waits to the hard cap.
+// The dialog text lands in the rendered preview verbatim — match it there.
+// Detection ONLY: the flow never answers a prompt itself (auto-confirming a
+// destructive-command ask would be worse than the bug). Order matters — a
+// permission dialog contains several of these; the first (most specific) wins.
+const PARKED_PROMPTS = [
+  { sig: "requires confirmation for this command", label: "a permission-rule confirmation" },
+  { sig: "Do you want to proceed?", label: "a permission confirmation" },
+  { sig: "Quick safety check", label: "the folder-trust check" },
+  { sig: "Yes, I trust this folder", label: "the folder-trust check" },
+  { sig: "Update available", label: "a CLI update prompt" },
+];
+const parkedPromptOf = (preview) =>
+  typeof preview === "string"
+    ? PARKED_PROMPTS.find((p) => preview.includes(p.sig)) || null
+    : null;
+
 // =============================================================================
 // Group execution: launch every member's worker, then ONE shared wait loop.
 // A single step is a group of one — semantics identical to the sequential
@@ -1666,7 +1686,7 @@ function launchMember(step) {
     hardCapMs: interactiveNow ? Math.max(baseHardMs, 14400000) : baseHardMs,
     sliceMs: Math.min(120000, maxIdleMs),
     startedAt: Date.now(), lastBusy: Date.now(), lastPreview: undefined,
-    quietWarned: false, settled: false, done: null, note: "", outcome: null,
+    quietWarned: false, parkedSeen: new Set(), settled: false, done: null, note: "", outcome: null,
   };
 }
 
@@ -1749,13 +1769,29 @@ function runGroup(members) {
       // 3) Liveness/freshness per member (identical to the sequential loop):
       // a CHANGING preview proves the TUI is working; a frozen preview for
       // maxIdleMs = hung / parked (timestamps are fallback only).
+      let previewChanged = false;
       if (v.preview != null) {
-        if (m.lastPreview === undefined || v.preview !== m.lastPreview) {
+        previewChanged = m.lastPreview === undefined || v.preview !== m.lastPreview;
+        if (previewChanged) {
           m.lastPreview = v.preview;
           m.lastBusy = Date.now();
         }
       } else if (v.lastBusyMs > 0 && Date.now() - v.lastBusyMs < m.maxIdleMs) {
         m.lastBusy = Date.now();
+      }
+      // 3b) Parked on a prompt (#4): a FROZEN preview carrying a known dialog
+      // signature means the worker is waiting for a human, not working. The
+      // frozen guard matters — a busy agent that merely printed a similar
+      // string keeps redrawing. Observe only, once per distinct prompt: warn,
+      // note the status page, keep waiting (never answer, never fail).
+      if (!previewChanged && v.preview != null) {
+        const parked = parkedPromptOf(v.preview);
+        if (parked && !m.parkedSeen.has(parked.sig)) {
+          m.parkedSeen.add(parked.sig);
+          warn(`"${m.step.title}" is PARKED on ${parked.label} (terminal shows "${parked.sig}") — ` +
+              `answer it in that terminal; waiting up to the ${Math.round(m.hardCapMs / 60000)}min hard cap.`);
+          statusSet(m.step.id, { note: `parked on ${parked.label} — answer it in the terminal` });
+        }
       }
       const silenceMs = Date.now() - m.lastBusy;
       // Hard cap first: absolute per-member limit, busy or quiet.
@@ -1771,7 +1807,10 @@ function runGroup(members) {
         m.quietWarned = true;
         warn(`"${m.step.title}" quiet for ${Math.round(silenceMs / 60000)}min but its dispatch is alive (status=${v.status}) — ` +
              `waiting up to the ${Math.round(m.hardCapMs / 60000)}min hard cap before giving up.`);
-        statusSet(m.step.id, { note: `quiet ${Math.round(silenceMs / 60000)}min but alive — waiting to the hard cap` });
+        // A parked-prompt note (3b) is the specific diagnosis — don't overwrite
+        // it with the generic quiet text.
+        if (!m.parkedSeen.size)
+          statusSet(m.step.id, { note: `quiet ${Math.round(silenceMs / 60000)}min but alive — waiting to the hard cap` });
       }
     }
   }
