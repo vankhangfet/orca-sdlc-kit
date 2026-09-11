@@ -8,6 +8,14 @@
 
 **Turn software development into a pipeline of AI agents whose work you can actually verify and control — every step's result lands on disk as readable output, every run is watchable live, token usage is accounted per run, and quality failures loop back automatically.**
 
+![The Orca Flow status dashboard: a vertical pipeline timeline on the left (a
+dot per step — green done, amber running, red failed — with parallel steps
+bracketed), and on the right live cards: the step(s) running now with big
+elapsed timers, what's up next, the Tasks checklist (○ queued, ◐ in progress,
+✓ done) and the artifact list](img/status_dashboard.png)
+
+*The live status page — opens itself in your browser when a run starts and updates on its own while the agents work. Details in [Watch it run](#watch-it-run--the-live-status-page).*
+
 ## Contents
 
 - [Why this kit](#why-this-kit)
@@ -26,20 +34,14 @@
 
 ## Why this kit
 
-Driving AI coding agents by hand does not survive a real feature:
+Driving AI agents by hand does not survive a real feature: you shuttle prompts between terminals, every fresh chat forgets what the last one decided, nothing forces a review or a test to actually happen, and one bad answer in a single do-everything session poisons everything downstream.
 
-- **You become the pipeline.** Copy the plan to the coder, paste the code to a reviewer, carry the feedback back — babysitting terminals, one prompt at a time, for every step of every task.
-- **Context drifts.** Each fresh chat forgets what the previous one decided. You re-explain the design every time, or the agent re-breaks what review just fixed.
-- **Quality is whatever the agent says it is.** Nothing forces a review, a security pass or tests to actually happen — and nothing sends the coder back when they fail.
-- **One harness carries everything.** Plan, code and docs in a single context window: one bad answer mid-project poisons everything downstream, and switching tools means rebuilding your whole workflow.
-- **A long run is a black box.** Is that 40-minute coding step working or hung? If your session dies at step 7 of 9, you start over from zero.
+This kit turns that into an assembly line. On the runtime provided by **[Orca ADE](https://www.onorca.dev/)** — disposable worktrees, agent terminals, run and task tracking — a small team of specialist agents (planner, architect, coder, reviewers, tester, writer) each does one job, writes its result to disk as readable Markdown, and hands it to the next. Quality failures loop back automatically, independent steps run in parallel, and an interrupted run resumes where it stopped. Cross-platform (Windows / macOS / Linux), one folder, needs only Node.
 
-With **[Orca ADE](https://www.onorca.dev/)** providing the runtime — disposable worktrees, agent terminals, run and task tracking — this kit turns that into an assembly line: a small "software team" of agents (planner, architect, coder, reviewers, tester, writer). Each does one job, writes its result to disk as readable Markdown, and hands it to the next; quality failures loop back automatically, independent steps run in parallel, a live dashboard shows every move, and an interrupted run resumes where it stopped. Cross-platform (Windows / macOS / Linux), one folder, needs only Node.
+Two ideas drive it:
 
-Two ideas drive the whole kit:
-
-- **It works like a real SDLC.** Not one agent improvising everything: a sequence of specialists with quality gates between them — review, security and test failures loop back to the coder automatically, so the pipeline doesn't just generate code, it defends its quality. Independent steps even run at the same time: the two design passes work in parallel.
-- **The harness is yours to swap.** Each step runs on whichever AI you pick — claude, codex, opencode, gemini, cursor, grok or kiro-cli — mixed freely across the pipeline. Enable, reorder or reassign a step in one JSON config; no code edits, ever.
+- **It works like a real SDLC.** Specialists with quality gates between them — review, security and test failures send the coder back automatically, so the pipeline defends its quality, not just generates code.
+- **The harness is yours to swap.** Each step runs on any supported agent — claude, codex, opencode, gemini, cursor, grok or kiro-cli — mixed freely and changed in one JSON config. No code edits, ever.
 
 ## How it works
 
@@ -199,16 +201,7 @@ node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavio
 
 ## Watch it run — the live status page
 
-Start a run and a dashboard opens itself in your browser —
-`<worktree>/.orca/artifacts/status.html` — and keeps updating on its own while
-the agents work: which step is running, what is done, what comes next, timings,
-retry attempts and the final artifact list. No refresh button, no server.
-
-![The Orca Flow status dashboard: a vertical pipeline timeline on the left (a
-dot per step — green done, amber running, red failed — with parallel steps
-bracketed), and on the right live cards: the step(s) running now with big
-elapsed timers, what's up next, the Tasks checklist (○ queued, ◐ in progress,
-✓ done) and the artifact list](img/status_dashboard.png)
+That dashboard pictured at the top is `<worktree>/.orca/artifacts/status.html` — it opens itself in your browser when a run starts and keeps updating on its own while the agents work: which step is running, what is done, what comes next, timings, retry attempts and the final artifact list. No refresh button, no server.
 
 The star of the mid-run view is that **Tasks card**: steps with a task
 checklist (`progress` in config — the coding step has one) show every
