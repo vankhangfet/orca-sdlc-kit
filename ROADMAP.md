@@ -1,6 +1,6 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Current release: **v1.5.2** · Last updated: 2026-09-10 · Proposal only — no committed dates.
+Current release: **v1.5.3** · Last updated: 2026-09-11 · Proposal only — no committed dates.
 
 One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on the status page can change a run's outcome, timeout or retry.
 
@@ -8,6 +8,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Track | Milestone | Theme |
 |---|---|---|
+| Shipped | v1.5.3 | Parked-prompt detection |
 | Shipped | v1.5.2 | Per-harness model configuration |
 | Shipped | v1.5.1 | Stability release — npx install + resume/retry/usage bug fixes |
 | Shipped | v1.5.0 | Token usage tracking |
@@ -21,6 +22,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Version | Feature | What shipped |
 |---|---|---|
+| v1.5.3 | **Parked-prompt detection** | A worker parked on a dialog only a human can answer — `permissions.ask` rules (not bypassed by `bypassPermissions`), Claude Code's folder-trust check on a fresh worktree, a CLI update prompt — is recognized from the known dialog texts on its frozen terminal screen: logged once per step per distinct prompt, with a "parked" note on the status page and the answer-it-in-the-terminal hint, instead of silence until the hard cap. Detection only — the flow never answers prompts; wait/fail semantics unchanged (#4) |
 | v1.5.2 | **Per-harness model configuration** | Optional `"model"` on each step plus pipeline-wide `defaults.model` (step overrides default). `"default"` — also missing or empty — keeps the agent's own default model: nothing is passed to the CLI. Any other value is passed as `--model <value>` on the primary dispatch path (previously the field only reached the cold-start fallback) and via `worker-start --model` on the fallback. A model flag inside the `agent` string always wins; kiro-cli (no model selection) is skipped with a warning; the dry-run plan shows the effective model per step. Also: roadmap re-tracked around the v2 line (queued minors → v2.0.x) |
 | v1.5.1 | **Stability release** | One-command install via `npx github:vankhangfet/orca-sdlc-kit`; bug fixes: `--from` no longer crashes at import on pipelines using `parallelWith`, `onFailGoto` fix-loops complete (settled tasks reopened before replay), and token usage reports real numbers again (Claude transcripts no longer suppressed, new Codex `token_count` records parsed without double-counting, nested subagent transcripts scanned) |
 | v1.5.0 | **Token usage tracking** | After every run (success or die) token usage per step is collected from Claude Code / Codex session logs (`~/.claude/projects`, `~/.codex/sessions`), appended to `USAGE.md` in the artifacts dir, and written to the status page (`steps[].usage`, `meta.usage` — rail chips + finished-run breakdown). Spec-matching attributes parallel same-agent steps; retries count as extra attempts; agents without adapters show "—"; CSV export from the old roadmap note was dropped |
