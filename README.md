@@ -16,6 +16,8 @@ elapsed timers, what's up next, the Tasks checklist (○ queued, ◐ in progress
 
 *The live status page — opens in your browser when a run starts and updates itself while the agents work. [Details](#watch-it-run--the-live-status-page).*
 
+**Three flows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines).
+
 **Customize everything in `.orca/flow.config.json`** — add or reorder steps, swap any step's agent, pick models per step, set retries and timeouts, run steps in parallel: plain JSON, zero code. [See how](#2-configure-your-pipeline).
 
 ## Contents
