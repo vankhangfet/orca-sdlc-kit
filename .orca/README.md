@@ -14,7 +14,8 @@ Installed via `npx github:vankhangfet/orca-sdlc-kit`? You already have all of th
 | `flow.mjs` | The orchestrator — reads the config, drives the agents. You never edit it. |
 | `flow.config.json` | The full SDLC pipeline. **This is the file you edit**: steps, agents, `autoRun`, gates, interactive steps, timeouts. |
 | `fixbug.config.json` | The bug-fix pipeline (run with `--config fixbug.config.json "<bug + reproduction steps>"`). |
-| `CONFIGURATION.md` | Field-by-field reference for both config files. |
+| `cr.config.json` | The change-request pipeline (run with `--config cr.config.json "<what changes and why>"`). |
+| `CONFIGURATION.md` | Field-by-field reference for all three config files. |
 | `artifacts/` | Runtime output — every step's Markdown artifact lands here (gitignored). |
 
 For the full picture — concepts, quick start, automation modes, worktree

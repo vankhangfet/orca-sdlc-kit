@@ -95,7 +95,7 @@ What makes this safe rather than a black box:
 npx github:vankhangfet/orca-sdlc-kit
 ```
 
-Copies the kit (`.orca/flow.mjs`, both configs, the reference docs, `orca.yaml`) into the project and gitignores `.orca/artifacts/`. Re-runs only add missing files — your edits are safe; `--force` resets everything to the shipped versions.
+Copies the kit (`.orca/flow.mjs`, all three configs, the reference docs, `orca.yaml`) into the project and gitignores `.orca/artifacts/`. Re-runs only add missing files — your edits are safe; `--force` resets everything to the shipped versions.
 
 **Option B — manual copy:** copy `orca.yaml` and the `.orca/` folder into the project root; gitignore `.orca/artifacts/`.
 
