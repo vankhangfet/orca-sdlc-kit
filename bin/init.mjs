@@ -26,6 +26,7 @@ const FILES = [
   ".orca/flow.mjs",
   ".orca/flow.config.json",
   ".orca/fixbug.config.json",
+  ".orca/cr.config.json",
   ".orca/CONFIGURATION.md",
   ".orca/README.md",
   "orca.yaml",
