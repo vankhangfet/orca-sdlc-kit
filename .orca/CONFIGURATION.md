@@ -90,7 +90,7 @@ live status page: `- [ ]` not started, `- [~]` in progress, `- [x]` done
 outcomes, retries or liveness. The step's `spec` must tell the agent to write
 the file and keep it current; use the `{tasks}` placeholder in the spec to
 reference the path (substituted like `{out}`). The shipped configs' coding
-steps (`TASKS.md` / `FIX_TASKS.md`) contain ready-to-copy wording. A missing
+steps (`TASKS.md` / `FIX_TASKS.md` / `CR_TASKS.md`) contain ready-to-copy wording. A missing
 or malformed checklist is ignored silently — the run is never affected.
 
 **`reads`** — array of step `id`s this step depends on. The orchestrator turns it
