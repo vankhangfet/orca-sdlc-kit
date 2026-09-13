@@ -75,7 +75,7 @@
         "code-review"
       ],
       "onFailGoto": "cr-coding",
-      "spec": "You are a testing agent. Based on {reads}: (1) write and RUN tests for the new or changed behavior from the plan; (2) run the project's existing test suite as a regression check - a change request must not break existing behavior. Write {out}: tests written, commands run, pass/fail results, failure details, and fix suggestions. If any test fails, report outcome=failed to loop back to coding."
+      "spec": "You are a testing agent. Based on {reads}: (1) write and RUN tests for the new or changed behavior per {reads}; (2) run the project's existing test suite as a regression check - a change request must not break existing behavior. Write {out}: tests written, commands run, pass/fail results, failure details, and fix suggestions. If any test fails, report outcome=failed to loop back to coding."
     },
     {
       "id": "cr-verify",
