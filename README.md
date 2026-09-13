@@ -162,6 +162,7 @@ node .orca/flow.mjs --only planning,architecture "Objective"
 node .orca/flow.mjs --grill-me "Objective"          # interview me before planning
 node .orca/flow.mjs --agent coding=claude "Objective"   # one-off agent swap for a step
 node .orca/flow.mjs --config fixbug.config.json "Bug report"
+node .orca/flow.mjs --config cr.config.json "Change request"
 node .orca/flow.mjs --worktree name:lab "Objective" # only when launching from outside the target
 ```
 
@@ -193,6 +194,12 @@ The flow adds one file of its own to the same dir: `USAGE.md`, the cumulative pe
 
 ```bash
 node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavior, how to reproduce>"
+```
+
+**Change request (`cr.config.json`):** for maintenance on an existing system — Impact Analysis on the current code -> CR Plan with acceptance criteria -> Coding -> Code Review -> Testing incl. regression -> Acceptance Verification, looping back on failure (max 2 retries).
+
+```bash
+node .orca/flow.mjs --config cr.config.json "<what changes and why, on the existing system>"
 ```
 
 ## Watch it run — the live status page
