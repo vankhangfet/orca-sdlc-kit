@@ -302,18 +302,26 @@ config is always respected, even if that step is listed in `--only`. (Exception:
 ### 5.1. Multiple pipelines
 
 Any config file in `.orca/` can define a pipeline — same schema, selected with
-`--config`. The kit ships two:
+`--config`. The kit ships three:
 
 - `flow.config.json` — full SDLC (default, no flag needed).
 - `fixbug.config.json` — bug-fix flow: Root Cause Analysis (claude) -> Fix Plan
   (claude) -> Bug Fix incl. regression test (codex) -> Fix Verification against
   the original reproduction (opencode; fail loops back to the fix).
+- `cr.config.json` — change-request (maintenance) flow: Impact Analysis on the
+  existing code (claude) -> CR Plan with acceptance criteria (claude) -> CR
+  Coding (codex) -> Code Review (claude) -> Testing incl. regression (opencode)
+  -> Acceptance Verification against the criteria (opencode; review/test/verify
+  fail loops back to the coding step).
 
 ```
 node .orca/flow.mjs --config fixbug.config.json "<bug: what happens, expected, how to reproduce>"
+node .orca/flow.mjs --config cr.config.json "<the change request: what changes and why>"
 ```
 
 Pass the complete bug context as the objective — the RCA step reproduces from it.
+For a CR, pass the full request — the impact-analysis step reads the codebase
+against it.
 
 ### 5.2. The `grill` step and `--grill-me` / `--no-grill-me`
 
