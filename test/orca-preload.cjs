@@ -20,6 +20,8 @@ if (a1 && !fs.existsSync(a1) && ORCA_CMDS.has(path.basename(a1))) {
   // argv[1] is the command word (resolved to an absolute path by Node), so it
   // must be re-joined as its basename: fake-orca keys handlers on the full
   // "orchestration run-create" / "status" command, as flow.mjs's orca() spells it.
+  // main never returns for intercepted calls (ok/fail, missing handler and a
+  // bad state file all exit inside); its exit(3) guard makes a forgotten
+  // ok/fail loud instead of silent.
   require("./fake-orca.cjs").main([path.basename(a1), ...process.argv.slice(2)]);
-  process.exit(0); // defensive: fake-orca.main exits on its own
 }

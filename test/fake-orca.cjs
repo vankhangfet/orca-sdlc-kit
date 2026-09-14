@@ -20,7 +20,8 @@ function main(argv) {
   }
   let state; let fresh = false;
   try { state = JSON.parse(fs.readFileSync(env.ORCA_FAKE_STATE, "utf8")); }
-  catch {
+  catch (e) {
+    if (e.code !== "ENOENT") { console.error("fake-orca: state file unreadable: " + e.message); process.exit(2); }
     state = { nextId: 1, tasks: {}, dispatches: {}, terminals: {}, gates: [], pendingDone: [], extra: {} };
     fresh = true;
   }
@@ -38,9 +39,11 @@ function main(argv) {
   const key = rest.slice(0, 2).join(" ");
   fs.appendFileSync(env.ORCA_FAKE_LOG, JSON.stringify({ t: Date.now(), cmd: key, flags }) + "\n");
 
+  let saved = false;
   const save = (code, j) => {
     fs.writeFileSync(env.ORCA_FAKE_STATE, JSON.stringify(state));
     console.log(JSON.stringify(j));
+    saved = true;
     process.exit(code);
   };
   const c = {
@@ -120,6 +123,7 @@ function main(argv) {
   const h = (scenario.handlers || {})[key] || DEFAULTS[key];
   if (!h) { console.error('fake-orca: no handler for "' + key + '"'); process.exit(2); }
   h(c);
+  if (!saved) { console.error('fake-orca: handler for "' + key + '" returned without ok/fail'); process.exit(3); }
 }
 
 module.exports = { main };
