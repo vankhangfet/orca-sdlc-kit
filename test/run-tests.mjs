@@ -202,6 +202,7 @@ scenario("E2 happy-manual (warm-up, paste ladder, claude wrap, close)", async ()
   const sends = r.by("terminal send");
   ok("E2 preamble sent (spec head present)", sends.some((c) => String(c.flags.text ?? "").includes("# Solo")));
   ok("E2 dry-run placeholder replaced", sends.every((c) => !String(c.flags.text ?? "").includes("ctx_dryrun")));
+  ok("E2 real dispatch id substituted", sends.some((c) => /dispatch=disp-\d+/.test(String(c.flags.text ?? ""))));
   ok("E2 bare-enter follow-up sent", sends.some((c) => c.flags.text === ""));
   eq("E2 terminal closed", r.by("terminal close").length, 1);
   eq("E2 status overall", r.status?.overall, "succeeded");
