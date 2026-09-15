@@ -12,6 +12,7 @@
 // deletes a passing scenario's dirs only after the scenario finishes.
 //
 // Run: node test/run-tests.mjs [--only <substring>]
+// (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -284,12 +285,14 @@ scenario("F1 shipped configs dry-run cleanly", async () => {
   for (const cfg of [null, "fixbug.config.json", "cr.config.json"]) {
     const label = cfg || "flow.config.json (default)";
     const r = await runFlow({ name: "f1", config: cfg, args: ["--dry-run"], objective: "suite smoke", budgetMs: 30000 });
+    ok(`F1 ${label} not hung`, !r.hung);
     eq(`F1 ${label} exit`, r.code, 0);
     ok(`F1 ${label} prints dry-run banner`, /Dry-run — no agents called/.test(r.out));
     ok(`F1 ${label} lists steps`, /^\s+1\. /m.test(r.out));
   }
 });
 
+// fixtures are deliberately defaults-free: they die during load-time validation, before any timing applies
 const BAD_CONFIGS = [
   ["F2 unknown parallelWith target", "bad-parallel-unknown.json", /parallelWith "ghost" is not a known step id/],
   ["F3 chained parallelWith", "bad-parallel-chain.json", /parallelWith chains are not allowed/],
@@ -298,7 +301,7 @@ const BAD_CONFIGS = [
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {
-    const r = await runFlow({ name: "f", config: `../test/configs/${file}`, objective: "validate", budgetMs: 15000 });
+    const r = await runFlow({ name: file.replace(".json", ""), config: `../test/configs/${file}`, objective: "validate", budgetMs: 15000 });
     ok(`${name} not hung`, !r.hung);
     eq(`${name} exit code`, r.code, 1);
     ok(`${name} message`, re.test(r.out + r.err));
@@ -307,24 +310,28 @@ for (const [name, file, re] of BAD_CONFIGS) {
 
 scenario("F6 --grill-me and --no-grill-me are mutually exclusive", async () => {
   const r = await runFlow({ name: "f6", args: ["--grill-me", "--no-grill-me"], objective: "x", budgetMs: 15000 });
+  ok("F6 not hung", !r.hung);
   eq("F6 exit code", r.code, 1);
   ok("F6 message", /mutually exclusive/.test(r.out + r.err));
 });
 
 scenario("F7 --status-preview refuses real-run mixes", async () => {
   const r = await runFlow({ name: "f7", args: ["--status-preview"], objective: "build it", budgetMs: 15000 });
+  ok("F7 not hung", !r.hung);
   eq("F7 exit code", r.code, 1);
   ok("F7 message", /renders a SAMPLE status page/.test(r.out + r.err));
 });
 
 scenario("F8 objective is required for real runs", async () => {
   const r = await runFlow({ name: "f8", objective: "", budgetMs: 15000 });
+  ok("F8 not hung", !r.hung);
   eq("F8 exit code", r.code, 1);
   ok("F8 message", /An objective is required/.test(r.out + r.err));
 });
 
 scenario("F9 --from must name an enabled step", async () => {
   const r = await runFlow({ name: "f9", args: ["--from", "ghost"], objective: "x", budgetMs: 15000 });
+  ok("F9 not hung", !r.hung);
   eq("F9 exit code", r.code, 1);
   ok("F9 message", /is not among the enabled steps/.test(r.out + r.err));
 });
