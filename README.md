@@ -231,20 +231,18 @@ A `--from` resume continues the same picture, earlier steps keeping their origin
 ## When something goes wrong
 
 - **Preview first** — `--dry-run` shows exactly what will run.
-- **One-time "accept responsibility" dialog (claude)** — asked once per machine on the first bypass session; accept it once, or pre-set `"skipDangerousModePermissionPrompt": true` in user-level Claude Code settings. Bypass = full tool access, which is why unattended pipelines belong in disposable Orca worktrees (the default here).
-- **A step looks quiet for a long time** — silence is not failure: a worker deep in one long verification (reviews routinely run an hour) is waited on until it settles or its hard cap hits; the fix loop triggers only on a definite FAIL verdict, never on silence.
-- **An agent is PARKED on a prompt** — `bypassPermissions` does not bypass your machine's `permissions.ask` rules, and Claude Code's folder-trust check on a fresh worktree also waits for a human (default is *exit*). The flow reads the agent's screen: a known dialog (permission confirmation, folder-trust, CLI update) on a frozen screen is logged once and noted on the status page — answer it in that terminal and the run continues on its own. The flow never answers prompts for you; accept folder-trust once per repo.
-- **A step is taking forever** — shown as STILL RUNNING; the terminal is left open and the flow prints the exact `--from <step>` command to continue later.
-- **Stale orchestration state after experiments** — `orca orchestration reset --all --json`.
-- **CLI flags differ on your Orca version** — check `orca skills get orchestration --full`.
-- **Claude crashes with `EBADF ... history.jsonl.lock` (Windows)** — known Claude Code bug ([#15739](https://github.com/anthropics/claude-code/issues/15739)); the flow already spawns Claude agents in a way that avoids it. If it recurs: close other Claude sessions during interactive steps, or update Claude Code.
+- **Silence is not failure** — long quiet steps are waited on until they settle or hit their cap; only a definite FAIL verdict loops back.
+- **An agent is PARKED on a prompt** — answer it in that terminal; the run continues on its own.
+- **A step ran out of time** — the terminal stays open; re-run with the printed `--from <step>` command.
+
+Details and fixes (claude dialogs, EBADF crash, stale Orca state, version drift): [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Contributing
 
 Issues and PRs are welcome at [github.com/vankhangfet/orca-sdlc-kit](https://github.com/vankhangfet/orca-sdlc-kit). Ground rules:
 
 - **Pipeline behavior belongs in the configs** — a new field in `flow.config.json` / `fixbug.config.json` plus a paragraph in [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md), not new logic in `flow.mjs`.
-- **Docs ship with the change** — README and CONFIGURATION.md in the same PR as any behavior change.
+- **Docs ship with the change** — README, TROUBLESHOOTING.md and CONFIGURATION.md in the same PR as any behavior change.
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, ...). Never commit `docs/` (internal notes) or `.orca/artifacts/` (runtime output) — both are gitignored.
 - **Verify before you push** — no build or test toolchain; the loop is:
 
