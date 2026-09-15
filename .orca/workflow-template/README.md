@@ -21,6 +21,9 @@ stops and shows on the status page for a human to decide.
 
 ## Customize
 
+These templates are suggestions, not a fixed menu — copy one, strip it down,
+or define any pipeline your project needs; it runs the same way.
+
 - **Integration branch** — the `git-deliver` spec rebases onto `origin/main`.
   On a different branch (e.g. `develop`), replace every `origin/main` in that
   step's `spec` text.

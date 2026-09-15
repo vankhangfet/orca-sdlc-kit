@@ -203,7 +203,7 @@ node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavio
 node .orca/flow.mjs --config cr.config.json "<what changes and why, on the existing system>"
 ```
 
-**Workflow templates (`.orca/workflow-template/`)** — the same three pipelines, each ending with a **Rebase & Push** step: commit pending work, rebase onto `origin/main` (edit the step's `spec` to change the branch), resolve conflicts, push.
+**Workflow templates (`.orca/workflow-template/`)** — the same three pipelines, each ending with a **Rebase & Push** step: commit pending work, rebase onto `origin/main` (edit the step's `spec` to change the branch), resolve conflicts, push. Templates are suggestions, not a fixed menu — any pipeline you can describe in JSON runs the same way.
 
 ```bash
 node .orca/flow.mjs --config workflow-template/fixbug.config.json "<bug>"
