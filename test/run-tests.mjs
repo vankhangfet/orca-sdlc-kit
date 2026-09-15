@@ -158,6 +158,34 @@ scenario("E6 parked-prompt (frozen dialog: warn, never answer, hard cap)", async
 });
 
 // ---------------------------------------------------------------------------
+// E7 — onFailGoto fix loop: fail once, jump back, reopen (not re-create),
+// succeed on the second pass.
+// ---------------------------------------------------------------------------
+scenario("E7 fail-retry (onFailGoto reopens the fix target once)", async () => {
+  const r = await runFlow({ name: "e7", config: "../test/configs/retry.config.json", scenario: "reviewer-fail-once.cjs", budgetMs: 90000 });
+  ok("E7 not hung", !r.hung);
+  eq("E7 exit code", r.code, 0);
+  ok("E7 fail jump logged", /\[fail\] Reviewer FAILED -> back to "Coder" \(attempt 1\/1\)/.test(r.out + r.err));
+  eq("E7 one task-create per step (no double dispatch)", r.by("orchestration task-create").length, 2);
+  const reopens = r.by("orchestration task-update").filter((c) => c.flags.status === "ready");
+  ok("E7 target reopened", reopens.length >= 1);
+  ok("E7 fix note recorded", reopens.some((c) => String(c.flags.result ?? "").includes("fix from reviewer")));
+  eq("E7 status overall", r.status?.overall, "succeeded");
+  eq("E7 coder attempt 2", r.status?.steps.find((s) => s.id === "coder")?.attempt, 2);
+});
+
+// ---------------------------------------------------------------------------
+// E8 — retries are finite: exhausted maxRetries dies instead of looping.
+// ---------------------------------------------------------------------------
+scenario("E8 retry-exhaust (loop is finite)", async () => {
+  const r = await runFlow({ name: "e8", config: "../test/configs/retry.config.json", scenario: "reviewer-fail-always.cjs", budgetMs: 90000 });
+  ok("E8 not hung", !r.hung);
+  eq("E8 exit code", r.code, 1);
+  ok("E8 exhausted message", /exhausted 1 retries/.test(r.out + r.err));
+  eq("E8 worker-start count bounded (2+2)", r.by("orchestration worker-start").length, 4);
+});
+
+// ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();
   for (const s of scenarios) {
