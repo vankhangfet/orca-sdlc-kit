@@ -8,13 +8,12 @@
 
 **A pipeline of AI agents that plans, codes, reviews, tests and documents — the whole pipeline (steps, agents, models, retries, parallel groups) defined in one JSON config, no code ever; results land on disk, runs are watchable live, quality failures loop back automatically.**
 
-![The Orca Flow status dashboard: a vertical pipeline timeline on the left (a
-dot per step — green done, amber running, red failed — with parallel steps
-bracketed), and on the right live cards: the step(s) running now with big
-elapsed timers, what's up next, the Tasks checklist (○ queued, ◐ in progress,
-✓ done) and the artifact list](img/status_dashboard.png)
+![Orca SDLC Kit in motion: a terminal runs one command — node .orca/flow.mjs
+"Build html game 2048" — then the live status dashboard takes over: the pipeline
+rail advances step by step, two design steps run in parallel with elapsed timers
+ticking, and artifact chips light up as each Markdown lands on disk](img/banner-animation.gif)
 
-*The live status page — opens in your browser when a run starts and updates itself while the agents work. [Details](#watch-it-run--the-live-status-page).*
+*One command starts the whole pipeline; the status page opens in your browser and updates itself while the agents work. [Details](#watch-it-run--the-live-status-page) · [HD video](img/banner-animation.mp4) · [interactive version](img/banner-animation.html)*
 
 **Three flows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines).
 
@@ -207,6 +206,14 @@ node .orca/flow.mjs --config cr.config.json "<what changes and why, on the exist
 ## Watch it run — the live status page
 
 That dashboard at the top is `<worktree>/.orca/artifacts/status.html` — it opens itself in your browser when a run starts and updates on its own: which step is running, what's done, what's next, timings, retries, artifacts. No refresh button, no server.
+
+![The Orca Flow status dashboard: a vertical pipeline timeline on the left (a
+dot per step — green done, amber running, red failed — with parallel steps
+bracketed), and on the right live cards: the step(s) running now with big
+elapsed timers, what's up next, the Tasks checklist (○ queued, ◐ in progress,
+✓ done) and the artifact list](img/status_dashboard.png)
+
+*The full dashboard, mid-run — including the Tasks checklist and a failed step looping back.*
 
 The **Tasks card** is the star: steps with a checklist (`progress` in config — the coding step has one) show every task as `○` queued, `◐` in progress or `✓` done (`.orca/artifacts/TASKS.md`), ticked off live by the coding agent.
 

@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orca SDLC Kit — Animated README Banner</title>
+<style>
+  :root {
+    /* Dark neon-terminal palette (GitHub-dark derived) */
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --surface2: #1c2230;
+    --panel:    #0f141c;
+    --fg:       #e6edf3;
+    --muted:    #8b949e;
+    --faint:    #6e7681;
+    --border:   rgba(255,255,255,0.09);
+    --border2:  rgba(255,255,255,0.06);
+
+    --green:    #3fb950;
+    --green-dim:#2ea043;
+    --amber:    #d29922;
+    --blue:     #58a6ff;
+    --violet:   #a371f7;
+
+    --font-mono: 'JetBrains Mono','SFMono-Regular',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
+    --font-ui:   -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #05070a;
+    overflow: hidden;
+    font-family: var(--font-ui);
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ---- 16:9 scale-to-fit stage ---- */
+  .shell { position: fixed; inset: 0; display: grid; place-items: center; }
+  .stage {
+    width: 1280px; height: 720px;
+    position: relative;
+    transform-origin: center center;
+    background:
+      radial-gradient(1200px 600px at 78% -8%, rgba(63,185,80,0.10), transparent 60%),
+      radial-gradient(900px 520px at 6% 108%, rgba(88,166,255,0.08), transparent 60%),
+      var(--bg);
+    overflow: hidden;
+    border-radius: 14px;
+    box-shadow: 0 40px 120px rgba(0,0,0,0.6);
+  }
+  .scan {
+    position: absolute; inset: 0; pointer-events: none; z-index: 60;
+    background: repeating-linear-gradient(180deg, rgba(255,255,255,0.014) 0 1px, transparent 1px 3px);
+    mix-blend-mode: overlay;
+  }
+
+  .beat { position: absolute; inset: 0; opacity: 0; transition: opacity .55s ease; }
+  .beat.on { opacity: 1; }
+
+  /* ============ BRAND STRIP (persistent header) ============ */
+  .brand {
+    position: absolute; top: 0; left: 0; right: 0; height: 64px; z-index: 40;
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 26px;
+    background: linear-gradient(180deg, rgba(13,17,23,0.9), rgba(13,17,23,0));
+  }
+  .logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    display: grid; place-items: center;
+    background: linear-gradient(150deg, #10261a, #0c1a12);
+    border: 1px solid rgba(63,185,80,0.4);
+    box-shadow: 0 0 22px rgba(63,185,80,0.25);
+  }
+  .logo svg { width: 18px; height: 18px; }
+  .brand .name { font-weight: 650; letter-spacing: .01em; font-size: 16px; }
+  .brand .name b { color: var(--green); }
+  .brand .tag {
+    font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    letter-spacing: .16em; text-transform: uppercase;
+    padding: 4px 9px; border: 1px solid var(--border); border-radius: 6px;
+    margin-left: 2px;
+  }
+  .brand .spacer { flex: 1; }
+  .brand .step-flag {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .brand .step-flag em { color: var(--green); font-style: normal; }
+
+  /* ============ BEAT 1 — terminal ============ */
+  .b1-wrap { position: absolute; inset: 78px 40px 40px; }
+  .win {
+    height: 100%; width: 100%;
+    background: rgba(9,12,17,0.92);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(63,185,80,0.04);
+  }
+  .win-bar {
+    height: 38px; flex: 0 0 38px; display: flex; align-items: center; gap: 8px;
+    padding: 0 14px; background: var(--surface); border-bottom: 1px solid var(--border2);
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f56; } .dot.y { background: #ffbd2e; } .dot.g { background: #27c93f; }
+  .win-title {
+    margin-left: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+    letter-spacing: .04em;
+  }
+  .term {
+    flex: 1; padding: 18px 22px; overflow: hidden;
+    font-family: var(--font-mono); font-size: 13px; line-height: 1.5;
+    color: #cdd9e5;
+  }
+  .term .ln { white-space: pre-wrap; word-break: break-word; opacity: 0; }
+  .term .ln.show { opacity: 1; }
+  .prompt-user { color: var(--green); }
+  .prompt-path { color: var(--blue); }
+  .cmd { color: #fff; }
+  .cmd .arg { color: var(--amber); }
+  .tagname { color: var(--violet); }
+  .kv { color: var(--muted); }
+  .ok { color: var(--green); }
+  .num { color: var(--blue); }
+  .paren { color: var(--faint); }
+  .cursor {
+    display: inline-block; width: 8px; height: 15px; margin-left: 2px;
+    background: var(--green); vertical-align: -2px;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ============ BEAT 2 — status page ============ */
+  .b2-wrap { position: absolute; inset: 74px 40px 34px; display: flex; flex-direction: column; gap: 14px; }
+
+  .run-head {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 20px 18px;
+  }
+  .run-top { display: flex; align-items: center; gap: 14px; }
+  .pill-run {
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: .16em;
+    color: var(--green); background: rgba(63,185,80,0.12);
+    border: 1px solid rgba(63,185,80,0.4); border-radius: 6px; padding: 5px 11px;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .pill-run .blip { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 10px var(--green); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+  .run-title { font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+  .run-meta {
+    display: flex; flex-wrap: wrap; gap: 20px; margin-top: 12px;
+    font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+  }
+  .run-meta b { color: #c9d4e0; font-weight: 500; }
+  .bar {
+    margin-top: 14px; height: 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.07); overflow: hidden;
+  }
+  .bar > i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--green-dim), var(--green));
+    box-shadow: 0 0 14px rgba(63,185,80,0.5);
+    border-radius: 999px; transition: width 1.1s cubic-bezier(.4,0,.2,1);
+  }
+  .bar-cap { margin-top: 8px; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); }
+  .bar-cap b { color: var(--green); }
+
+  .cols { flex: 1; display: grid; grid-template-columns: 300px 1fr; gap: 14px; min-height: 0; }
+
+  .pipeline {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 15px 16px; overflow: hidden;
+  }
+  .sect-label {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--faint); margin-bottom: 12px;
+  }
+  .step { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; position: relative; }
+  .step .marker { flex: 0 0 12px; margin-top: 3px; display: grid; place-items: center; }
+  .step .dotm { width: 11px; height: 11px; border-radius: 50%; background: #30363d; border: 1px solid #3a424d; transition: .4s; }
+  .step .body .nm { font-size: 12.5px; font-weight: 550; color: var(--faint); transition: .3s; display: flex; align-items: center; gap: 7px; }
+  .step .body .ag { font-family: var(--font-mono); font-size: 11px; color: var(--faint); transition:.3s; }
+  .step .body .ag .t { color: var(--blue); }
+  .step.done .dotm { background: var(--green); border-color: var(--green); box-shadow: 0 0 8px rgba(63,185,80,.6); }
+  .step.done .nm { color: #c9d4e0; }
+  .step.done .ag .t { color: var(--blue); }
+  .step.active .dotm { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 9px rgba(210,153,34,.7); }
+  .step.active .nm { color: var(--amber); }
+  .step.active { border-left: 2px solid var(--violet); margin-left: -16px; padding-left: 14px; }
+  .step.skip .nm { color: var(--faint); text-decoration: line-through; }
+  .mini-tag {
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: .08em;
+    padding: 1px 5px; border-radius: 4px; text-transform: uppercase;
+  }
+  .mini-tag.att { color: var(--amber); background: rgba(210,153,34,.14); }
+  .mini-tag.nx  { color: var(--blue); background: rgba(88,166,255,.14); }
+  .pause-ico { color: var(--violet); font-size: 9px; background: rgba(163,113,247,.16); border-radius: 3px; padding: 1px 4px; }
+
+  .right { display: flex; flex-direction: column; gap: 13px; min-height: 0; }
+  .running-panel { display: flex; flex-direction: column; gap: 10px; }
+  .run-card {
+    background: var(--panel); border: 1px solid rgba(63,185,80,0.42); border-radius: 11px;
+    padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 0 0 1px rgba(63,185,80,0.05), 0 0 22px rgba(63,185,80,0.07);
+    opacity: 0; transform: translateY(8px); transition: .5s;
+  }
+  .run-card.in { opacity: 1; transform: none; }
+  .run-card .lbl { font-size: 16px; font-weight: 600; }
+  .run-card .lbl .ag { font-family: var(--font-mono); font-size: 12px; color: var(--blue); font-weight: 400; margin-left: 8px; }
+  .run-card .time { font-family: var(--font-mono); font-size: 18px; font-weight: 600; color: var(--green); }
+
+  .upnext { }
+  .upnext .row { display: flex; align-items: center; gap: 9px; font-size: 14px; }
+  .upnext .row .arw { color: var(--faint); }
+  .upnext .row b { font-weight: 600; }
+  .upnext .row .ag { font-family: var(--font-mono); font-size: 12px; color: var(--blue); }
+  .upnext .sub { margin-top: 5px; font-size: 12px; color: var(--faint); }
+
+  .artifacts .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
+    background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px;
+    padding: 5px 10px; display: inline-flex; align-items: center; gap: 6px;
+    opacity: .5; transition: .4s;
+  }
+  .chip.ready { opacity: 1; color: #c9d4e0; border-color: rgba(63,185,80,.3); }
+  .chip.ready .ck { color: var(--green); }
+
+  /* ---- caption / progress ticks ---- */
+  .cap {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 50; display: flex; align-items: center; gap: 12px;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
+    color: var(--muted); text-transform: uppercase;
+    background: rgba(9,12,17,0.7); border: 1px solid var(--border);
+    padding: 7px 14px; border-radius: 999px; backdrop-filter: blur(6px);
+  }
+  .cap .beats { display: flex; gap: 6px; }
+  .cap .beats i { width: 20px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.14); transition:.4s; }
+  .cap .beats i.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+</style>
+</head>
+<body>
+  <div class="shell">
+    <div class="stage" id="stage">
+
+      <!-- persistent brand strip -->
+      <div class="brand">
+        <span class="logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12c2.5-5 7-7 11-6 3 .8 6 3 7 7-3 1-5 1-7 0" />
+            <path d="M3 12c0 4 3 7 8 7 3 0 5-1 7-3" />
+            <circle cx="15" cy="10" r="1.1" fill="#3fb950" stroke="none" />
+          </svg>
+        </span>
+        <span class="name"><b>orca</b> SDLC kit</span>
+        <span class="tag">orca-flow</span>
+        <span class="spacer"></span>
+        <span class="step-flag" id="stepFlag">$ node .orca/flow.mjs</span>
+      </div>
+
+      <!-- ============ BEAT 1 : TERMINAL ============ -->
+      <div class="beat on" id="beat1">
+        <div class="b1-wrap">
+          <div class="win">
+            <div class="win-bar">
+              <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+              <span class="win-title">PowerShell — game_2048</span>
+            </div>
+            <div class="term" id="term"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ BEAT 2 : STATUS PAGE ============ -->
+      <div class="beat" id="beat2">
+        <div class="b2-wrap">
+          <div class="run-head">
+            <div class="run-top">
+              <span class="pill-run"><span class="blip"></span>RUNNING</span>
+              <span class="run-title">Build html game 2048</span>
+            </div>
+            <div class="run-meta">
+              <span>run: <b>run_96a7</b></span>
+              <span>worktree: <b>…\Multi-harness\game_2048</b></span>
+              <span>config: <b>flow.config.json</b></span>
+              <span>elapsed: <b>14m 28s</b></span>
+            </div>
+            <div class="bar"><i id="barFill"></i></div>
+            <div class="bar-cap"><b id="stepCount">0/10</b> steps · <span id="parallel">2 steps in parallel</span></div>
+          </div>
+
+          <div class="cols">
+            <!-- pipeline sidebar -->
+            <div class="pipeline">
+              <div class="sect-label">Pipeline</div>
+              <div id="pipeList"></div>
+            </div>
+
+            <!-- right column -->
+            <div class="right">
+              <div>
+                <div class="sect-label">Now running</div>
+                <div class="running-panel">
+                  <div class="run-card" id="rc1">
+                    <span class="lbl">Detailed Design<span class="ag">opencode</span></span>
+                    <span class="time">4m 39s</span>
+                  </div>
+                  <div class="run-card" id="rc2">
+                    <span class="lbl">UI/UX Design <span class="ag">opencode</span></span>
+                    <span class="time">4m 39s</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="upnext">
+                <div class="sect-label">Up next</div>
+                <div class="row"><span class="arw">→</span> <b>Coding</b> <span class="ag">opencode</span></div>
+                <div class="sub">starts when the 2 running steps settle</div>
+              </div>
+
+              <div class="artifacts">
+                <div class="sect-label">Artifacts</div>
+                <div class="chips" id="chips"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scan"></div>
+
+      <!-- caption + beat ticks -->
+      <div class="cap">
+        <span id="capText">Run a workflow from one command</span>
+        <span class="beats"><i class="on" id="t1"></i><i id="t2"></i></span>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+(function () {
+  // ---------- scale-to-fit 16:9 ----------
+  var stage = document.getElementById('stage');
+  function fit() {
+    var s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    stage.style.transform = 'scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit); fit();
+
+  // ---------- data ----------
+  var STEPS = [
+    { nm:'Grill Me (requirements interview)', skip:true },
+    { nm:'Planning',            att:true },
+    { nm:'Architecture Design' },
+    { nm:'Detailed Design',     pause:true },
+    { nm:'UI/UX Design (mockscreen)', pause:true },
+    { nm:'Coding',              next:true },
+    { nm:'Code Review' },
+    { nm:'Security Review' },
+    { nm:'Testing' },
+    { nm:'Documentation' }
+  ];
+  var CHIPS = [
+    { n:'BRAINSTORM.md', done:true },{ n:'PLAN.md', done:true },{ n:'ARCHITECTURE.md', done:true },
+    { n:'DETAILED_DESIGN.md' },{ n:'UIUX_MOCKS.md' },{ n:'CHANGES.md' },
+    { n:'REVIEW.md' },{ n:'SECURITY_REVIEW.md' },{ n:'TEST_REPORT.md' },{ n:'DOCUMENTATION.md' }
+  ];
+
+  // terminal script — each entry {html, pause(ms before next)}
+  var P = '<span class="prompt-user">PS</span> <span class="prompt-path">C:\\Working\\FY26\\DE\\Multi-harness\\game_2048</span>&gt; ';
+  var LINES = [
+    { h: P + '<span class="cmd">node <span class="tagname">.orca/flow.mjs</span> <span class="arg">"Build html game 2048"</span></span>', type:true, d: 520 },
+    { h: '<span class="tagname">[orca-flow]</span> Config: <span class="kv">flow.config.json (default)</span>', d: 130 },
+    { h: '<span class="tagname">[orca-flow]</span> Auto-run: <span class="ok">on</span> — agents run unattended, gates ignored', d: 160 },
+    { h: '<span class="tagname">[orca-flow]</span> Pipeline to run (in order):', d: 120 },
+    { h: '  <span class="num">1.</span> Planning              <span class="kv">agent=claude    writes=PLAN.md</span>', d: 70 },
+    { h: '  <span class="num">2.</span> Architecture Design   <span class="kv">agent=opencode  writes=ARCHITECTURE.md</span>', d: 70 },
+    { h: '  <span class="num">3.</span> Detailed Design       <span class="kv">agent=opencode</span> <span class="paren">{parallel-group}</span>', d: 70 },
+    { h: '  <span class="num">4.</span> UI/UX Design          <span class="kv">agent=opencode</span> <span class="paren">{parallel-with detailed-design}</span>', d: 70 },
+    { h: '  <span class="num">5.</span> Coding                <span class="kv">agent=opencode  writes=CHANGES.md</span>', d: 70 },
+    { h: '  <span class="num">6.</span> Code Review           <span class="kv">agent=opencode</span> <span class="paren">{onFail-&gt;coding}</span>', d: 70 },
+    { h: '  <span class="num">7.</span> Security Review       <span class="kv">agent=opencode</span> <span class="paren">{onFail-&gt;coding}</span>', d: 70 },
+    { h: '  <span class="num">8.</span> Testing               <span class="kv">agent=opencode</span> <span class="paren">{onFail-&gt;coding}</span>', d: 70 },
+    { h: '  <span class="num">9.</span> Documentation         <span class="kv">agent=opencode</span>', d: 150 },
+    { h: '<span class="tagname">[orca-flow]</span> Parallel groups: detailed-design ‖ uiux-design', d: 130 },
+    { h: '<span class="tagname">[orca-flow]</span> Skipped: <span class="kv">grill</span>', d: 120 },
+    { h: '<span class="tagname">[orca-flow]</span> <span class="ok">Creating Run:</span> Build html game 2048', d: 130 },
+    { h: '<span class="tagname">[orca-flow]</span> Run: <span class="num">run_eac51a7eb149</span>', d: 110 },
+    { h: '<span class="tagname">[orca-flow]</span> Status page: <span class="kv">.orca\\artifacts\\status.html</span>', d: 150 },
+    { h: '<span class="tagname">[orca-flow]</span> <span class="ok">&gt; Planning</span> <span class="paren">(agent=claude, task=task_f4f45e6a3453)</span>', d: 130 },
+    { h: '<span class="tagname">[orca-flow]</span> warmed claude terminal <span class="paren">term_4913dfa4-5895 (24s)</span>', d: 260 }
+  ];
+
+  var term = document.getElementById('term');
+  var timers = [];
+  function T(fn, ms){ var id = setTimeout(fn, ms); timers.push(id); return id; }
+  function clearAll(){ timers.forEach(clearTimeout); timers = []; }
+
+  // ---------- build status DOM once ----------
+  var pipeList = document.getElementById('pipeList');
+  STEPS.forEach(function (s, i) {
+    var el = document.createElement('div');
+    el.className = 'step'; el.dataset.i = i;
+    var tags = '';
+    if (s.att)  tags += ' <span class="mini-tag att">attempt 2</span>';
+    if (s.next) tags += ' <span class="mini-tag nx">next</span>';
+    if (s.pause) tags += ' <span class="pause-ico">❙❙</span>';
+    el.innerHTML =
+      '<span class="marker"><span class="dotm"></span></span>' +
+      '<span class="body"><span class="nm">' + s.nm + tags + '</span>' +
+      '<span class="ag">agent=<span class="t">' + (s.nm==='Planning'?'claude':'opencode') + '</span></span></span>';
+    if (s.skip) el.classList.add('skip');
+    pipeList.appendChild(el);
+  });
+  var chipsEl = document.getElementById('chips');
+  CHIPS.forEach(function (c) {
+    var el = document.createElement('span');
+    el.className = 'chip';
+    el.innerHTML = c.n + (c.done ? ' <span class="ck">✓</span>' : '');
+    chipsEl.appendChild(el);
+  });
+  var stepEls = Array.prototype.slice.call(pipeList.children);
+  var chipEls = Array.prototype.slice.call(chipsEl.children);
+
+  // ---------- beat helpers ----------
+  var beat1 = document.getElementById('beat1'), beat2 = document.getElementById('beat2');
+  var t1 = document.getElementById('t1'), t2 = document.getElementById('t2');
+  var capText = document.getElementById('capText');
+  var stepFlag = document.getElementById('stepFlag');
+
+  function resetStatus() {
+    document.getElementById('barFill').style.width = '0%';
+    document.getElementById('stepCount').textContent = '0/10';
+    stepEls.forEach(function (el) { el.classList.remove('done','active'); });
+    chipEls.forEach(function (el, i) { el.classList.toggle('ready', false); });
+    document.getElementById('rc1').classList.remove('in');
+    document.getElementById('rc2').classList.remove('in');
+  }
+
+  // ---------- BEAT 1 : type + stream ----------
+  function typeCommand(line, el, done) {
+    // Reveal the prompt instantly, then "type" only the command text
+    var full = line.h;
+    // Split into prompt (before <span class="cmd">) and command
+    var cmdStart = full.indexOf('<span class="cmd">');
+    var pre = full.slice(0, cmdStart);
+    var cmdHtml = full.slice(cmdStart);
+    // Extract plain text length of the command for typing rhythm
+    var tmp = document.createElement('div'); tmp.innerHTML = cmdHtml;
+    var plain = tmp.textContent;
+    var i = 0;
+    function step() {
+      // progressively show more of the command by slicing plain then re-wrapping
+      // simpler: reveal char-by-char using textContent overlay
+      el.innerHTML = pre + '<span class="cmd">' + escapeHtml(plain.slice(0, i)) + '</span><span class="cursor"></span>';
+      i++;
+      if (i <= plain.length) { T(step, 34); }
+      else { el.innerHTML = full + '<span class="cursor"></span>'; T(done, line.d || 300); }
+    }
+    step();
+  }
+  function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function runBeat1() {
+    clearAll();
+    term.innerHTML = '';
+    capText.textContent = 'Run a workflow from one command';
+    stepFlag.innerHTML = '$ node .orca/flow.mjs';
+    var idx = 0;
+    function next() {
+      if (idx >= LINES.length) { T(toBeat2, 700); return; }
+      var line = LINES[idx];
+      var el = document.createElement('div');
+      el.className = 'ln show';
+      term.appendChild(el);
+      if (line.type) {
+        typeCommand(line, el, function () { idx++; next(); });
+      } else {
+        el.innerHTML = line.h;
+        idx++;
+        T(next, line.d || 120);
+      }
+    }
+    next();
+  }
+
+  // ---------- transition ----------
+  function toBeat2() {
+    beat1.classList.remove('on');
+    t1.classList.remove('on'); t2.classList.add('on');
+    T(function () {
+      beat2.classList.add('on');
+      runBeat2();
+    }, 560);
+  }
+  function toBeat1() {
+    beat2.classList.remove('on');
+    t2.classList.remove('on'); t1.classList.add('on');
+    T(function () {
+      beat1.classList.add('on');
+      runBeat1();
+    }, 560);
+  }
+
+  // ---------- BEAT 2 : activate steps + fill bar ----------
+  function runBeat2() {
+    clearAll();
+    resetStatus();
+    capText.textContent = 'Watch every step run — live';
+    stepFlag.innerHTML = 'status.html · <em>live</em>';
+    var barFill = document.getElementById('barFill');
+    var stepCount = document.getElementById('stepCount');
+
+    // step 0 skipped (already styled). Mark 1,2 done → 3,4 active. Chips fill.
+    // Timeline of the status build-up:
+    T(function () { stepEls[1].classList.add('done'); }, 350);   // Planning done
+    T(function () { stepEls[2].classList.add('done'); }, 750);   // Architecture done
+    T(function () {                                              // progress bar to 3/10
+      barFill.style.width = '30%'; stepCount.textContent = '3/10';
+    }, 900);
+    T(function () { stepEls[3].classList.add('active'); document.getElementById('rc1').classList.add('in'); }, 1250);
+    T(function () { stepEls[4].classList.add('active'); document.getElementById('rc2').classList.add('in'); }, 1600);
+    // artifacts settle in
+    var readyOrder = [0,1,2]; // BRAINSTORM, PLAN, ARCHITECTURE ready
+    readyOrder.forEach(function (ci, k) {
+      T(function () { chipEls[ci].classList.add('ready'); }, 1950 + k*260);
+    });
+    // hold, then loop back
+    T(toBeat1, 4200);
+  }
+
+  // ---------- boot ----------
+  runBeat1();
+})();
+</script>
+</body>
+</html>
