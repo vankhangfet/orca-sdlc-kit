@@ -47,7 +47,8 @@ let hungInCurrentScenario = false;
 // Run flow.mjs once under the fake Orca. Config paths are RELATIVE to .orca/
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
-async function runFlow({ name, config, scenario = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000 }) {
+// NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000 }) {
   const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
   dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
@@ -62,7 +63,7 @@ async function runFlow({ name, config, scenario = "default.cjs", args = [], obje
   env.NODE_OPTIONS = `--require "${PRELOAD.split("\\").join("/")}"`;
   env.ORCA_FAKE_STATE = join(dir, "state.json");
   env.ORCA_FAKE_LOG = join(dir, "calls.jsonl");
-  env.ORCA_FAKE_SCENARIO = join(HERE, "scenarios", scenario);
+  env.ORCA_FAKE_SCENARIO = join(HERE, "scenarios", scenarioFile);
   env.ORCA_FAKE_WT = wt;
   env.ORCA_FLOW_WORKTREE = "name:testlab";
   env.USERPROFILE = home;
@@ -146,6 +147,11 @@ scenario("E6 parked-prompt (frozen dialog: warn, never answer, hard cap)", async
   ok("E6 not hung", !r.hung);
   eq("E6 exit code", r.code, 1);
   ok("E6 parked warning", /PARKED on a permission-rule confirmation/.test(r.out + r.err));
+  // parked note is transient: flow.mjs's hard-cap path overwrites the status note
+  // before statusEnd (~line 1801), so only "not settled after" can appear in the
+  // final page — the stdout PARKED warning assertion above is the real guard; the
+  // alternation stays forward-compatible if that overwrite ever gets guarded like
+  // the quiet-warn block (flow.mjs ~1812).
   ok("E6 status note", /(parked on a permission-rule confirmation|not settled after)/.test(r.status?.steps.find((s) => s.id === "alpha")?.note ?? ""));
   eq("E6 flow never answered the prompt", r.by("terminal send").length, 0);
   eq("E6 status overall", r.status?.overall, "still-running");
