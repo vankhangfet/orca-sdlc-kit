@@ -1,0 +1,7 @@
+{
+  "pipeline": [
+    { "id": "a", "title": "A", "agent": "stub", "spec": "x {out}", "writes": "A.md" },
+    { "id": "mid", "title": "Mid", "agent": "stub", "spec": "m {out}", "writes": "M.md" },
+    { "id": "b", "title": "B", "agent": "stub", "parallelWith": "a", "spec": "y {out}", "writes": "B.md" }
+  ]
+}

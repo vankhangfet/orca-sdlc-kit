@@ -277,6 +277,59 @@ scenario("E11 resume-from (--from keeps the read chain)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// F — fast validation: shipped configs + CLI/config guards. These die (or
+// dry-run) before any agent work; budgets are tight.
+// ---------------------------------------------------------------------------
+scenario("F1 shipped configs dry-run cleanly", async () => {
+  for (const cfg of [null, "fixbug.config.json", "cr.config.json"]) {
+    const label = cfg || "flow.config.json (default)";
+    const r = await runFlow({ name: "f1", config: cfg, args: ["--dry-run"], objective: "suite smoke", budgetMs: 30000 });
+    eq(`F1 ${label} exit`, r.code, 0);
+    ok(`F1 ${label} prints dry-run banner`, /Dry-run — no agents called/.test(r.out));
+    ok(`F1 ${label} lists steps`, /^\s+1\. /m.test(r.out));
+  }
+});
+
+const BAD_CONFIGS = [
+  ["F2 unknown parallelWith target", "bad-parallel-unknown.json", /parallelWith "ghost" is not a known step id/],
+  ["F3 chained parallelWith", "bad-parallel-chain.json", /parallelWith chains are not allowed/],
+  ["F4 non-contiguous parallel group", "bad-parallel-gap.json", /must be contiguous/],
+  ["F5 member reads its target", "bad-parallel-reads.json", /dependent steps cannot run in parallel with what they read/],
+];
+for (const [name, file, re] of BAD_CONFIGS) {
+  scenario(name, async () => {
+    const r = await runFlow({ name: "f", config: `../test/configs/${file}`, objective: "validate", budgetMs: 15000 });
+    ok(`${name} not hung`, !r.hung);
+    eq(`${name} exit code`, r.code, 1);
+    ok(`${name} message`, re.test(r.out + r.err));
+  });
+}
+
+scenario("F6 --grill-me and --no-grill-me are mutually exclusive", async () => {
+  const r = await runFlow({ name: "f6", args: ["--grill-me", "--no-grill-me"], objective: "x", budgetMs: 15000 });
+  eq("F6 exit code", r.code, 1);
+  ok("F6 message", /mutually exclusive/.test(r.out + r.err));
+});
+
+scenario("F7 --status-preview refuses real-run mixes", async () => {
+  const r = await runFlow({ name: "f7", args: ["--status-preview"], objective: "build it", budgetMs: 15000 });
+  eq("F7 exit code", r.code, 1);
+  ok("F7 message", /renders a SAMPLE status page/.test(r.out + r.err));
+});
+
+scenario("F8 objective is required for real runs", async () => {
+  const r = await runFlow({ name: "f8", objective: "", budgetMs: 15000 });
+  eq("F8 exit code", r.code, 1);
+  ok("F8 message", /An objective is required/.test(r.out + r.err));
+});
+
+scenario("F9 --from must name an enabled step", async () => {
+  const r = await runFlow({ name: "f9", args: ["--from", "ghost"], objective: "x", budgetMs: 15000 });
+  eq("F9 exit code", r.code, 1);
+  ok("F9 message", /is not among the enabled steps/.test(r.out + r.err));
+});
+
+// ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();
   for (const s of scenarios) {
