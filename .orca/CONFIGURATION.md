@@ -181,7 +181,8 @@ the flow stops with the exact `--from` command to resume once the artifact is wr
 `permissions.ask` rules, and folder-trust / CLI-update dialogs stop a worker the same
 way. The orchestrator recognizes the known dialog texts on a frozen agent screen, logs
 it once per step and shows a "parked" note on the status page — it never answers the
-prompt itself. Accept the folder-trust dialog once per repo before unattended runs.
+prompt itself (the note survives into the final status when the hard cap stops the run).
+Accept the folder-trust dialog once per repo before unattended runs.
 
 ---
 

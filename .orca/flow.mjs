@@ -1686,7 +1686,7 @@ function launchMember(step) {
     hardCapMs: interactiveNow ? Math.max(baseHardMs, 14400000) : baseHardMs,
     sliceMs: Math.min(120000, maxIdleMs),
     startedAt: Date.now(), lastBusy: Date.now(), lastPreview: undefined,
-    quietWarned: false, parkedSeen: new Set(), settled: false, done: null, note: "", outcome: null,
+    quietWarned: false, parkedSeen: new Set(), parkedLabel: null, settled: false, done: null, note: "", outcome: null,
   };
 }
 
@@ -1788,6 +1788,7 @@ function runGroup(members) {
         const parked = parkedPromptOf(v.preview);
         if (parked && !m.parkedSeen.has(parked.sig)) {
           m.parkedSeen.add(parked.sig);
+          m.parkedLabel = parked.label;
           warn(`"${m.step.title}" is PARKED on ${parked.label} (terminal shows "${parked.sig}") — ` +
               `answer it in that terminal; waiting up to the ${Math.round(m.hardCapMs / 60000)}min hard cap.`);
           statusSet(m.step.id, { note: `parked on ${parked.label} — answer it in the terminal` });
@@ -1796,9 +1797,16 @@ function runGroup(members) {
       const silenceMs = Date.now() - m.lastBusy;
       // Hard cap first: absolute per-member limit, busy or quiet.
       if (Date.now() - m.startedAt >= m.hardCapMs) {
-        log(`[warn] "${m.step.title}" not settled after ${Math.round((Date.now() - m.startedAt) / 60000)}min; ` +
+        const mins = Math.round((Date.now() - m.startedAt) / 60000);
+        log(`[warn] "${m.step.title}" not settled after ${mins}min; ` +
             `leaving its terminal open and stopping the pipeline.`);
-        m.note = `not settled after ${Math.round((Date.now() - m.startedAt) / 60000)}min`;
+        // Keep the parked diagnosis (3b) in the FINAL note: the status page is
+        // what a human opens after the stop, and the generic text alone loses
+        // the actionable "answer it in that terminal" clue — same guard
+        // philosophy as the quiet-warn block below.
+        m.note = m.parkedLabel
+          ? `parked on ${m.parkedLabel} — not settled after ${mins}min`
+          : `not settled after ${mins}min`;
         settleMember(m, "still-running", null);
         continue;
       }
