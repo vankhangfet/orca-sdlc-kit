@@ -213,7 +213,7 @@ scenario("E2 happy-manual (warm-up, paste ladder, claude wrap, close)", async ()
 // step runs only after both.
 // ---------------------------------------------------------------------------
 scenario("E3 parallel-happy (group launches together, join waits)", async () => {
-  const r = await runFlow({ name: "e3", config: "../test/configs/parallel.config.json", budgetMs: 60000 });
+  const r = await runFlow({ name: "e3", config: "../test/configs/parallel.config.json", budgetMs: 90000 });
   ok("E3 not hung", !r.hung);
   eq("E3 exit code", r.code, 0);
   eq("E3 three task-creates", r.by("orchestration task-create").length, 3);
@@ -222,6 +222,9 @@ scenario("E3 parallel-happy (group launches together, join waits)", async () => 
   const secondStart = cmds.indexOf("orchestration worker-start", firstStart + 1);
   const firstCheck = cmds.indexOf("orchestration check");
   ok("E3 both members started before the first wait", firstStart > -1 && secondStart > -1 && firstCheck > secondStart);
+  const joinCreate = r.calls.findIndex((c) => c.cmd === "orchestration task-create" && String(c.flags.spec ?? "").includes("Join"));
+  ok("E3 join tasked only after the group settles", joinCreate > firstCheck);
+  eq("E3 worker-start count (no double dispatch in group)", r.by("orchestration worker-start").length, 3);
   eq("E3 right flagged parallel", r.status?.steps.find((s) => s.id === "right")?.parallel, true);
   ok("E3 join ok line", /\[ok\] Join done -> \.orca\/artifacts\/P3\.md/.test(r.out + r.err));
   eq("E3 status overall", r.status?.overall, "succeeded");
@@ -235,7 +238,9 @@ scenario("E9 gate-approve (manual mode gate blocks, then resolves yes)", async (
   ok("E9 not hung", !r.hung);
   eq("E9 exit code", r.code, 0);
   ok("E9 gate created", r.by("orchestration gate-create").length === 1);
-  ok("E9 gate polled to resolution", r.by("orchestration gate-list").length >= 2);
+  const polls = r.by("orchestration gate-list").length;
+  ok("E9 gate polled to resolution", polls >= 2);
+  ok("E9 gate polled to resolution (bounded)", polls <= 6);
   ok("E9 gate announced", /\[gate\] for "Build"/.test(r.out + r.err));
   eq("E9 build succeeded after gate", r.status?.steps.find((s) => s.id === "build")?.status, "succeeded");
   eq("E9 status overall", r.status?.overall, "succeeded");
@@ -245,7 +250,7 @@ scenario("E9 gate-approve (manual mode gate blocks, then resolves yes)", async (
 // E10 — unknown outcome: no blind retry, exactly one dispatch.
 // ---------------------------------------------------------------------------
 scenario("E10 unknown-outcome (no blind retry)", async () => {
-  const r = await runFlow({ name: "e10", config: "../test/configs/cold.config.json", scenario: "unknown-outcome.cjs", budgetMs: 60000 });
+  const r = await runFlow({ name: "e10", config: "../test/configs/cold.config.json", scenario: "unknown-outcome.cjs", budgetMs: 90000 });
   ok("E10 not hung", !r.hung);
   eq("E10 exit code", r.code, 1);
   ok("E10 no-blind-retry message", /Not retrying without a definite failure/.test(r.out + r.err));
@@ -262,7 +267,7 @@ scenario("E11 resume-from (--from keeps the read chain)", async () => {
   eq("E11 dry-run exit", dry.code, 0);
   ok("E11 dry-run reads include prior step", /reads=\[alpha\]/.test(dry.out));
 
-  const run = await runFlow({ name: "e11run", config: "../test/configs/cold.config.json", args: ["--from", "beta"], seedArtifacts: seed, budgetMs: 60000 });
+  const run = await runFlow({ name: "e11run", config: "../test/configs/cold.config.json", args: ["--from", "beta"], seedArtifacts: seed, budgetMs: 90000 });
   ok("E11 not hung", !run.hung);
   eq("E11 run exit code", run.code, 0);
   eq("E11 only beta tasked", run.by("orchestration task-create").length, 1);

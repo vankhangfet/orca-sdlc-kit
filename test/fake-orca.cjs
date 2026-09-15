@@ -88,6 +88,8 @@ function main(argv) {
       c.ok({ dispatch: { status: (d || {}).status || "dispatching", last_heartbeat_at: new Date().toISOString() } });
     },
     // scenario.outcomeOf(task, ctx) may override the completion outcome ("succeeded" | "failed" | null = unknown).
+    // Consulted ONLY by this default worker-start handler — a scenario that defines its own
+    // "orchestration worker-start" handler replaces the whole body (outcomeOf is then ignored).
     "orchestration worker-start": () => {
       const id = "disp-" + c.id();
       state.dispatches[id] = { id, task: flags.task, status: "dispatching", created: Date.now() };
