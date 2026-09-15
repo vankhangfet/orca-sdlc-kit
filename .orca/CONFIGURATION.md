@@ -69,7 +69,8 @@ that points to it.
 **`enabled`** — `true` to run, `false` to **skip**. A skipped step is automatically
 removed from later steps' `reads`, so the chain doesn't break (see section 4).
 
-**`agent`** — an agent name from Orca's catalog. Valid values:
+**`agent`** — any CLI agent from Orca's catalog — Orca supports any agent
+that runs in a terminal. Tested values:
 `claude`, `codex`, `opencode`, `gemini`, `cursor`, `grok`, plus `kiro-cli`
 (Kiro's terminal chat — verified end-to-end through the flow's terminal
 dispatch path; needs `kiro-cli` on PATH and logged in via `kiro-cli login`.

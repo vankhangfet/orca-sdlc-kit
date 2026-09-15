@@ -146,7 +146,7 @@ Any step, any agent — one field:
 }
 ```
 
-- **Supported:** `claude`, `codex`, `opencode`, `gemini`, `cursor`, `grok`, `kiro-cli` — the shipped config already mixes them (coding on codex, testing on opencode, rest on claude).
+- **Supported:** any CLI agent Orca supports — the tested set is `claude`, `codex`, `opencode`, `gemini`, `cursor`, `grok`, `kiro-cli`; anything else from Orca's catalog (GitHub Copilot, Amp, Cline, Droid, Kimi, Qwen Code, ...) runs the same way — put its command in `"agent"`. The shipped config already mixes them (coding on codex, testing on opencode, rest on claude).
 - **Model per step:** optional `"model"` on a step, or `"model"` under `defaults` for all. `"default"` (or missing) keeps the agent's own model — nothing is passed; anything else is passed as `--model <value>`. A model flag inside the `agent` string wins.
 - **One run only:** `node .orca/flow.mjs --agent coding=claude "Objective"` — the config stays untouched. Multi-word values like `"kiro-cli --trust-all-tools"` pass through as-is.
 
