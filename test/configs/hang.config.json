@@ -1,0 +1,13 @@
+{
+  "defaults": {
+    "timeoutMs": 2000,
+    "hardTimeoutMs": 7000,
+    "startRetryDelayMs": 200,
+    "warmupTimeoutMs": 5000,
+    "startGraceMs": 3000
+  },
+  "pipeline": [
+    { "id": "alpha", "title": "Alpha", "agent": "stub", "spec": "Slow work writing {out}.", "writes": "A.md" },
+    { "id": "beta", "title": "Beta", "agent": "stub", "reads": ["alpha"], "spec": "Follow-up writing {out}.", "writes": "B.md" }
+  ]
+}

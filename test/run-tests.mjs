@@ -47,7 +47,7 @@ let hungInCurrentScenario = false;
 // Run flow.mjs once under the fake Orca. Config paths are RELATIVE to .orca/
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
-async function runFlow({ name, config, scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000 }) {
+async function runFlow({ name, config, scenario = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000 }) {
   const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
   dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
@@ -62,7 +62,7 @@ async function runFlow({ name, config, scenarioFile = "default.cjs", args = [], 
   env.NODE_OPTIONS = `--require "${PRELOAD.split("\\").join("/")}"`;
   env.ORCA_FAKE_STATE = join(dir, "state.json");
   env.ORCA_FAKE_LOG = join(dir, "calls.jsonl");
-  env.ORCA_FAKE_SCENARIO = join(HERE, "scenarios", scenarioFile);
+  env.ORCA_FAKE_SCENARIO = join(HERE, "scenarios", scenario);
   env.ORCA_FAKE_WT = wt;
   env.ORCA_FLOW_WORKTREE = "name:testlab";
   env.USERPROFILE = home;
@@ -109,6 +109,46 @@ scenario("E1 happy-cold (2 steps, cold start, both succeed)", async () => {
   eq("E1 both steps succeeded", r.status?.steps.filter((s) => s.status === "succeeded").length, 2);
   eq("E1 one task-create per step", r.by("orchestration task-create").length, 2);
   eq("E1 worker-release per dispatch", r.by("orchestration worker-release").length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// E4 — hard cap: silent, frozen-preview worker. Must settle as still-running
+// with the resume hint; the watchdog proves the process itself ends.
+// ---------------------------------------------------------------------------
+scenario("E4 hardcap (silent frozen worker settles via hardTimeoutMs)", async () => {
+  const r = await runFlow({ name: "e4", config: "../test/configs/hang.config.json", scenario: "hang.cjs", budgetMs: 45000 });
+  ok("E4 not hung", !r.hung);
+  eq("E4 exit code", r.code, 1);
+  ok("E4 hard-cap message", /not settled after \d+min; leaving its terminal open/.test(r.out + r.err));
+  ok("E4 resume hint", /--from beta/.test(r.out + r.err));
+  eq("E4 status overall", r.status?.overall, "still-running");
+  ok("E4 alpha still-running note", /not settled after/.test(r.status?.steps.find((s) => s.id === "alpha")?.note ?? ""));
+});
+
+// ---------------------------------------------------------------------------
+// E5 — quiet-but-alive: one warning, no premature failure, hard-cap exit.
+// ---------------------------------------------------------------------------
+scenario("E5 quiet-warn (alive dispatch, one warning, no premature fail)", async () => {
+  const r = await runFlow({ name: "e5", config: "../test/configs/hang.config.json", scenario: "stale-heartbeat.cjs", budgetMs: 45000 });
+  ok("E5 not hung", !r.hung);
+  eq("E5 exit code", r.code, 1);
+  const warns = (r.out + r.err).match(/quiet for \d+min but its dispatch is alive/g) || [];
+  eq("E5 exactly one quiet warning", warns.length, 1);
+  ok("E5 waited to hard cap", /waiting up to the \d+min hard cap/.test(r.out + r.err));
+  eq("E5 status overall", r.status?.overall, "still-running");
+});
+
+// ---------------------------------------------------------------------------
+// E6 — parked on a permission prompt: observe, never answer, hard-cap exit.
+// ---------------------------------------------------------------------------
+scenario("E6 parked-prompt (frozen dialog: warn, never answer, hard cap)", async () => {
+  const r = await runFlow({ name: "e6", config: "../test/configs/hang.config.json", scenario: "parked.cjs", budgetMs: 45000 });
+  ok("E6 not hung", !r.hung);
+  eq("E6 exit code", r.code, 1);
+  ok("E6 parked warning", /PARKED on a permission-rule confirmation/.test(r.out + r.err));
+  ok("E6 status note", /(parked on a permission-rule confirmation|not settled after)/.test(r.status?.steps.find((s) => s.id === "alpha")?.note ?? ""));
+  eq("E6 flow never answered the prompt", r.by("terminal send").length, 0);
+  eq("E6 status overall", r.status?.overall, "still-running");
 });
 
 // ---------------------------------------------------------------------------
