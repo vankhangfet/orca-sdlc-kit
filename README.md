@@ -37,14 +37,12 @@ ticking, and artifact chips light up as each Markdown lands on disk](img/banner-
 
 ## Why this kit
 
-Driving AI agents by hand does not survive a real feature: you shuttle prompts between terminals, every fresh chat forgets what the last one decided, nothing forces a review or a test to happen, and one bad answer in a single do-everything session poisons everything downstream.
+Hand-driving AI agents doesn't survive a real feature: prompts shuttle between terminals, fresh chats forget old decisions, and nothing forces a review or a test to happen.
 
-This kit turns that into an assembly line. On the runtime provided by **[Orca ADE](https://www.onorca.dev/)** — disposable worktrees, agent terminals, run tracking — a small team of specialists (planner, architect, coder, reviewers, tester, writer) each does one job, writes its result to disk as Markdown, and hands it to the next. Cross-platform, one folder, needs only Node.
+This kit turns that into an assembly line on **[Orca ADE](https://www.onorca.dev/)** — specialist agents (planner, architect, coder, reviewers, tester, writer) each do one job, write it to disk as Markdown, and hand it to the next. Two ideas drive it:
 
-Two ideas drive it:
-
-- **It works like a real SDLC.** Specialists with quality gates between them — the pipeline defends its quality, it doesn't just generate code.
-- **The harness is yours to swap.** Each step runs on any supported agent — claude, codex, opencode, gemini, cursor, grok, kiro-cli — mixed freely, changed in one JSON line. No code edits, ever.
+- **A real SDLC** — quality gates between specialists; the pipeline defends its quality, it doesn't just generate code.
+- **A swappable harness** — any CLI agent Orca supports, mixed freely, changed in one JSON line. No code edits, ever.
 
 ## How it works
 
