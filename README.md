@@ -169,44 +169,26 @@ Manual mode (gates + interviews): set `"autoRun": false` in the config, then run
 
 ## The pipelines
 
-**Full SDLC (`flow.config.json`) — the default:**
+**Full SDLC (`flow.config.json`) — the default:** grill (opt-in interview, `--grill-me`) -> planning -> architecture† -> detailed design ∥ UI/UX -> coding (codex) -> code review -> security review -> testing (opencode) -> documentation; claude runs the rest. Review, security or test failures loop back to coding (max 2 retries). Every step writes a Markdown artifact (`PLAN.md`, `CHANGES.md`, ...) to `.orca/artifacts/`, plus the flow's own `USAGE.md` token report (reserved name). Detailed design and UI/UX run concurrently (`parallelWith`).
 
-| # | Step | Agent | Writes | On fail |
-|---|------|-------|--------|---------|
-| 0* | Grill Me (requirements interview, opt-in) | claude | BRAINSTORM.md | — |
-| 1 | Planning | claude | PLAN.md | — |
-| 2 | Architecture Design † | claude | ARCHITECTURE.md | — |
-| 3 | Detailed Design | claude | DETAILED_DESIGN.md | — |
-| 4 | UI/UX Design | claude | UIUX_MOCKS.md | — |
-| 5 | Coding | codex | CHANGES.md | — |
-| 6 | Code Review | claude | REVIEW.md | back to 5 |
-| 7 | Security Review | claude | SECURITY_REVIEW.md | back to 5 |
-| 8 | Testing | opencode | TEST_REPORT.md | back to 5 |
-| 9 | Documentation | claude | DOCUMENTATION.md | — |
+† In manual mode this step interviews you first (see `autoRun`).
 
-\* Disabled by default; enable per run with `--grill-me` or permanently in config.
-† In manual mode this step interviews you first (see `autoRun` above).
-
-The flow adds one file of its own to the same dir: `USAGE.md`, the cumulative per-run token report, appended when each run ends (reserved name — don't use it as a step's `writes`). Steps 3 and 4 run **concurrently** (`parallelWith`); Coding waits for both.
-
-**Bug fix (`fixbug.config.json`):** Root Cause Analysis -> Fix Plan -> Bug Fix incl. regression test -> Fix Verification, looping back on failure (max 2 retries).
+**Bug fix (`fixbug.config.json`):** root cause -> fix plan -> fix + regression test -> verification, looping back on failure.
 
 ```bash
 node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavior, how to reproduce>"
 ```
 
-**Change request (`cr.config.json`):** for maintenance on an existing system — Impact Analysis on the current code -> CR Plan with acceptance criteria -> Coding -> Code Review -> Testing incl. regression -> Acceptance Verification, looping back on failure (max 2 retries).
+**Change request (`cr.config.json`):** impact analysis -> plan with acceptance criteria -> coding -> review -> testing -> acceptance verification, looping back on failure.
 
 ```bash
 node .orca/flow.mjs --config cr.config.json "<what changes and why, on the existing system>"
 ```
 
-**Workflow templates (`.orca/workflow-template/`)** — the same three pipelines, each ending with a **Rebase & Push** step: commit pending work, rebase onto `origin/main` (edit the step's `spec` to change the branch), resolve conflicts, push. Templates are suggestions, not a fixed menu — any pipeline you can describe in JSON runs the same way.
+**Workflow templates (`.orca/workflow-template/`):** the same three, each ending with **Rebase & Push** — commit pending work, rebase onto `origin/main`, resolve conflicts, push. Suggestions, not a fixed menu: any pipeline you can describe in JSON runs the same way.
 
 ```bash
-node .orca/flow.mjs --config workflow-template/fixbug.config.json "<bug>"
-node .orca/flow.mjs --config workflow-template/cr.config.json "<change request>"
-node .orca/flow.mjs --config workflow-template/sdlc.config.json "<objective>"
+node .orca/flow.mjs --config workflow-template/<sdlc|fixbug|cr>.config.json "<objective>"
 ```
 
 ## Watch it run — the live status page
