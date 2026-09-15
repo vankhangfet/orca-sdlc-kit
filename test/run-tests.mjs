@@ -8,6 +8,8 @@
 //       hands it to test/fake-orca.cjs (stateful, scripted per scenario).
 // Every scenario runs under a WATCHDOG: exceeding its budget kills the child
 // and the scenario FAILS with HUNG — that is the literal "did not hang" check.
+// A FAILING or HUNG scenario keeps its tmp dir for inspection; the runner
+// deletes a passing scenario's dirs only after the scenario finishes.
 //
 // Run: node test/run-tests.mjs [--only <substring>]
 import { spawn } from "node:child_process";
@@ -36,34 +38,41 @@ const ok = (name, cond, extra) => {
 const eq = (name, got, want) =>
   ok(name, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
 
+// Tmp dirs survive runFlow; the runner decides their fate AFTER the scenario,
+// so failure evidence (calls.jsonl/state.json/status.js) still exists when
+// assertions report FAIL. Same for HUNG — runFlow sets the flag when it kills.
+let dirsOfCurrentScenario = [];
+let hungInCurrentScenario = false;
+
 // Run flow.mjs once under the fake Orca. Config paths are RELATIVE to .orca/
 // (flow.mjs joins them with its own directory) — never absolute.
-async function runFlow({ name, config, scenario = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 60000 }) {
+// default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
+async function runFlow({ name, config, scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000 }) {
   const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
+  dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
   mkdirSync(join(wt, ".orca", "artifacts"), { recursive: true });
   mkdirSync(home, { recursive: true });
   for (const a of seedArtifacts) writeFileSync(join(wt, ".orca", "artifacts", a.file), a.text ?? "seeded by harness\n");
-  const env = {
-    ...process.env,
-    ORCA_CLI_COMMAND: NODE,
-    // Backslashes inside NODE_OPTIONS quotes are eaten by Node's POSIX-style
-    // tokenizer (C:\Working -> C:Working), so the preload must be forward-slashed.
-    NODE_OPTIONS: `--require "${PRELOAD.split("\\").join("/")}"`,
-    ORCA_FAKE_STATE: join(dir, "state.json"),
-    ORCA_FAKE_LOG: join(dir, "calls.jsonl"),
-    ORCA_FAKE_SCENARIO: join(HERE, "scenarios", scenario),
-    ORCA_FAKE_WT: wt,
-    ORCA_FLOW_WORKTREE: "name:testlab",
-    USERPROFILE: home,
-    HOME: home,
-  };
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
+  env.ORCA_CLI_COMMAND = NODE;
+  // Backslashes inside NODE_OPTIONS quotes are eaten by Node's POSIX-style
+  // tokenizer (C:\Working -> C:Working), so the preload must be forward-slashed.
+  env.NODE_OPTIONS = `--require "${PRELOAD.split("\\").join("/")}"`;
+  env.ORCA_FAKE_STATE = join(dir, "state.json");
+  env.ORCA_FAKE_LOG = join(dir, "calls.jsonl");
+  env.ORCA_FAKE_SCENARIO = join(HERE, "scenarios", scenarioFile);
+  env.ORCA_FAKE_WT = wt;
+  env.ORCA_FLOW_WORKTREE = "name:testlab";
+  env.USERPROFILE = home;
+  env.HOME = home;
   const argv = [FLOW, ...args, "--no-open-status"];
   if (config) argv.push("--config", config);
   if (objective) argv.push(objective);
   const child = spawn(NODE, argv, { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"] });
   let out = ""; let err = ""; let hung = false;
-  const timer = setTimeout(() => { hung = true; child.kill(); }, budgetMs);
+  const timer = setTimeout(() => { hung = true; hungInCurrentScenario = true; child.kill(); }, budgetMs);
   child.stdout.on("data", (d) => (out += d));
   child.stderr.on("data", (d) => (err += d));
   const code = await new Promise((r) => child.on("exit", (c) => r(c)));
@@ -78,8 +87,6 @@ async function runFlow({ name, config, scenario = "default.cjs", args = [], obje
   const calls = existsSync(join(dir, "calls.jsonl"))
     ? readFileSync(join(dir, "calls.jsonl"), "utf8").split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l))
     : [];
-  if (!hung) rmSync(dir, { recursive: true, force: true });
-  else console.error(`[harness] HUNG child kept ${dir} for inspection`);
   const by = (cmd) => calls.filter((c) => c.cmd === cmd);
   return { code, out, err, hung, status, calls, by, wt, dir };
 }
@@ -110,10 +117,17 @@ scenario("E1 happy-cold (2 steps, cold start, both succeed)", async () => {
   for (const s of scenarios) {
     if (only && !s.name.includes(only)) continue;
     console.log(`\n# ${s.name}`);
+    const failedBefore = failed;
+    dirsOfCurrentScenario = [];
+    hungInCurrentScenario = false;
     try { await s.fn(); } catch (e) { failed++; total++; console.error("FAIL -", s.name, "threw:", e.message); }
+    for (const d of dirsOfCurrentScenario) {
+      if (failed > failedBefore || hungInCurrentScenario) console.error(`[harness] kept ${d} for inspection`);
+      else { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+    }
   }
   const dt = Math.round((Date.now() - t0) / 1000);
   console.log(`\n${total - failed}/${total} assertions passed in ${dt}s`);
   if (failed) console.error(`${failed} FAILURE(S)`);
-  process.exit(failed ? 1 : 0);
+  process.exitCode = failed ? 1 : 0;
 })();
