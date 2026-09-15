@@ -244,7 +244,8 @@ Issues and PRs are welcome at [github.com/vankhangfet/orca-sdlc-kit](https://git
 - **Pipeline behavior belongs in the configs** — a new field in `flow.config.json` / `fixbug.config.json` plus a paragraph in [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md), not new logic in `flow.mjs`.
 - **Docs ship with the change** — README, TROUBLESHOOTING.md and CONFIGURATION.md in the same PR as any behavior change.
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, ...). Never commit `docs/` (internal notes) or `.orca/artifacts/` (runtime output) — both are gitignored.
-- **Verify before you push** — no build or test toolchain; the loop is:
+- **Run the suite before you push** — `npm test` replays the real `flow.mjs` against a fake Orca CLI (offline: no agents, no real Runs, ~2-4 min). It pins the engine's liveness semantics, hard caps, the `onFailGoto` fix loop, resume and parallel settlement — exactly the regressions a casual edit can silently reintroduce. Iterate on one scenario with `node test/run-tests.mjs --only E4`; if your PR changes engine behavior, add or tighten a scenario in `test/` in the same commit.
+- **Fast checks** — no build toolchain; the quick loop is:
 
 ```bash
 node --check .orca/flow.mjs                                                        # syntax
