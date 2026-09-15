@@ -50,23 +50,7 @@ This kit turns that into an assembly line on **[Orca ADE](https://www.onorca.dev
 node .orca/flow.mjs "Build a login page with email + Google sign-in"
 ```
 
-Specialist agents take over:
-
-```mermaid
-flowchart LR
-    I["Your objective<br/>(one sentence)"] --> P[Planning]
-    P --> A[Architecture]
-    A --> D[Detailed design]
-    P --> U[UI / UX]
-    D --> C[Coding]
-    U --> C
-    C --> R[Review +<br/>Security]
-    R -- "problems found" --> C
-    R -- pass --> T[Testing]
-    T -- "tests fail" --> C
-    T -- pass --> W[Documentation]
-    W --> O["Working code + docs<br/>in your repo"]
-```
+Specialist agents take over — planner, architect, coder, reviewers, tester, writer — each doing one job and handing its Markdown result to the next. [The shipped pipelines, drawn](#the-pipelines).
 
 The two design steps run **concurrently** — one `parallelWith` line in the config; any independent pair of steps can. Coding waits for both.
 
@@ -169,17 +153,52 @@ Manual mode (gates + interviews): set `"autoRun": false` in the config, then run
 
 ## The pipelines
 
-**Full SDLC (`flow.config.json`) — the default:** grill (opt-in interview, `--grill-me`) -> planning -> architecture† -> detailed design ∥ UI/UX -> coding (codex) -> code review -> security review -> testing (opencode) -> documentation; claude runs the rest. Review, security or test failures loop back to coding (max 2 retries). Every step writes a Markdown artifact (`PLAN.md`, `CHANGES.md`, ...) to `.orca/artifacts/`, plus the flow's own `USAGE.md` token report (reserved name). Detailed design and UI/UX run concurrently (`parallelWith`).
+**Full SDLC (`flow.config.json`) — the default:**
+
+```mermaid
+flowchart LR
+    G["Grill (opt-in interview)"] --> P[Planning]
+    P --> A["Architecture †"]
+    A --> D[Detailed design]
+    P --> U[UI / UX]
+    D --> C["Coding (codex)"]
+    U --> C
+    C --> R["Review + security"]
+    R -- fail --> C
+    R -- pass --> T["Testing (opencode)"]
+    T -- fail --> C
+    T -- pass --> W[Documentation]
+    W --> O["Working code + docs<br/>in your repo"]
+```
+
+Claude runs the steps not labeled otherwise. Failures loop back to coding (max 2 retries). Every step writes a Markdown artifact (`PLAN.md`, `CHANGES.md`, ...) to `.orca/artifacts/`, plus the flow's own `USAGE.md` token report (reserved name).
 
 † In manual mode this step interviews you first (see `autoRun`).
 
-**Bug fix (`fixbug.config.json`):** root cause -> fix plan -> fix + regression test -> verification, looping back on failure.
+**Bug fix (`fixbug.config.json`):**
+
+```mermaid
+flowchart LR
+    R[Root cause] --> P[Fix plan] --> C["Fix + regression test"] --> V[Verification]
+    V -- fail --> C
+    V -- pass --> O[Done]
+```
 
 ```bash
 node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavior, how to reproduce>"
 ```
 
-**Change request (`cr.config.json`):** impact analysis -> plan with acceptance criteria -> coding -> review -> testing -> acceptance verification, looping back on failure.
+**Change request (`cr.config.json`):**
+
+```mermaid
+flowchart LR
+    I[Impact analysis] --> P[CR plan] --> C["Coding (codex)"]
+    C --> R[Code review] --> T["Testing (opencode)"] --> V[Acceptance verification]
+    R -- fail --> C
+    T -- fail --> C
+    V -- fail --> C
+    V -- pass --> O[Done]
+```
 
 ```bash
 node .orca/flow.mjs --config cr.config.json "<what changes and why, on the existing system>"
