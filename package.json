@@ -10,6 +10,9 @@
   "bin": {
     "orca-sdlc-kit": "bin/init.mjs"
   },
+  "scripts": {
+    "test": "node test/run-tests.mjs"
+  },
   "files": [
     ".orca/flow.mjs",
     ".orca/flow.config.json",
