@@ -186,6 +186,28 @@ scenario("E8 retry-exhaust (loop is finite)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E2 — manual start path: warm the TUI, fetch the preamble, substitute
+// ctx_dryrun, paste + bare-Enter, verify consumption, close on settle.
+// Also pins the AUTO-RUN claude command wrap.
+// ---------------------------------------------------------------------------
+scenario("E2 happy-manual (warm-up, paste ladder, claude wrap, close)", async () => {
+  const r = await runFlow({ name: "e2", config: "../test/configs/manual.config.json", scenario: "terminal-ok.cjs", budgetMs: 150000 });
+  ok("E2 not hung", !r.hung);
+  eq("E2 exit code", r.code, 0);
+  const create = r.by("terminal create");
+  eq("E2 one terminal created", create.length, 1);
+  const cmd = String(create[0]?.flags.command ?? "");
+  ok("E2 claude wrap: bypass permissions", cmd.includes("--permission-mode bypassPermissions"));
+  ok("E2 claude wrap: AFK timeout env", cmd.includes("CLAUDE_AFK_TIMEOUT_MS=60000"));
+  const sends = r.by("terminal send");
+  ok("E2 preamble sent (spec head present)", sends.some((c) => String(c.flags.text ?? "").includes("# Solo")));
+  ok("E2 dry-run placeholder replaced", sends.every((c) => !String(c.flags.text ?? "").includes("ctx_dryrun")));
+  ok("E2 bare-enter follow-up sent", sends.some((c) => c.flags.text === ""));
+  eq("E2 terminal closed", r.by("terminal close").length, 1);
+  eq("E2 status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();
   for (const s of scenarios) {

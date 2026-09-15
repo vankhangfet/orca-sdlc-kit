@@ -1,0 +1,13 @@
+{
+  "defaults": {
+    "timeoutMs": 60000,
+    "hardTimeoutMs": 120000,
+    "warmupTimeoutMs": 30000,
+    "startGraceMs": 4000,
+    "sendAttempts": 2,
+    "startRetryDelayMs": 200
+  },
+  "pipeline": [
+    { "id": "solo", "title": "Solo", "agent": "claude", "spec": "Single manual-path step writing {out}.", "writes": "S.md" }
+  ]
+}
