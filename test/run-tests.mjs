@@ -209,6 +209,69 @@ scenario("E2 happy-manual (warm-up, paste ladder, claude wrap, close)", async ()
 });
 
 // ---------------------------------------------------------------------------
+// E3 — parallel group: both members launch BEFORE either settles; the join
+// step runs only after both.
+// ---------------------------------------------------------------------------
+scenario("E3 parallel-happy (group launches together, join waits)", async () => {
+  const r = await runFlow({ name: "e3", config: "../test/configs/parallel.config.json", budgetMs: 60000 });
+  ok("E3 not hung", !r.hung);
+  eq("E3 exit code", r.code, 0);
+  eq("E3 three task-creates", r.by("orchestration task-create").length, 3);
+  const cmds = r.calls.map((c) => c.cmd);
+  const firstStart = cmds.indexOf("orchestration worker-start");
+  const secondStart = cmds.indexOf("orchestration worker-start", firstStart + 1);
+  const firstCheck = cmds.indexOf("orchestration check");
+  ok("E3 both members started before the first wait", firstStart > -1 && secondStart > -1 && firstCheck > secondStart);
+  eq("E3 right flagged parallel", r.status?.steps.find((s) => s.id === "right")?.parallel, true);
+  ok("E3 join ok line", /\[ok\] Join done -> \.orca\/artifacts\/P3\.md/.test(r.out + r.err));
+  eq("E3 status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// E9 — manual-mode gate: blocks (waiting-approval), then a yes resolves it.
+// ---------------------------------------------------------------------------
+scenario("E9 gate-approve (manual mode gate blocks, then resolves yes)", async () => {
+  const r = await runFlow({ name: "e9", config: "../test/configs/gate.config.json", scenario: "gate-resolve.cjs", budgetMs: 90000 });
+  ok("E9 not hung", !r.hung);
+  eq("E9 exit code", r.code, 0);
+  ok("E9 gate created", r.by("orchestration gate-create").length === 1);
+  ok("E9 gate polled to resolution", r.by("orchestration gate-list").length >= 2);
+  ok("E9 gate announced", /\[gate\] for "Build"/.test(r.out + r.err));
+  eq("E9 build succeeded after gate", r.status?.steps.find((s) => s.id === "build")?.status, "succeeded");
+  eq("E9 status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// E10 — unknown outcome: no blind retry, exactly one dispatch.
+// ---------------------------------------------------------------------------
+scenario("E10 unknown-outcome (no blind retry)", async () => {
+  const r = await runFlow({ name: "e10", config: "../test/configs/cold.config.json", scenario: "unknown-outcome.cjs", budgetMs: 60000 });
+  ok("E10 not hung", !r.hung);
+  eq("E10 exit code", r.code, 1);
+  ok("E10 no-blind-retry message", /Not retrying without a definite failure/.test(r.out + r.err));
+  ok("E10 outcome=unknown surfaced", /outcome=unknown/.test(r.out + r.err));
+  eq("E10 exactly one dispatch (no double dispatch)", r.by("orchestration worker-start").length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// E11 — resume: --from keeps the read chain via the prior artifact file.
+// ---------------------------------------------------------------------------
+scenario("E11 resume-from (--from keeps the read chain)", async () => {
+  const seed = [{ file: "A.md", text: "# Alpha output\nprior run artifact\n" }];
+  const dry = await runFlow({ name: "e11dry", config: "../test/configs/cold.config.json", args: ["--dry-run", "--from", "beta"], seedArtifacts: seed, budgetMs: 30000 });
+  eq("E11 dry-run exit", dry.code, 0);
+  ok("E11 dry-run reads include prior step", /reads=\[alpha\]/.test(dry.out));
+
+  const run = await runFlow({ name: "e11run", config: "../test/configs/cold.config.json", args: ["--from", "beta"], seedArtifacts: seed, budgetMs: 60000 });
+  ok("E11 not hung", !run.hung);
+  eq("E11 run exit code", run.code, 0);
+  eq("E11 only beta tasked", run.by("orchestration task-create").length, 1);
+  ok("E11 beta spec points at prior artifact", String(run.by("orchestration task-create")[0]?.flags.spec ?? "").includes(".orca/artifacts/A.md"));
+  eq("E11 alpha skipped on resume", run.status?.steps.find((s) => s.id === "alpha")?.status, "skipped");
+  eq("E11 beta succeeded", run.status?.steps.find((s) => s.id === "beta")?.status, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();
   for (const s of scenarios) {

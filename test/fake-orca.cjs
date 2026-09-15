@@ -87,10 +87,12 @@ function main(argv) {
       const d = dispatchOfTask(flags.task);
       c.ok({ dispatch: { status: (d || {}).status || "dispatching", last_heartbeat_at: new Date().toISOString() } });
     },
+    // scenario.outcomeOf(task, ctx) may override the completion outcome ("succeeded" | "failed" | null = unknown).
     "orchestration worker-start": () => {
       const id = "disp-" + c.id();
       state.dispatches[id] = { id, task: flags.task, status: "dispatching", created: Date.now() };
-      c.pushDone(flags.task, "succeeded");
+      const outcome = scenario.outcomeOf ? scenario.outcomeOf(state.tasks[flags.task] || {}, c) : "succeeded";
+      c.pushDone(flags.task, outcome);
       c.ok({ dispatchId: id, state: "ready" });
     },
     "orchestration worker-show": () => {

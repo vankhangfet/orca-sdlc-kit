@@ -1,0 +1,14 @@
+{
+  "autoRun": false,
+  "defaults": {
+    "timeoutMs": 30000,
+    "hardTimeoutMs": 60000,
+    "gateTimeoutMs": 20000,
+    "startRetryDelayMs": 200,
+    "warmupTimeoutMs": 5000,
+    "startGraceMs": 3000
+  },
+  "pipeline": [
+    { "id": "build", "title": "Build", "agent": "stub", "gate": true, "spec": "Build the thing; write {out}.", "writes": "BUILD.md" }
+  ]
+}
