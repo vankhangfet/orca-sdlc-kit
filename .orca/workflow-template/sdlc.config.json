@@ -1,0 +1,176 @@
+{
+  "//": "workflow-template/sdlc.config.json — SDLC TEMPLATE: the flow.config.json pipeline + a final Rebase & Push step (git-deliver). Edit this copy freely; the base config stays untouched.",
+  "//usage": "node .orca/flow.mjs --config workflow-template/sdlc.config.json \"<objective>\"",
+  "//steps": "Same SDLC pipeline as flow.config.json, ending with git-deliver: commit-if-needed -> fetch -> rebase onto the integration branch -> push. See README.md in this folder.",
+  "//base": "git-deliver rebases onto origin/main. On a different integration branch (e.g. develop), replace every origin/main in the git-deliver spec.",
+  "//pipeline": "Each entry is a STEP. Set 'enabled:false' to SKIP it. Array order = run order.",
+  "//reads": "'reads' lists the ids of steps whose output this step needs. If a step is skipped, it is auto-removed from later steps' 'reads' (chain stays intact).",
+  "//progress": "optional: filename (in artifactsDir) of a Markdown task checklist this step's agent maintains (- [ ] / - [~] / - [x]); shown live on the status page. Pair it with {tasks} in the spec.",
+  "//writes": "'writes' = the artifact filename this step produces (inside artifactsDir).",
+  "//agent": "Agent for each step: claude, codex, opencode, gemini, cursor, grok (Orca catalog) or kiro-cli (Kiro terminal chat, run via the flow's terminal dispatch — needs kiro-cli on PATH and logged in).",
+  "//onFailGoto": "If this step returns outcome=failed and has onFailGoto, jump back to that step to fix (up to maxRetries times).",
+  "//parallelWith": "(optional) id of an EARLIER step to run this step concurrently with. Group must be contiguous + independent (no cross-reads); the first step after the group waits for all members. See CONFIGURATION.md.",
+  "//gate": "gate:true => after this step finishes, create a decision gate; must resolve 'yes' to continue. Effective only when autoRun is false.",
+  "//interactive": "step flag: in manual mode (autoRun:false) the agent INTERVIEWS the user before finalizing — one question at a time, decisions confirmed one by one, then the artifact is written. Timeout budgets are raised automatically (60min silence / 4h hard). Ignored when autoRun is true (fully autonomous).",
+  "artifactsDir": ".orca/artifacts",
+  "maxRetries": 2,
+  "//autoRun": "true (default) = fully automatic: agents never ask the user anything (each spec carries an autonomy directive) and 'gate' flags are ignored; claude agents also start with permission bypass (--permission-mode bypassPermissions) so their terminal never waits on an approval (Claude Code asks a one-time per-machine acceptance on first use; see README troubleshooting). false = manual mode: steps with \"gate\": true create an approval gate the pipeline waits on (defaults.gateTimeoutMs, 60min default); claude keeps default prompting.",
+  "autoRun": true,
+  "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree: \"name:<displayName>\" or \"path:<dir>\". One-off: --worktree <selector>; per-machine: ORCA_FLOW_WORKTREE env. A pin is validated before the run starts.",
+  "//model": "Model per step (per harness): optional \"model\" on a step overrides \"defaults.model\" for the whole pipeline. \"default\" (or missing) = keep the agent's own default model — nothing is passed to the CLI. Any other value is passed as `--model <value>` on the manual path and via worker-start's --model on the cold-start fallback; a model flag already inside the \"agent\" string always wins. kiro-cli has no model selection (ignored with a warning).",
+  "defaults": {
+    "timeoutMs": 900000,
+    "worktree": null,
+    "model": "default"
+  },
+  "pipeline": [
+    {
+      "id": "grill",
+      "title": "Grill Me (requirements interview)",
+      "enabled": false,
+      "agent": "claude",
+      "writes": "BRAINSTORM.md",
+      "reads": [],
+      "timeoutMs": 3600000,
+      "hardTimeoutMs": 14400000,
+      "spec": "You are running an interactive REQUIREMENTS INTERVIEW (\"grill me\") for the objective above. Your job: interrogate the user IN THIS TERMINAL until the idea is concrete enough to design and plan. Interview protocol - follow exactly: (1) Ask ONE question at a time and WAIT for the user's answer in this terminal before asking the next. Never batch questions. (2) Prefer multiple choice (a/b/c/...) over open-ended; open-ended only when options would bias the answer. (3) Cover, in roughly this order: purpose and success criteria; scope (explicitly in/out); users and UX expectations; technical and business constraints; edge cases; risks; open decisions that planning cannot make alone. (4) After each answer, restate your understanding in one short line so the user can correct you early. (5) When you have enough information, present a numbered DECISIONS list (each: decision + rationale) and ask the user to confirm or edit each one; do not proceed until every line is confirmed. (6) This phase is REQUIREMENTS ONLY - do not write code, tests, or detailed technical design. When all decisions are confirmed, write the result to {out} with exactly these sections:\n# Brainstorm - <overall objective>\n## Objective (refined) - 1-3 sentences agreed with the user\n## Decisions - numbered; each with rationale and marked \"confirmed by user\"\n## Scope - two lists: In / Out\n## Constraints & assumptions\n## Open questions - only if any remain; each with why it blocks nothing\nThen finish and report success."
+    },
+    {
+      "id": "planning",
+      "title": "Planning",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "PLAN.md",
+      "reads": [
+        "grill"
+      ],
+      "spec": "You are a product planning agent. Analyze the objective and the current repo. Write to {out}: context, scope (in/out of scope), functional and non-functional requirements, risks, and acceptance criteria. Do NOT do technical design and do NOT write code."
+    },
+    {
+      "id": "architecture",
+      "title": "Architecture Design",
+      "enabled": true,
+      "agent": "claude",
+      "interactive": true,
+      "writes": "ARCHITECTURE.md",
+      "reads": [
+        "planning"
+      ],
+      "spec": "You are a software architect. Based on {reads}, design the overall architecture in {out}: main components and responsibilities, data flow, technology choices (with rationale), module/service boundaries, and diagrams (Mermaid) where useful. Do not go down to specific functions/classes yet."
+    },
+    {
+      "id": "detailed-design",
+      "title": "Detailed Design",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "DETAILED_DESIGN.md",
+      "reads": [
+        "architecture"
+      ],
+      "spec": "You are a detailed-design agent. Based on {reads}, write {out}: concrete modules/classes/functions, signatures and data types, API/interface contracts, data schemas, error handling and edge cases. Detailed enough for a coding agent to implement directly."
+    },
+    {
+      "id": "uiux-design",
+      "title": "UI/UX Design (mockscreen)",
+      "enabled": true,
+      "agent": "claude",
+      "parallelWith": "detailed-design",
+      "writes": "UIUX_MOCKS.md",
+      "reads": [
+        "planning",
+        "architecture"
+      ],
+      "spec": "You are a UI/UX designer. Based on {reads}, design the experience and interface in {out}: key screens, user flows, and a static HTML/CSS MOCKUP for each screen (in code blocks or under .orca/artifacts/mocks/). Describe states (empty/loading/error), responsiveness, and accessibility notes."
+    },
+    {
+      "id": "coding",
+      "title": "Coding",
+      "enabled": true,
+      "agent": "codex",
+      "writes": "CHANGES.md",
+      "progress": "TASKS.md",
+      "hardTimeoutMs": 7200000,
+      "reads": [
+        "detailed-design",
+        "uiux-design"
+      ],
+      "onFailGoto": null,
+      "spec": "You are a coding agent. FIRST ACTION - TASK CHECKLIST: before writing any code, break the implementation down (from {reads}) into concrete tasks and write them as a Markdown checklist to {tasks} using exactly these markers (if {tasks} already exists from an earlier attempt, read it first and continue it instead of rewriting): '- [ ]' not started, '- [~]' in progress, '- [x]' completed; one task per line, sub-tasks indented two spaces, nothing else on those lines. This file is read live by the pipeline's status page, so keep it current: mark a task '- [~]' the moment you start it and '- [x]' the moment you finish it - never batch updates at the end. Every task must be '- [x]' before you write {out}. Then implement fully according to {reads}. Follow the detailed design and mockups closely. If this task is being re-run after a failed review or test, also read {tasks}, REVIEW.md, SECURITY_REVIEW.md, and TEST_REPORT.md in the artifacts dir and fix every issue reported there (update the checklist, not just the reports). When done, write a summary of the changes (which files, what, and why) to {out}. Do not expand scope beyond the design."
+    },
+    {
+      "id": "code-review",
+      "title": "Code Review",
+      "enabled": true,
+      "agent": "claude",
+      "timeoutMs": 1800000,
+      "hardTimeoutMs": 7200000,
+      "writes": "REVIEW.md",
+      "reads": [
+        "coding",
+        "detailed-design"
+      ],
+      "gate": false,
+      "onFailGoto": "coding",
+      "spec": "You are a reviewer. Compare the changed code (see {reads}) against the design. Write {out}: findings by severity (blocker/major/minor), correctness issues, security, performance, maintainability. Give a clear VERDICT at the end: if there is any blocker/major, report FAIL (outcome=failed) to loop back to coding; otherwise PASS."
+    },
+    {
+      "id": "security-review",
+      "title": "Security Review",
+      "enabled": true,
+      "agent": "claude",
+      "timeoutMs": 1800000,
+      "hardTimeoutMs": 7200000,
+      "writes": "SECURITY_REVIEW.md",
+      "reads": [
+        "coding",
+        "architecture"
+      ],
+      "gate": false,
+      "onFailGoto": "coding",
+      "spec": "You are an application security expert. Review the changes (see {reads}) for vulnerabilities, independent of language/framework — assess general principles: input validation and injection (SQL/command/template/etc.), authentication and authorization, session and token management, secret/credential exposure in code or logs, encryption of sensitive data at rest and in transit, access control at the data layer, known-vulnerable dependencies, insecure default configuration, and error handling that leaks information. Write {out}: each finding with severity (critical/high/medium/low), location, impact, and remediation. VERDICT at the end: if there is any critical/high, report FAIL (outcome=failed) to loop back to coding; otherwise PASS."
+    },
+    {
+      "id": "testing",
+      "title": "Testing",
+      "enabled": true,
+      "agent": "opencode",
+      "writes": "TEST_REPORT.md",
+      "reads": [
+        "coding",
+        "code-review",
+        "security-review"
+      ],
+      "onFailGoto": "coding",
+      "spec": "You are a testing agent. Based on {reads}, write and RUN tests (unit + integration where sensible) for the changes. Write {out}: tests written, pass/fail results, failure details, and fix suggestions. If any test fails, report outcome=failed to loop back to coding."
+    },
+    {
+      "id": "documentation",
+      "title": "Documentation",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "DOCUMENTATION.md",
+      "reads": [
+        "planning",
+        "architecture",
+        "detailed-design",
+        "uiux-design",
+        "coding",
+        "security-review",
+        "testing"
+      ],
+      "spec": "You are a documentation agent. Synthesize from {reads} into complete documentation in {out}: overview, setup and run guide, architecture summary, API reference, usage guide, and operational notes. Update the repo README if needed."
+    },
+    {
+      "id": "git-deliver",
+      "title": "Rebase & Push",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "DELIVERY.md",
+      "reads": [
+        "coding"
+      ],
+      "onFailGoto": null,
+      "spec": "You are a delivery agent. The work in {reads} is complete and verified; your job is to deliver it to the remote repository. Follow this EXACT order and stop at the first step you cannot complete safely, reporting outcome=failed with what you did and where you stopped. (1) Baseline: run git status and git log --oneline -5. If there are uncommitted changes (ignore files the repo gitignores), commit them on the current branch with a conventional-commit message summarizing {reads}. If HEAD is detached or you are on the repository's default branch (main/master), first create and switch to a short kebab-case working branch named after the objective. (2) Fetch: git fetch origin. (3) Rebase: git rebase origin/main. If conflicts occur, resolve them yourself so the result preserves the intent of {reads}, then run git rebase --continue. NEVER use --force when pushing. (4) Smoke check - only if you resolved conflicts in step 3: run the project's test suite (or its build, if there are no tests) once; if it fails, report outcome=failed with the failure details. (5) Push: git push -u origin HEAD. (6) Write {out}: the branch name, the commits pushed (hash + subject), whether a rebase happened and which conflicts you resolved, the smoke-check result, and a short PR-style summary of the whole change."
+    }
+  ]
+}

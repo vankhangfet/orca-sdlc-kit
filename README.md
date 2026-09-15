@@ -15,7 +15,7 @@ ticking, and artifact chips light up as each Markdown lands on disk](img/banner-
 
 *One command starts the whole pipeline; the status page opens in your browser and updates itself while the agents work. [Details](#watch-it-run--the-live-status-page) · [HD video](img/banner-animation.mp4) · [interactive version](img/banner-animation.html)*
 
-**Three flows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines).
+**Three flows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines). **Deliver-the-code variants** of all three live in `.orca/workflow-template/` — same pipelines, each ending with a Rebase & Push step that commits any pending work, rebases onto the latest `origin/main` and pushes.
 
 **Customize everything in `.orca/flow.config.json`** — add or reorder steps, swap any step's agent, pick models per step, set retries and timeouts, run steps in parallel: plain JSON, zero code. [See how](#2-configure-your-pipeline).
 
@@ -201,6 +201,14 @@ node .orca/flow.mjs --config fixbug.config.json "<what happens, expected behavio
 
 ```bash
 node .orca/flow.mjs --config cr.config.json "<what changes and why, on the existing system>"
+```
+
+**Workflow templates (`.orca/workflow-template/`)** — the same three pipelines, each ending with a **Rebase & Push** step: commit any pending work, `git fetch origin`, rebase onto the integration branch (`origin/main` by default — edit the step's `spec` to change it), resolve conflicts, smoke-test, push.
+
+```bash
+node .orca/flow.mjs --config workflow-template/fixbug.config.json "<bug>"
+node .orca/flow.mjs --config workflow-template/cr.config.json "<change request>"
+node .orca/flow.mjs --config workflow-template/sdlc.config.json "<objective>"
 ```
 
 ## Watch it run — the live status page

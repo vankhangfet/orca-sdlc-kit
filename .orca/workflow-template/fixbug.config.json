@@ -1,0 +1,79 @@
+{
+  "//": "workflow-template/fixbug.config.json — BUG-FIX TEMPLATE: the fixbug pipeline + a final Rebase & Push step (git-deliver). Edit this copy freely; the base config stays untouched.",
+  "//usage": "node .orca/flow.mjs --config workflow-template/fixbug.config.json \"<bug description: what happens, expected behavior, how to reproduce>\"",
+  "//steps": "root-cause -> fix-plan -> fix-coding -> fix-verify -> git-deliver (commit-if-needed, fetch, rebase, push). fix-verify FAIL loops back to fix-coding (maxRetries).",
+  "//base": "git-deliver rebases onto origin/main. On a different integration branch (e.g. develop), replace every origin/main in the git-deliver spec.",
+  "artifactsDir": ".orca/artifacts",
+  "maxRetries": 2,
+  "//autoRun": "true (default) = fully automatic, no user confirmation; claude agents start with permission bypass. See flow.config.json for details.",
+  "autoRun": true,
+  "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree. See flow.config.json for details.",
+  "//model": "Optional \"model\" per step, or \"defaults.model\" for the whole pipeline. \"default\"/missing = the agent's own default model. See flow.config.json for details.",
+  "defaults": {
+    "timeoutMs": 900000,
+    "worktree": null,
+    "model": "default"
+  },
+  "pipeline": [
+    {
+      "id": "root-cause",
+      "title": "Root Cause Analysis",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "ROOT_CAUSE.md",
+      "reads": [],
+      "spec": "You are a debugging agent. The OVERALL OBJECTIVE describes a bug. First reproduce it if at all possible (run the app/tests/the reproduction steps given). Then trace it to the TRUE root cause: read error messages completely, follow the data flow from symptom to source, check recent changes. Write {out}: steps to reproduce, expected vs actual behavior, evidence gathered (commands run and their output), the root cause (be specific: file and line), and alternative explanations you ruled out and why. Do NOT fix anything yet and do NOT write the fix plan."
+    },
+    {
+      "id": "fix-plan",
+      "title": "Fix Plan",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "FIX_PLAN.md",
+      "reads": [
+        "root-cause"
+      ],
+      "spec": "You are a planning agent. Based on {reads}, write {out}: the chosen fix approach (with alternatives considered and why this one), the exact files/functions to change and the change for each, risks and side effects, and a verification plan: how to prove the original bug is fixed plus a REGRESSION TEST to add (framework, file, cases — must fail on the old code and pass on the fixed code). Keep the fix minimal — no refactors beyond the bug."
+    },
+    {
+      "id": "fix-coding",
+      "title": "Bug Fix",
+      "enabled": true,
+      "agent": "codex",
+      "writes": "FIX_CHANGES.md",
+      "progress": "FIX_TASKS.md",
+      "reads": [
+        "root-cause",
+        "fix-plan"
+      ],
+      "onFailGoto": null,
+      "hardTimeoutMs": 7200000,
+      "spec": "You are a coding agent. FIRST ACTION - TASK CHECKLIST: before changing any code, break the fix down (from the fix plan) into concrete tasks and write them as a Markdown checklist to {tasks} using exactly these markers (if {tasks} already exists from an earlier attempt, read it first and continue it instead of rewriting): '- [ ]' not started, '- [~]' in progress, '- [x]' completed; one task per line, sub-tasks indented two spaces, nothing else on those lines. This file is read live by the pipeline's status page, so keep it current: mark a task '- [~]' the moment you start it and '- [x]' the moment you finish it - never batch updates at the end. Every task must be '- [x]' before you write {out}. Then implement the bug fix exactly per {reads}: the minimal code change AND the regression test defined in the plan (the test must be a permanent file in the repo's test suite). Run the regression test and the project's existing tests before finishing. If this task is being re-run after a failed verification, also read {tasks} and VERIFICATION.md in the artifacts dir and address every failure reported there (update the checklist, not just the reports). When done, write {out}: files changed, what changed and why, and test results."
+    },
+    {
+      "id": "fix-verify",
+      "title": "Fix Verification",
+      "enabled": true,
+      "agent": "opencode",
+      "writes": "VERIFICATION.md",
+      "reads": [
+        "fix-coding",
+        "root-cause"
+      ],
+      "onFailGoto": "fix-coding",
+      "spec": "You are a verification agent. Based on {reads}: (1) reproduce the ORIGINAL bug from ROOT_CAUSE.md against the fixed code and show it no longer occurs; (2) run the regression test added by the fix and the project's existing test suite; (3) check the changed code for obvious regressions or side effects. Write {out}: what you ran, actual results (include command output), and a clear VERDICT at the end — if the bug still reproduces or any test fails, report FAIL (outcome=failed) to loop back to the fix; otherwise PASS."
+    },
+    {
+      "id": "git-deliver",
+      "title": "Rebase & Push",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "FIX_DELIVERY.md",
+      "reads": [
+        "fix-coding"
+      ],
+      "onFailGoto": null,
+      "spec": "You are a delivery agent. The work in {reads} is complete and verified; your job is to deliver it to the remote repository. Follow this EXACT order and stop at the first step you cannot complete safely, reporting outcome=failed with what you did and where you stopped. (1) Baseline: run git status and git log --oneline -5. If there are uncommitted changes (ignore files the repo gitignores), commit them on the current branch with a conventional-commit message summarizing {reads}. If HEAD is detached or you are on the repository's default branch (main/master), first create and switch to a short kebab-case working branch named after the objective. (2) Fetch: git fetch origin. (3) Rebase: git rebase origin/main. If conflicts occur, resolve them yourself so the result preserves the intent of {reads}, then run git rebase --continue. NEVER use --force when pushing. (4) Smoke check - only if you resolved conflicts in step 3: run the project's test suite (or its build, if there are no tests) once; if it fails, report outcome=failed with the failure details. (5) Push: git push -u origin HEAD. (6) Write {out}: the branch name, the commits pushed (hash + subject), whether a rebase happened and which conflicts you resolved, the smoke-check result, and a short PR-style summary of the whole change."
+    }
+  ]
+}

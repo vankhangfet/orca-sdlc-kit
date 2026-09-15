@@ -282,7 +282,8 @@ scenario("E11 resume-from (--from keeps the read chain)", async () => {
 // dry-run) before any agent work; budgets are tight.
 // ---------------------------------------------------------------------------
 scenario("F1 shipped configs dry-run cleanly", async () => {
-  for (const cfg of [null, "fixbug.config.json", "cr.config.json"]) {
+  for (const cfg of [null, "fixbug.config.json", "cr.config.json",
+    "workflow-template/sdlc.config.json", "workflow-template/fixbug.config.json", "workflow-template/cr.config.json"]) {
     const label = cfg || "flow.config.json (default)";
     const r = await runFlow({ name: "f1", config: cfg, args: ["--dry-run"], objective: "suite smoke", budgetMs: 30000 });
     ok(`F1 ${label} not hung`, !r.hung);

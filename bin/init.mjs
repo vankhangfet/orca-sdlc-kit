@@ -29,6 +29,10 @@ const FILES = [
   ".orca/cr.config.json",
   ".orca/CONFIGURATION.md",
   ".orca/README.md",
+  ".orca/workflow-template/README.md",
+  ".orca/workflow-template/sdlc.config.json",
+  ".orca/workflow-template/fixbug.config.json",
+  ".orca/workflow-template/cr.config.json",
   "orca.yaml",
 ];
 

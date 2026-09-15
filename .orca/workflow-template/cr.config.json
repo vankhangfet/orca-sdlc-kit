@@ -1,0 +1,108 @@
+{
+  "//": "workflow-template/cr.config.json — CHANGE-REQUEST TEMPLATE: the cr pipeline + a final Rebase & Push step (git-deliver). Edit this copy freely; the base config stays untouched.",
+  "//usage": "node .orca/flow.mjs --config workflow-template/cr.config.json \"<the change request: what changes and why, on the existing system>\"",
+  "//steps": "impact-analysis -> cr-plan -> cr-coding -> code-review -> testing -> cr-verify -> git-deliver (commit-if-needed, fetch, rebase, push). Review/Test/Verify FAIL loops back to cr-coding (maxRetries).",
+  "//base": "git-deliver rebases onto origin/main. On a different integration branch (e.g. develop), replace every origin/main in the git-deliver spec.",
+  "artifactsDir": ".orca/artifacts",
+  "maxRetries": 2,
+  "//autoRun": "true (default) = fully automatic, no user confirmation; claude agents start with permission bypass. See flow.config.json for details.",
+  "autoRun": true,
+  "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree. See flow.config.json for details.",
+  "//model": "Optional \"model\" per step, or \"defaults.model\" for the whole pipeline. \"default\"/missing = the agent's own default model. See flow.config.json for details.",
+  "defaults": {
+    "timeoutMs": 900000,
+    "worktree": null,
+    "model": "default"
+  },
+  "pipeline": [
+    {
+      "id": "impact-analysis",
+      "title": "Impact Analysis",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "IMPACT_ANALYSIS.md",
+      "reads": [],
+      "spec": "You are a maintenance analyst. The OVERALL OBJECTIVE is a change request (CR) on an EXISTING system. Explore the current codebase and determine the impact of the requested change: the modules, files and functions affected (and why each is touched), current behavior vs desired behavior at each point, the data/config/API surface that changes, and the regression surface - the existing behaviors and tests most likely to break. If design artifacts from earlier runs exist in the artifacts dir (ARCHITECTURE.md, DETAILED_DESIGN.md, and similar), use them as context. Write {out} with sections: Change summary (restated from the objective), Affected areas (file by file), Current vs desired behavior, Regression surface, Risks and unknowns. Do NOT design the solution and do NOT write code - that is the next step's job."
+    },
+    {
+      "id": "cr-plan",
+      "title": "CR Implementation Plan",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "CR_PLAN.md",
+      "reads": [
+        "impact-analysis"
+      ],
+      "spec": "You are a planning agent. Based on {reads}, write {out}: the chosen approach (with alternatives considered and why), the exact files/functions to change and the change for each, compatibility and migration concerns for existing consumers of anything touched (APIs, configs, stored data), a test plan - new tests for the new behavior plus the existing tests that cover the regression surface - and an ACCEPTANCE CRITERIA checklist: one checkbox per point of the original CR, each concrete enough for a verifier to check mechanically. Keep the change minimal - no refactors beyond the CR."
+    },
+    {
+      "id": "cr-coding",
+      "title": "CR Coding",
+      "enabled": true,
+      "agent": "codex",
+      "writes": "CR_CHANGES.md",
+      "progress": "CR_TASKS.md",
+      "reads": [
+        "impact-analysis",
+        "cr-plan"
+      ],
+      "onFailGoto": null,
+      "hardTimeoutMs": 7200000,
+      "spec": "You are a coding agent. FIRST ACTION - TASK CHECKLIST: before changing any code, break the change down (from {reads}) into concrete tasks and write them as a Markdown checklist to {tasks} using exactly these markers (if {tasks} already exists from an earlier attempt, read it first and continue it instead of rewriting): '- [ ]' not started, '- [~]' in progress, '- [x]' completed; one task per line, sub-tasks indented two spaces, nothing else on those lines. This file is read live by the pipeline's status page, so keep it current: mark a task '- [~]' the moment you start it and '- [x]' the moment you finish it - never batch updates at the end. Every task must be '- [x]' before you write {out}. Then implement the change request exactly per {reads}: the minimal code change AND the tests from the plan's test plan. Run the new tests and the existing tests that cover the regression surface before finishing. If this task is being re-run after a failed review, test or verification, also read {tasks}, CR_REVIEW.md, CR_TEST_REPORT.md and ACCEPTANCE.md in the artifacts dir and address every issue reported there (update the checklist, not just the reports). When done, write {out}: files changed, what changed and why, and test results."
+    },
+    {
+      "id": "code-review",
+      "title": "Code Review",
+      "enabled": true,
+      "agent": "claude",
+      "timeoutMs": 1800000,
+      "hardTimeoutMs": 7200000,
+      "writes": "CR_REVIEW.md",
+      "reads": [
+        "cr-coding",
+        "cr-plan"
+      ],
+      "onFailGoto": "cr-coding",
+      "spec": "You are a reviewer. Compare the changed code (see {reads}) against the plan. Write {out}: findings by severity (blocker/major/minor), correctness issues, missed acceptance criteria, side effects on the regression surface, maintainability. Give a clear VERDICT at the end: if there is any blocker/major, report FAIL (outcome=failed) to loop back to coding; otherwise PASS."
+    },
+    {
+      "id": "testing",
+      "title": "Testing (incl. regression)",
+      "enabled": true,
+      "agent": "opencode",
+      "writes": "CR_TEST_REPORT.md",
+      "reads": [
+        "cr-coding",
+        "code-review"
+      ],
+      "onFailGoto": "cr-coding",
+      "spec": "You are a testing agent. Based on {reads}: (1) write and RUN tests for the new or changed behavior per {reads}; (2) run the project's existing test suite as a regression check - a change request must not break existing behavior. Write {out}: tests written, commands run, pass/fail results, failure details, and fix suggestions. If any test fails, report outcome=failed to loop back to coding."
+    },
+    {
+      "id": "cr-verify",
+      "title": "Acceptance Verification",
+      "enabled": true,
+      "agent": "opencode",
+      "writes": "ACCEPTANCE.md",
+      "reads": [
+        "cr-coding",
+        "cr-plan",
+        "impact-analysis"
+      ],
+      "onFailGoto": "cr-coding",
+      "spec": "You are a verification agent. Based on {reads}: (1) go through the ACCEPTANCE CRITERIA checklist in the plan one by one and check each against the actual code - run the app/tests/build where possible, do not just read; (2) spot-check the regression surface from the impact analysis. Write {out}: for every criterion, what you ran or inspected and the actual result (include command output); then a clear VERDICT at the end - if any criterion is unmet or a regression is found, report FAIL (outcome=failed) to loop back to the fix; otherwise PASS."
+    },
+    {
+      "id": "git-deliver",
+      "title": "Rebase & Push",
+      "enabled": true,
+      "agent": "claude",
+      "writes": "CR_DELIVERY.md",
+      "reads": [
+        "cr-coding"
+      ],
+      "onFailGoto": null,
+      "spec": "You are a delivery agent. The work in {reads} is complete and verified; your job is to deliver it to the remote repository. Follow this EXACT order and stop at the first step you cannot complete safely, reporting outcome=failed with what you did and where you stopped. (1) Baseline: run git status and git log --oneline -5. If there are uncommitted changes (ignore files the repo gitignores), commit them on the current branch with a conventional-commit message summarizing {reads}. If HEAD is detached or you are on the repository's default branch (main/master), first create and switch to a short kebab-case working branch named after the objective. (2) Fetch: git fetch origin. (3) Rebase: git rebase origin/main. If conflicts occur, resolve them yourself so the result preserves the intent of {reads}, then run git rebase --continue. NEVER use --force when pushing. (4) Smoke check - only if you resolved conflicts in step 3: run the project's test suite (or its build, if there are no tests) once; if it fails, report outcome=failed with the failure details. (5) Push: git push -u origin HEAD. (6) Write {out}: the branch name, the commits pushed (hash + subject), whether a rebase happened and which conflicts you resolved, the smoke-check result, and a short PR-style summary of the whole change."
+    }
+  ]
+}
