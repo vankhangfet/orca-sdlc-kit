@@ -15,7 +15,7 @@ Installed via `npx github:vankhangfet/orca-sdlc-kit`? You already have all of th
 | `flow.config.json` | The full SDLC pipeline. **This is the file you edit**: steps, agents, `autoRun`, gates, interactive steps, timeouts. |
 | `fixbug.config.json` | The bug-fix pipeline (run with `--config fixbug.config.json "<bug + reproduction steps>"`). |
 | `cr.config.json` | The change-request pipeline (run with `--config cr.config.json "<what changes and why>"`). |
-| `workflow-template/` | Ready-made variants of the three pipelines that END with a Rebase & Push step (commit, rebase onto the integration branch, push). Run with `--config workflow-template/<file>` — see its README. |
+| `workflow-template/` | Variants of the three pipelines that END with a Rebase & Push step (commit, rebase, push). Run with `--config workflow-template/<file>`. |
 | `CONFIGURATION.md` | Field-by-field reference for all three config files. |
 | `artifacts/` | Runtime output — every step's Markdown artifact lands here (gitignored). |
 
