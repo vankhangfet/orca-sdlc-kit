@@ -49,7 +49,7 @@ let hungInCurrentScenario = false;
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
 // NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
-async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000 }) {
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000 }) {
   const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
   dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
@@ -66,13 +66,23 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   env.ORCA_FAKE_LOG = join(dir, "calls.jsonl");
   env.ORCA_FAKE_SCENARIO = join(HERE, "scenarios", scenarioFile);
   env.ORCA_FAKE_WT = wt;
+  // Title -> writes map: lets the fake materialize each step's artifact on
+  // success, exactly like a real worker leaving its {out} file behind.
+  env.ORCA_FAKE_WRITES = (() => {
+    try {
+      const cc = JSON.parse(readFileSync(join(REPO, ".orca", config), "utf8"));
+      return JSON.stringify(Object.fromEntries(
+        (cc.pipeline || []).filter((s) => s && s.title && s.writes).map((s) => [s.title, s.writes])));
+    } catch { return "{}"; }
+  })();
   env.ORCA_FLOW_WORKTREE = "name:testlab";
   env.USERPROFILE = home;
   env.HOME = home;
   const argv = [FLOW, ...args, "--no-open-status"];
   if (config) argv.push("--config", config);
   if (objective) argv.push(objective);
-  const child = spawn(NODE, argv, { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(NODE, argv, { cwd: REPO, env, stdio: [stdinText == null ? "ignore" : "pipe", "pipe", "pipe"] });
+  if (stdinText != null) { child.stdin.write(stdinText); child.stdin.end(); }
   let out = ""; let err = ""; let hung = false;
   const timer = setTimeout(() => { hung = true; hungInCurrentScenario = true; child.kill(); }, budgetMs);
   child.stdout.on("data", (d) => (out += d));
@@ -262,7 +272,8 @@ scenario("E10 unknown-outcome (no blind retry)", async () => {
 // E11 — resume: --from keeps the read chain via the prior artifact file.
 // ---------------------------------------------------------------------------
 scenario("E11 resume-from (--from keeps the read chain)", async () => {
-  const seed = [{ file: "A.md", text: "# Alpha output\nprior run artifact\n" }];
+  const seed = [{ file: "A.md", text: "# Alpha output\nprior run artifact\n" +
+    "seeded filler line so the resume seed clears the readiness minimum-size threshold.\n".repeat(4) }];
   const dry = await runFlow({ name: "e11dry", config: "../test/configs/cold.config.json", args: ["--dry-run", "--from", "beta"], seedArtifacts: seed, budgetMs: 30000 });
   eq("E11 dry-run exit", dry.code, 0);
   ok("E11 dry-run reads include prior step", /reads=\[alpha\]/.test(dry.out));

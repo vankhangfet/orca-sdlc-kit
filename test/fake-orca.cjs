@@ -11,6 +11,7 @@
 // Response contract mirrors what flow.mjs's orca() parses: a JSON object as
 // the LAST stdout line, wrapped in {result: ...}; exit code 0 = ok.
 const fs = require("node:fs");
+const { join } = require("node:path");
 
 function main(argv) {
   const env = process.env;
@@ -93,7 +94,22 @@ function main(argv) {
     "orchestration worker-start": () => {
       const id = "disp-" + c.id();
       state.dispatches[id] = { id, task: flags.task, status: "dispatching", created: Date.now() };
-      const outcome = scenario.outcomeOf ? scenario.outcomeOf(state.tasks[flags.task] || {}, c) : "succeeded";
+      const task = state.tasks[flags.task] || {};
+      const outcome = scenario.outcomeOf ? scenario.outcomeOf(task, c) : "succeeded";
+      // Materialize the step's artifact on success: the readiness gate inspects
+      // <worktree>/.orca/artifacts/<writes> before launching consumers, so a
+      // green-path fake must leave the file behind like a real worker would.
+      if (outcome === "succeeded" && env.ORCA_FAKE_WRITES && task.spec) {
+        const title = (task.spec.match(/^# (.+)$/m) || [])[1];
+        const writes = title ? JSON.parse(env.ORCA_FAKE_WRITES)[title] : null;
+        if (writes) {
+          const dir = join(env.ORCA_FAKE_WT || ".", ".orca", "artifacts");
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(join(dir, writes),
+            `# ${title}\n\n` +
+            "Fake artifact produced by the E2E fake orca; filler content clearing the readiness gate's minimum-size check.\n".repeat(4));
+        }
+      }
       c.pushDone(flags.task, outcome);
       c.ok({ dispatchId: id, state: "ready" });
     },
