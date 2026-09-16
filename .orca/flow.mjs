@@ -1272,24 +1272,6 @@ const STATUS_HTML = `<!doctype html>
 </html>
 `;
 
-// Terminal command for an agent. Claude Code on Windows can crash with
-// EBADF when its file watcher races the create/delete of
-// ~/.claude/history.jsonl.lock, which is written on every user prompt
-// (anthropics/claude-code#15739) — hit hardest by the interactive grill
-// step. Skipping prompt history for flow-spawned claude agents removes the
-// lock churn. NOTE: the CLI gates on the exact string "true" (not "1").
-// In auto-run, claude agents ALSO get --permission-mode bypassPermissions:
-// an unattended TUI must never block on an approval prompt. The flag is the
-// reliable channel because project-level settings cannot enable this mode
-// (Claude Code v2.1.257+); manual mode (autoRun:false) keeps default
-// prompting — the user is present and overseeing the terminal.
-// CLAUDE_AFK_TIMEOUT_MS (auto-run only) auto-continues a stray
-// AskUserQuestion dialog after 60s — in manual mode it must stay unset,
-// because interview steps legitimately wait minutes for a human answer.
-// A "claude ..." agent string keeps its user flags and still gets the wrap;
-// a permission flag in the string is respected, never duplicated.
-// Only the manual path can inject env/flags; the cold-start fallback
-// (--agent) launches the TUI Orca-side and stays unprotected.
 // --- Notifications (.orca/notify.json) --------------------------------------
 // Per-step and run-end chat messages (slack/telegram/teams/whatsapp/generic).
 // Best-effort by contract — the status page's rule: a dead webhook may never
@@ -1390,6 +1372,24 @@ function notifyRun(overall) {
   notifySend("run", { event: "run", run: RUN_ID, objective, status: overall, durationMs: durMs }, text);
 }
 
+// Terminal command for an agent. Claude Code on Windows can crash with
+// EBADF when its file watcher races the create/delete of
+// ~/.claude/history.jsonl.lock, which is written on every user prompt
+// (anthropics/claude-code#15739) — hit hardest by the interactive grill
+// step. Skipping prompt history for flow-spawned claude agents removes the
+// lock churn. NOTE: the CLI gates on the exact string "true" (not "1").
+// In auto-run, claude agents ALSO get --permission-mode bypassPermissions:
+// an unattended TUI must never block on an approval prompt. The flag is the
+// reliable channel because project-level settings cannot enable this mode
+// (Claude Code v2.1.257+); manual mode (autoRun:false) keeps default
+// prompting — the user is present and overseeing the terminal.
+// CLAUDE_AFK_TIMEOUT_MS (auto-run only) auto-continues a stray
+// AskUserQuestion dialog after 60s — in manual mode it must stay unset,
+// because interview steps legitimately wait minutes for a human answer.
+// A "claude ..." agent string keeps its user flags and still gets the wrap;
+// a permission flag in the string is respected, never duplicated.
+// Only the manual path can inject env/flags; the cold-start fallback
+// (--agent) launches the TUI Orca-side and stays unprotected.
 function agentCommand(agent, model = null) {
   // Model flag FIRST, before the claude wrap below, so it lands inside the
   // wrapped command. A model flag already in the agent string wins; kiro-cli
