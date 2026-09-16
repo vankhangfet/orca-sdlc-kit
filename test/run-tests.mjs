@@ -15,6 +15,7 @@
 // (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -39,6 +40,24 @@ const ok = (name, cond, extra) => {
 const eq = (name, got, want) =>
   ok(name, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
 
+// Tiny localhost webhook recorder for the notification scenarios (N1).
+async function recordHook() {
+  const hits = [];
+  const srv = createServer((req, res) => {
+    let b = "";
+    req.on("data", (c) => (b += c));
+    req.on("end", () => {
+      hits.push({ path: req.url, body: b ? JSON.parse(b) : null });
+      res.writeHead(204);
+      res.end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${srv.address().port}/hook`;
+  const close = () => new Promise((r) => srv.close(r));
+  return { hits, url, close };
+}
+
 // Tmp dirs survive runFlow; the runner decides their fate AFTER the scenario,
 // so failure evidence (calls.jsonl/state.json/status.js) still exists when
 // assertions report FAIL. Same for HUNG — runFlow sets the flag when it kills.
@@ -49,13 +68,14 @@ let hungInCurrentScenario = false;
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
 // NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
-async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000 }) {
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], budgetMs = 90000, notify = null }) {
   const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
   dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
   mkdirSync(join(wt, ".orca", "artifacts"), { recursive: true });
   mkdirSync(home, { recursive: true });
   for (const a of seedArtifacts) writeFileSync(join(wt, ".orca", "artifacts", a.file), a.text ?? "seeded by harness\n");
+  if (notify) writeFileSync(join(dir, "notify.json"), JSON.stringify(notify, null, 2));
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
   env.ORCA_CLI_COMMAND = NODE;
@@ -67,6 +87,9 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   env.ORCA_FAKE_SCENARIO = join(HERE, "scenarios", scenarioFile);
   env.ORCA_FAKE_WT = wt;
   env.ORCA_FLOW_WORKTREE = "name:testlab";
+  // notify template, when given, is handed to the child via its file's path — the
+  // only source, since every inherited ORCA_* key was stripped above.
+  if (notify) env.ORCA_FLOW_NOTIFY_FILE = join(dir, "notify.json");
   env.USERPROFILE = home;
   env.HOME = home;
   const argv = [FLOW, ...args, "--no-open-status"];
@@ -274,6 +297,23 @@ scenario("E11 resume-from (--from keeps the read chain)", async () => {
   ok("E11 beta spec points at prior artifact", String(run.by("orchestration task-create")[0]?.flags.spec ?? "").includes(".orca/artifacts/A.md"));
   eq("E11 alpha skipped on resume", run.status?.steps.find((s) => s.id === "alpha")?.status, "skipped");
   eq("E11 beta succeeded", run.status?.steps.find((s) => s.id === "beta")?.status, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// N3 — default-off: an EMPTY notify template sends nothing and stays silent.
+// Baseline pin recorded BEFORE the engine feature lands; it must hold after.
+// ---------------------------------------------------------------------------
+scenario("N3 notify default-off (empty template: zero sends, zero warns)", async () => {
+  const hook = await recordHook();
+  try {
+    const r = await runFlow({ name: "n3", config: "../test/configs/cold.config.json",
+      notify: { enabled: true, provider: "", url: "", token: "", chatId: "", to: "", events: ["step", "run"] },
+      budgetMs: 90000 });
+    ok("N3 not hung", !r.hung);
+    eq("N3 exit code", r.code, 0);
+    eq("N3 zero notifications", hook.hits.length, 0);
+    ok("N3 no notify output", !/\[notify\]/.test(r.out + r.err));
+  } finally { await hook.close(); }
 });
 
 // ---------------------------------------------------------------------------
