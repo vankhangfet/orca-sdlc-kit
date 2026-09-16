@@ -1302,11 +1302,15 @@ const NOTIFY_FILE = process.env.ORCA_FLOW_NOTIFY_FILE || join(HERE, "notify.json
 const NOTIFY = { on: false, events: new Set(), cfg: {}, dead: false };
 function loadNotify() {
   try { NOTIFY.cfg = JSON.parse(readFileSync(NOTIFY_FILE, "utf8")); }
-  catch { return; }                                       // no file / unreadable: off, silent
+  catch (e) {
+    if (e.code !== "ENOENT") warn(`[notify] disabled: notify.json unreadable (${e.message})`);
+    return;
+  }
   const c = NOTIFY.cfg;
   // Empty template (provider/url blank) or enabled:false: off, silent — the
   // shipped default. Only a FILLED-but-invalid file warns.
   if (c.enabled === false || !String(c.provider ?? "").trim() || !String(c.url ?? "").trim()) return;
+  try { new URL(c.url); } catch { warn(`[notify] disabled: "url" is not a valid URL`); return; }
   const providers = ["slack", "telegram", "teams", "whatsapp", "generic"];
   if (!providers.includes(c.provider)) { warn(`[notify] disabled: unknown provider "${c.provider}"`); return; }
   const need = { telegram: ["chatId"], whatsapp: ["token", "to"] }[c.provider] || [];
@@ -1314,18 +1318,23 @@ function loadNotify() {
   if (missing.length) { warn(`[notify] disabled: ${c.provider} needs ${missing.map((k) => `"${k}"`).join(", ")}`); return; }
   NOTIFY.events = new Set(Array.isArray(c.events) && c.events.length ? c.events : ["step", "run"]);
   NOTIFY.on = true;
+  const unknown = [...NOTIFY.events].filter((e) => e !== "step" && e !== "run");
+  if (unknown.length) warn(`[notify] unknown event(s) ignored: ${unknown.join(", ")}`);
 }
 // Inline delivery agent: POSTs {url, headers, body} as JSON; 2xx -> exit 0.
-// argv[1] (with -e) carries the JSON payload — never logged anywhere.
+// stdin carries the JSON payload — never logged, never visible in argv.
 const NOTIFY_SCRIPT = `
-const req = JSON.parse(process.argv[1]);
+const req = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const u = new URL(req.url);
 const mod = u.protocol === "http:" ? require("http") : require("https");
 const data = Buffer.from(JSON.stringify(req.body));
 const r = mod.request({ hostname: u.hostname, port: u.port || (u.protocol === "http:" ? 80 : 443),
   path: u.pathname + u.search, method: "POST",
   headers: Object.assign({ "content-type": "application/json", "content-length": data.length }, req.headers || {}) },
-  (res) => { res.resume(); res.on("end", () => process.exit(res.statusCode >= 200 && res.statusCode < 300 ? 0 : 1)); });
+  (res) => { res.resume(); res.on("end", () => {
+    if (res.statusCode < 200 || res.statusCode >= 300) console.error("HTTP " + res.statusCode);
+    process.exit(res.statusCode >= 200 && res.statusCode < 300 ? 0 : 1);
+  }); });
 r.setTimeout(9000, () => r.destroy(new Error("timeout after 9s")));
 r.on("error", (e) => { console.error(e.message); process.exit(1); });
 r.end(data);
@@ -1342,8 +1351,8 @@ function notifySend(kind, payload, text) {
     : { text };
   let r;
   try {
-    r = spawnSync(process.execPath, ["-e", NOTIFY_SCRIPT, JSON.stringify({ url: NOTIFY.cfg.url, headers, body })],
-      { timeout: 12000, encoding: "utf8" });
+    r = spawnSync(process.execPath, ["-e", NOTIFY_SCRIPT],
+      { input: JSON.stringify({ url: NOTIFY.cfg.url, headers, body }), timeout: 12000, encoding: "utf8" });
   } catch (e) { r = { error: e }; }
   if (r.error || r.status !== 0) {
     NOTIFY.dead = true;
@@ -1366,7 +1375,17 @@ function notifyRun(overall) {
   let text = `[orca-flow] Run ${RUN_ID} ${String(overall).toUpperCase()} in ${fmtDurMs(durMs)} — "${obj}" · artifacts: ${statusDir()}`;
   if (overall !== "succeeded") {
     const bad = (STATUS?.steps || []).find((s) => s.status === "failed") || (STATUS?.steps || []).find((s) => s.status === "running");
-    if (bad) text += ` · stuck at: ${bad.id} — continue with: node .orca/flow.mjs --from ${bad.id} "<objective>"`;
+    if (bad) {
+      // A FAILED worker settled — safe to re-run from it. A still-running
+      // worker was left ALIVE in its terminal: pointing --from at it would
+      // re-dispatch a live task (the double-dispatch this kit forbids), so
+      // point at the next group's first step — same advice as the console's
+      // stop message (falls back to the stuck step when it is the last one).
+      const gi = groups.findIndex((g) => g.some((s) => s.id === bad.id));
+      const next = gi >= 0 ? (groups[gi + 1] || [])[0] : null;
+      const target = bad.status === "failed" ? bad : (next || bad);
+      text += ` · stuck at: ${bad.id} — continue with: node .orca/flow.mjs --from ${target.id} "<objective>"`;
+    }
   }
   notifySend("run", { event: "run", run: RUN_ID, objective, status: overall, durationMs: durMs }, text);
 }
