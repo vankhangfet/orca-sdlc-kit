@@ -1,0 +1,14 @@
+{
+  "defaults": {
+    "timeoutMs": 30000,
+    "hardTimeoutMs": 60000,
+    "startRetryDelayMs": 200,
+    "warmupTimeoutMs": 5000,
+    "startGraceMs": 3000
+  },
+  "pipeline": [
+    { "id": "alpha", "title": "Alpha", "agent": "stub", "spec": "Do the alpha work and write {out}.", "writes": "A.md" },
+    { "id": "beta", "title": "Beta", "agent": "stub", "reads": ["alpha"], "spec": "Read {reads} and write {out}.", "writes": "B.md" },
+    { "id": "gamma", "title": "Gamma", "agent": "stub", "reads": ["beta"], "spec": "Read {reads} and write {out}.", "writes": "C.md" }
+  ]
+}

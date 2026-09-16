@@ -1921,17 +1921,28 @@ async function readinessGate(members) {
   if (!missing.length) return;
   warn("Missing or incomplete input artifact(s):\n" +
     missing.map((x) => `  - ${x.title} (\`${x.path}\`) — ${x.reason} — needed by "${x.consumer.title}"`).join("\n"));
-  for (const s of members)
-    statusSet(s.id, { note: `waiting: ${missing.filter((x) => x.consumer === s).length} unready input(s)` });
+  for (const s of members) {
+    const n = missing.filter((x) => x.consumer === s).length;
+    if (n) statusSet(s.id, { note: `waiting: ${n} unready input(s)` });
+  }
   writeStatus();
   const yes = await promptReadiness("Run the producing step(s) now to (re)generate missing inputs? [y/N] ");
+  // Transitive closure of missing producers, in pipeline order: a producer's
+  // own declared reads must be ready too — repairing detailed-design while
+  // architecture is missing would launch the design agent blind (the original
+  // hole, one level up). The visited set terminates even on cyclic configs.
+  const ids = new Set(missing.map((x) => x.id));
+  const queue = [...ids];
+  while (queue.length) {
+    const p = byId[queue.shift()];
+    for (const x of readinessOf(p))
+      if (!ids.has(x.id)) { ids.add(x.id); queue.push(x.id); }
+  }
+  const producers = [...ids].map((id) => byId[id])
+    .sort((a, b) => allSteps.indexOf(a) - allSteps.indexOf(b));
   if (!yes)
     die(`Missing inputs for "${[...new Set(missing.map((x) => x.consumer.title))].join('", "')}" were not (re)generated. ` +
-        `Generate them first, then resume, e.g.:\n  node .orca/flow.mjs --from ${missing[0].id} "${objective}"`);
-  // Unique producers, in pipeline order.
-  const producers = [...new Set(missing.map((x) => x.id))]
-    .map((id) => byId[id])
-    .sort((a, b) => allSteps.indexOf(a) - allSteps.indexOf(b));
+        `Generate them first, then resume, e.g.:\n  node .orca/flow.mjs --from ${producers[0].id} "${objective}"`);
   for (const step of producers) {
     for (let attempt = 1; ; attempt++) {
       log(`[readiness] re-running "${step.title}" (attempt ${attempt}/${READINESS_RETRIES})`);
@@ -1948,6 +1959,8 @@ async function readinessGate(members) {
         log(`[readiness] "${step.title}" artifact ready -> ${outPath(step.writes)}`);
         break;
       }
+      if (!artifactReady(step.id))
+        warn(`[readiness] "${step.title}" attempt ${attempt} ended outcome=${r.outcome} without a usable artifact.`);
       if (attempt >= READINESS_RETRIES)
         die(`"${step.title}" still has no usable artifact after ${READINESS_RETRIES} readiness retries ` +
             `(needs ${outPath(step.writes)} with at least ${READINESS_MIN_BYTES} bytes).`);

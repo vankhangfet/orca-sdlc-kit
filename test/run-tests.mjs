@@ -305,6 +305,23 @@ scenario("E12 readiness-abort (missing read -> prompt -> decline -> stop)", asyn
 });
 
 // ---------------------------------------------------------------------------
+// E16 — readiness repair is TRANSITIVE: repairing a producer whose own reads
+// are also missing must repair the whole chain, in pipeline order.
+// ---------------------------------------------------------------------------
+scenario("E16 readiness-transitive (repair walks the read chain)", async () => {
+  const r = await runFlow({ name: "e16", config: "../test/configs/chain.config.json", args: ["--only", "gamma"], stdinText: "y\n", budgetMs: 60000 });
+  ok("E16 not hung", !r.hung);
+  eq("E16 exit code", r.code, 0);
+  eq("E16 whole chain repaired (3 dispatches)", r.by("orchestration worker-start").length, 3);
+  const order = r.calls.map((c) => {
+    if (c.cmd !== "orchestration task-create") return null;
+    return (String(c.flags.spec ?? "").match(/^# (.+)$/m) || [])[1] || "?";
+  }).filter(Boolean);
+  eq("E16 repair order follows the pipeline", order, ["Alpha", "Beta", "Gamma"]);
+  ok("E16 pipeline complete", /Pipeline COMPLETE/.test(r.out));
+});
+
+// ---------------------------------------------------------------------------
 // F — fast validation: shipped configs + CLI/config guards. These die (or
 // dry-run) before any agent work; budgets are tight.
 // ---------------------------------------------------------------------------
