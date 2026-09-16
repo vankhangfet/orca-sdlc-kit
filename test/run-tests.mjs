@@ -305,6 +305,24 @@ scenario("E12 readiness-abort (missing read -> prompt -> decline -> stop)", asyn
 });
 
 // ---------------------------------------------------------------------------
+// E13 — readiness gate, accept: "y" re-runs the producer (out-of-run via
+// --only), the fake writes the artifact, the consumer then completes.
+// ---------------------------------------------------------------------------
+scenario("E13 readiness-repair (prompt yes -> re-run producer -> continue)", async () => {
+  const r = await runFlow({ name: "e13", config: "../test/configs/cold.config.json", args: ["--only", "beta"], stdinText: "y\n", budgetMs: 60000 });
+  ok("E13 not hung", !r.hung);
+  eq("E13 exit code", r.code, 0);
+  ok("E13 repair attempt logged", /\[readiness\] re-running "Alpha" \(attempt 1\/3\)/.test(r.out + r.err));
+  ok("E13 artifact ready logged", /\[readiness\] "Alpha" artifact ready -> \.orca\/artifacts\/A\.md/.test(r.out + r.err));
+  eq("E13 both steps tasked (producer + consumer)", r.by("orchestration task-create").length, 2);
+  ok("E13 producer reopened, not re-created", r.by("orchestration task-update").some((c) => c.flags.status === "ready") === false);
+  eq("E13 alpha succeeded after repair", r.status?.steps.find((s) => s.id === "alpha")?.status, "succeeded");
+  eq("E13 beta succeeded", r.status?.steps.find((s) => s.id === "beta")?.status, "succeeded");
+  eq("E13 status overall", r.status?.overall, "succeeded");
+  ok("E13 pipeline complete", /Pipeline COMPLETE/.test(r.out));
+});
+
+// ---------------------------------------------------------------------------
 // E16 — readiness repair is TRANSITIVE: repairing a producer whose own reads
 // are also missing must repair the whole chain, in pipeline order.
 // ---------------------------------------------------------------------------
