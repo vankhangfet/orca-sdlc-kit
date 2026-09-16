@@ -322,6 +322,46 @@ scenario("N3 notify default-off (empty template: zero sends, zero warns)", async
 });
 
 // ---------------------------------------------------------------------------
+// N1 — happy: every step settlement and the run summary are POSTed to the
+// webhook in order, with the right text; dry-run announces notify state and
+// sends nothing.
+// ---------------------------------------------------------------------------
+scenario("N1 notify happy (2 step + 1 run POSTs, dry-run sends nothing)", async () => {
+  const hook = await recordHook();
+  try {
+    const cfg = { enabled: true, provider: "slack", url: hook.url, token: "", chatId: "", to: "", events: ["step", "run"] };
+    const dry = await runFlow({ name: "n1dry", config: "../test/configs/cold.config.json", args: ["--dry-run"], notify: cfg, budgetMs: 30000 });
+    eq("N1 dry-run exit", dry.code, 0);
+    ok("N1 dry-run announces notify", /Notifications: on \(slack, events: step,run\)/.test(dry.out));
+    eq("N1 dry-run sent nothing", hook.hits.length, 0);
+
+    const r = await runFlow({ name: "n1", config: "../test/configs/cold.config.json", notify: cfg, budgetMs: 90000 });
+    ok("N1 not hung", !r.hung);
+    eq("N1 exit code", r.code, 0);
+    eq("N1 three notifications (2 steps + run)", hook.hits.length, 3);
+    ok("N1 alpha step text", /Step "Alpha" SUCCEEDED in .+ \(attempt 1\) -> \.orca\/artifacts\/A\.md/.test(hook.hits[0]?.body?.text ?? ""));
+    ok("N1 beta step text", /Step "Beta" SUCCEEDED/.test(hook.hits[1]?.body?.text ?? ""));
+    ok("N1 run text", /Run run-\d+ SUCCEEDED in .+ — "test objective"/.test(hook.hits[2]?.body?.text ?? ""));
+  } finally { await hook.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// N2 — degradation: a dead webhook warns exactly once (latch), never blocks
+// and never changes the outcome.
+// ---------------------------------------------------------------------------
+scenario("N2 notify degradation (dead webhook: one warn, run unaffected)", async () => {
+  const r = await runFlow({ name: "n2", config: "../test/configs/cold.config.json",
+    notify: { enabled: true, provider: "slack", url: "http://127.0.0.1:1/hook", token: "", chatId: "", to: "", events: ["step", "run"] },
+    budgetMs: 90000 });
+  ok("N2 not hung", !r.hung);
+  eq("N2 exit code", r.code, 0);
+  const warns = (r.out + r.err).match(/\[notify\] disabled: delivery failed/g) || [];
+  eq("N2 exactly one delivery warn (latch works)", warns.length, 1);
+  eq("N2 pipeline unaffected (both steps ok)", (r.out + r.err).match(/\[ok\] /g)?.length, 2);
+  eq("N2 status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
 // F — fast validation: shipped configs + CLI/config guards. These die (or
 // dry-run) before any agent work; budgets are tight.
 // ---------------------------------------------------------------------------
