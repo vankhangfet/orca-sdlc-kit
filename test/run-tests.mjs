@@ -45,14 +45,19 @@ async function recordHook() {
   const hits = [];
   const srv = createServer((req, res) => {
     let b = "";
+    req.on("error", () => {});   // aborted client must not crash the runner
     req.on("data", (c) => (b += c));
     req.on("end", () => {
-      hits.push({ path: req.url, body: b ? JSON.parse(b) : null });
+      let body = null;
+      try { body = b ? JSON.parse(b) : null; } catch { body = `<unparseable: ${b.slice(0, 120)}>`; }
+      hits.push({ path: req.url, body });
       res.writeHead(204);
       res.end();
     });
   });
-  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const listening = new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  srv.on("error", (e) => { throw e; });   // failed listen must fail loudly, not hang the suite
+  await listening;
   const url = `http://127.0.0.1:${srv.address().port}/hook`;
   const close = () => new Promise((r) => srv.close(r));
   return { hits, url, close };
