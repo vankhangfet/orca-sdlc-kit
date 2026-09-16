@@ -73,7 +73,7 @@ inspectable long after the terminal closes.
 ## Not building (by design)
 
 - **A server or installer** — single copy-paste folder, Node only; any future local listener would be opt-in and off by default.
-- **Bundled integrations** — no built-in chat/email/webhook targets; you connect your own.
+- **Bundled integrations beyond plain webhooks** — chat notifications ship as best-effort webhook POSTs (`.orca/notify.json`); what stays out by design: email, OAuth/SDK platform apps, interactive cards. Plain text to endpoints you own is the whole surface.
 - **Checklist gating** — the task checklist stays a live view; the run never waits on checkbox state.
 - **A multi-file rewrite** — `flow.mjs` stays one script; one folder you copy is the product.
 
