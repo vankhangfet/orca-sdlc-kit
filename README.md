@@ -237,6 +237,17 @@ A `--from` resume continues the same picture, earlier steps keeping their origin
 
 Details and fixes (claude dialogs, EBADF crash, stale Orca state, version drift): [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
+## Notifications
+
+Want step results in chat while the pipeline runs? Fill in [`.orca/notify.json`](.orca/notify.json) — shipped empty (= off) — with one of **Slack, Telegram, MS Teams, WhatsApp** (or any `generic` JSON webhook):
+
+```jsonc
+{ "enabled": true, "provider": "slack", "url": "https://hooks.slack.com/services/...",
+  "token": "", "chatId": "", "to": "", "events": ["step", "run"] }
+```
+
+Every step settlement and the final run summary are POSTed (timeout-guarded, best-effort — a dead webhook warns once and never affects the run). Provider specifics — Telegram's bot URL + `chatId`, WhatsApp's Graph API URL + `token` + `to`, Teams' Workflows webhook — are in [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md) §9. After filling it in, add `notify.json` to your `.gitignore`: the URL and token are credentials.
+
 ## Contributing
 
 Issues and PRs are welcome at [github.com/vankhangfet/orca-sdlc-kit](https://github.com/vankhangfet/orca-sdlc-kit). Ground rules:

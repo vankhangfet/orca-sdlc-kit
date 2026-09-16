@@ -43,3 +43,11 @@ the [README](README.md); for every config field see
   flow already spawns Claude agents in a way that avoids it. If it recurs:
   close other Claude sessions during interactive steps, or update Claude
   Code.
+
+## Notifications
+
+- **`[notify] disabled: ...` appears once and nothing else is sent** — the first delivery failed (`HTTP <status>`, connection refused, timeout). The latch is intentional: a dead or slow endpoint cannot stack timeouts against the run. Fix the `url`/credentials in `.orca/notify.json` and re-run; the run itself was never affected.
+- **`[notify] disabled: notify.json unreadable (...)` / `"url" is not a valid URL` / `unknown provider` / `... needs "chatId"`** — the file is filled in but invalid; check the provider table in `.orca/CONFIGURATION.md` §9. The pipeline ran normally without notifications.
+- **Nothing is sent and nothing is warned** — the default-off state: `notify.json` is missing or has empty `provider`/`url`. `--dry-run` prints the resolved state (`Notifications: on/off ...`).
+- **Notifications feel slow / a healthy endpoint adds lag** — each event pays one synchronous round-trip; set `"events": ["run"]` to pay it once per run instead of per step.
+- **No notification on the last message of a failed run?** Delivery is attempted before the flow exits — if it still did not arrive, the endpoint rejected it (check the one `[notify]` warning; `HTTP 401` usually means a bad token) or the platform dropped it.

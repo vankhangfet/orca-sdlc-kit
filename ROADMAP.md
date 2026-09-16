@@ -52,7 +52,7 @@ inspectable long after the terminal closes.
 
 | Feature | What changes technically | Where |
 |---|---|---|
-| **End-of-run notifications** | `"notify": {"onEnd": "<cmd>", "onFail": "<cmd>"}` — executed argv-safe (no shell), with status/objective/failed-step/artifacts-dir as env vars. No bundled integrations; you plug in your own webhook/script | config field |
+| **End-of-run notifications** | ✅ Shipped in a richer form (post-v1.6.1) — per-step AND run-end chat notifications via `.orca/notify.json` (slack / telegram / teams / whatsapp / generic webhook), delivered by a timeout-guarded child process with a fail-once latch and console-matching safe resume hints; the generic-command shape was superseded by bundled provider support | config file |
 | **Agent fallback on retry** | `"agentFallback": ["codex", "claude"]` — attempt N uses agentFallback[N-1]; the page already shows the agent per attempt. `--agent` flag keeps precedence | config field |
 | **Batch mode** | `--batch backlog.json` — array of objectives run sequentially, one Orca Run each, its own status snapshot per item; `--batch --dry-run` previews the whole queue | CLI flag |
 

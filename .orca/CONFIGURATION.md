@@ -394,6 +394,7 @@ No config field enables/disables this — it is automatic and display-only.
 |----------|--------|
 | `ORCA_CLI_COMMAND` | Set the orca CLI path/executable name if it can't be auto-detected |
 | `ORCA_FLOW_USAGE_HOME` | Read agent session logs under this directory instead of the OS home (testing; see 5.4) |
+| `ORCA_FLOW_NOTIFY_FILE` | Read notification config from this file instead of `.orca/notify.json` (multi-project setups; used by the test suite) |
 
 ---
 
@@ -419,3 +420,51 @@ entry. If `--dry-run` reports "Could not read flow.config.json", check those two
 - `parallelWith`: an earlier step `id` (members run concurrently; the next step waits for all)
 - `reads`: array of `id`s (empty `[]` for a starting step)
 - time: milliseconds (15 min = `900000`, 30 min = `1800000`)
+
+---
+
+## 9. Notifications (.orca/notify.json)
+
+Step and run events can be pushed to chat while the pipeline runs. Configured
+in a SEPARATE file next to `flow.mjs` — shipped with every credential field
+empty (= feature off: nothing is sent, nothing is warned). Override the path
+with `ORCA_FLOW_NOTIFY_FILE`.
+
+```jsonc
+{
+  "enabled": true,          // false = off (silent)
+  "provider": "slack",      // slack | telegram | teams | whatsapp | generic
+  "url": "",                // the webhook/API URL (see table)
+  "token": "",              // whatsapp: bearer token
+  "chatId": "",             // telegram: chat id
+  "to": "",                 // whatsapp: recipient number
+  "events": ["step", "run"] // which notifications to send
+}
+```
+
+| Provider | `url` is | Extra fields | Body |
+|---|---|---|---|
+| slack | incoming webhook URL | — | `{"text"}` |
+| telegram | full `https://api.telegram.org/bot<TOKEN>/sendMessage` URL | `chatId` | `{"chat_id","text"}` |
+| teams | Teams Workflows incoming webhook URL | — | Adaptive Card with the text |
+| whatsapp | full Graph API `.../<PHONE_NUMBER_ID>/messages` URL | `token`, `to` | `{"messaging_product":"whatsapp","to","type":"text","text"}` + `Authorization: Bearer` header |
+| generic | any JSON-accepting endpoint | — | full structured payload `{event, run, objective, step, title, status, attempt, durationMs, note, artifact}` |
+
+Semantics: one best-effort POST per event (no retries — the first hard failure
+warns once with a secrets-free reason and disables further attempts for the
+run, so a dead or slow endpoint can never stack timeouts against the run's
+budget). Every settlement notifies — succeeded, failed, still-running,
+unknown; retries notify per attempt. The run-end message carries the overall
+status, objective (truncated to 80 chars), duration and, on failure, the
+stuck step plus the same safe resume hint the console prints (a FAILED step
+resumes from itself; a still-running worker resumes from the step AFTER it —
+re-dispatching a live worker is forbidden). Delivery is timeout-guarded (9s
+abort) via a child process, so it never blocks the pipeline and the final
+message of a dying run is still attempted. Notifications never change exit
+codes or settlement semantics. `--dry-run` prints the resolved state
+(`Notifications: on (slack, events: step,run)`) and sends nothing. For a
+healthy-but-slow endpoint, set `"events": ["run"]` to pay the round-trip once
+per run instead of per step.
+
+**Secrets:** after filling the file in, add it to your project's `.gitignore` —
+webhook URLs and tokens are credentials. The empty template is safe to commit.

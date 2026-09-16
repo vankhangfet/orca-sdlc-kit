@@ -362,6 +362,26 @@ scenario("N2 notify degradation (dead webhook: one warn, run unaffected)", async
 });
 
 // ---------------------------------------------------------------------------
+// N4 — the still-running chat hint must point PAST the live worker (re-
+// dispatching it is the double-dispatch the kit forbids), matching the
+// console's advice; a FAILED step still resumes from itself.
+// ---------------------------------------------------------------------------
+scenario("N4 notify still-running hint (points at the NEXT step)", async () => {
+  const hook = await recordHook();
+  try {
+    const r = await runFlow({ name: "n4", config: "../test/configs/hang.config.json", scenario: "hang.cjs",
+      notify: { enabled: true, provider: "slack", url: hook.url, token: "", chatId: "", to: "", events: ["step", "run"] },
+      budgetMs: 45000 });
+    eq("N4 exit code", r.code, 1);
+    eq("N4 two notifications (alpha step + run)", hook.hits.length, 2);
+    const runText = hook.hits[1]?.body?.text ?? "";
+    ok("N4 run names the stuck step", /stuck at: alpha/.test(runText));
+    ok("N4 hint points past the live worker", /--from beta/.test(runText));
+    ok("N4 never suggests re-dispatching the live worker", !/--from alpha/.test(runText));
+  } finally { await hook.close(); }
+});
+
+// ---------------------------------------------------------------------------
 // F — fast validation: shipped configs + CLI/config guards. These die (or
 // dry-run) before any agent work; budgets are tight.
 // ---------------------------------------------------------------------------
