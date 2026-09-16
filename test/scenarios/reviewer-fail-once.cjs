@@ -11,6 +11,7 @@ module.exports = {
       c.state.dispatches[id] = { id, task: c.flags.task, status: "dispatching", created: Date.now() };
       let outcome = "succeeded";
       if (/Reviewer/.test(t.spec) && c.state.extra.reviewerFails > 0) { c.state.extra.reviewerFails--; outcome = "failed"; }
+      c.materialize(t, outcome);
       c.pushDone(c.flags.task, outcome);
       c.ok({ dispatchId: id, state: "ready" });
     },

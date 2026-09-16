@@ -51,6 +51,7 @@ import { readFileSync, mkdirSync, existsSync, writeFileSync, readdirSync, statSy
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import readline from "node:readline";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Live-page accumulator: null until the status section assigns it (before any
@@ -130,6 +131,12 @@ const MAX_RETRIES = cfg.maxRetries ?? 2;
 // an approval gate.
 const AUTO_RUN = cfg.autoRun ?? true;
 const DEFAULT_TIMEOUT = cfg.defaults?.timeoutMs ?? 900000;
+// Readiness gate: a step never launches while a DECLARED read is missing or
+// undersized on disk (the --from/--only blind-start hole: effectiveReads()
+// silently drops such reads). The gate asks the user, then re-runs each
+// missing producer up to readinessRetries times before stopping.
+const READINESS_RETRIES = cfg.defaults?.readinessRetries ?? 3;
+const READINESS_MIN_BYTES = cfg.defaults?.readinessMinBytes ?? 200;
 const outPath = (file) => `${ART_DIR}/${file}`;
 
 // --- Normalize pipeline: keep enabled steps, build id->step map ---
@@ -1865,11 +1872,105 @@ function runGate(step) {
 }
 
 // =============================================================================
+// Readiness gate: pre-flight check of every member's DECLARED reads
+// =============================================================================
+// Missing/undersized artifact => ask, then repair by re-running the producer
+// (a singleton group, so a parallel sibling is NOT re-run). The artifact file
+// is ground truth: an attempt only counts when the file exists and clears
+// readinessMinBytes, whatever the worker reported.
+function artifactReady(id) {
+  try { return statSync(join(WT_DIR || ".", ART_DIR, byId[id].writes)).size >= READINESS_MIN_BYTES; }
+  catch { return false; }
+}
+
+function readinessOf(step) {
+  const missing = [];
+  for (const id of (step.reads || [])) {
+    if (!byId[id]) continue;
+    let size = -1;
+    try { size = statSync(join(WT_DIR || ".", ART_DIR, byId[id].writes)).size; } catch { }
+    const reason = size < 0 ? "missing"
+      : size < READINESS_MIN_BYTES ? `too small (${size} bytes < ${READINESS_MIN_BYTES} min)`
+      : null;
+    if (reason) missing.push({ id, title: byId[id].title, path: outPath(byId[id].writes), reason });
+  }
+  return missing;
+}
+
+// Always asks, even in auto-run: autoRun governs agent autonomy, not input
+// safety. Enter/anything-but-yes declines; EOF or non-interactive stdin
+// declines (CI-safe). No timeout — a visible human decision point.
+function promptReadiness(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      try { rl.close(); } catch { }
+      resolve(v);
+    };
+    rl.on("close", () => done(false));
+    rl.question(question, (answer) => done(/^(y|yes)$/i.test(String(answer ?? "").trim())));
+  });
+}
+
+async function readinessGate(members) {
+  const missing = [];
+  for (const s of members) for (const x of readinessOf(s)) missing.push({ ...x, consumer: s });
+  if (!missing.length) return;
+  warn("Missing or incomplete input artifact(s):\n" +
+    missing.map((x) => `  - ${x.title} (\`${x.path}\`) — ${x.reason} — needed by "${x.consumer.title}"`).join("\n"));
+  for (const s of members)
+    statusSet(s.id, { note: `waiting: ${missing.filter((x) => x.consumer === s).length} unready input(s)` });
+  writeStatus();
+  const yes = await promptReadiness("Run the producing step(s) now to (re)generate missing inputs? [y/N] ");
+  if (!yes)
+    die(`Missing inputs for "${[...new Set(missing.map((x) => x.consumer.title))].join('", "')}" were not (re)generated. ` +
+        `Generate them first, then resume, e.g.:\n  node .orca/flow.mjs --from ${missing[0].id} "${objective}"`);
+  // Unique producers, in pipeline order.
+  const producers = [...new Set(missing.map((x) => x.id))]
+    .map((id) => byId[id])
+    .sort((a, b) => allSteps.indexOf(a) - allSteps.indexOf(b));
+  for (const step of producers) {
+    for (let attempt = 1; ; attempt++) {
+      log(`[readiness] re-running "${step.title}" (attempt ${attempt}/${READINESS_RETRIES})`);
+      const [r] = runGroup([step]);
+      if (r.outcome === "still-running") {
+        STATUS.overall = "still-running";   // die() only overwrites "running"
+        writeStatus();
+        die(`"${step.title}" ${r.note}. Its terminal ${r.terminal || "(dispatch-owned)"} was left OPEN to finish. ` +
+            `Watch it; once it writes ${outPath(step.writes)}, continue with:\n` +
+            `  node .orca/flow.mjs --from ${members[0].id} "${objective}"`);
+      }
+      if (artifactReady(step.id)) {
+        if (r.outcome === "succeeded" && step.gate && !AUTO_RUN) runGate(step);
+        log(`[readiness] "${step.title}" artifact ready -> ${outPath(step.writes)}`);
+        break;
+      }
+      if (attempt >= READINESS_RETRIES)
+        die(`"${step.title}" still has no usable artifact after ${READINESS_RETRIES} readiness retries ` +
+            `(needs ${outPath(step.writes)} with at least ${READINESS_MIN_BYTES} bytes).`);
+      // Only re-dispatch on a DEFINITE outcome — a blind retry has
+      // double-dispatched a live worker before (same doctrine as the
+      // onFailGoto handling in the main loop).
+      if (r.outcome !== "succeeded" && r.outcome !== "failed")
+        die(`"${step.title}" returned outcome=${r.outcome} without producing ${outPath(step.writes)} — ` +
+            `not retrying without a definite outcome. Inspect its terminal, then re-run with --from ${step.id}.`);
+    }
+  }
+  const still = members.flatMap((s) => readinessOf(s));
+  if (still.length)
+    die(`Inputs still unready after repair: ${still.map((x) => x.path).join(", ")}.`);
+}
+
+// =============================================================================
 // Main loop over run-order groups, with onFailGoto retries
 // =============================================================================
 const retriesUsed = {};
 let gi = 0;
 while (gi < groups.length) {
+  await readinessGate(groups[gi]);   // never launch a step on unready reads
   const results = runGroup(groups[gi]);   // settles EVERY member (incl. hard-capped)
 
   // Post-join outcome handling, in array order. The first terminal action

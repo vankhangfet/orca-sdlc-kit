@@ -70,7 +70,7 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   // success, exactly like a real worker leaving its {out} file behind.
   env.ORCA_FAKE_WRITES = (() => {
     try {
-      const cc = JSON.parse(readFileSync(join(REPO, ".orca", config), "utf8"));
+      const cc = JSON.parse(readFileSync(join(REPO, ".orca", config ?? "flow.config.json"), "utf8"));
       return JSON.stringify(Object.fromEntries(
         (cc.pipeline || []).filter((s) => s && s.title && s.writes).map((s) => [s.title, s.writes])));
     } catch { return "{}"; }
@@ -82,7 +82,7 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   if (config) argv.push("--config", config);
   if (objective) argv.push(objective);
   const child = spawn(NODE, argv, { cwd: REPO, env, stdio: [stdinText == null ? "ignore" : "pipe", "pipe", "pipe"] });
-  if (stdinText != null) { child.stdin.write(stdinText); child.stdin.end(); }
+  if (stdinText != null) { child.stdin.on("error", () => {}); child.stdin.write(stdinText); child.stdin.end(); }
   let out = ""; let err = ""; let hung = false;
   const timer = setTimeout(() => { hung = true; hungInCurrentScenario = true; child.kill(); }, budgetMs);
   child.stdout.on("data", (d) => (out += d));
@@ -121,6 +121,7 @@ scenario("E1 happy-cold (2 steps, cold start, both succeed)", async () => {
   eq("E1 both steps succeeded", r.status?.steps.filter((s) => s.status === "succeeded").length, 2);
   eq("E1 one task-create per step", r.by("orchestration task-create").length, 2);
   eq("E1 worker-release per dispatch", r.by("orchestration worker-release").length, 2);
+  ok("E1 artifact materialized", existsSync(join(r.wt, ".orca", "artifacts", "A.md")));
 });
 
 // ---------------------------------------------------------------------------
@@ -285,6 +286,22 @@ scenario("E11 resume-from (--from keeps the read chain)", async () => {
   ok("E11 beta spec points at prior artifact", String(run.by("orchestration task-create")[0]?.flags.spec ?? "").includes(".orca/artifacts/A.md"));
   eq("E11 alpha skipped on resume", run.status?.steps.find((s) => s.id === "alpha")?.status, "skipped");
   eq("E11 beta succeeded", run.status?.steps.find((s) => s.id === "beta")?.status, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// E12 — readiness gate, decline: a declared read with NO artifact on disk must
+// stop the run BEFORE dispatching the consumer (stdin EOF = decline).
+// ---------------------------------------------------------------------------
+scenario("E12 readiness-abort (missing read -> prompt -> decline -> stop)", async () => {
+  const r = await runFlow({ name: "e12", config: "../test/configs/cold.config.json", args: ["--only", "beta"], budgetMs: 45000 });
+  ok("E12 not hung", !r.hung);
+  eq("E12 exit code", r.code, 1);
+  ok("E12 missing-input report", /Missing or incomplete input artifact\(s\):/.test(r.out + r.err));
+  ok("E12 names the artifact", /Alpha \(`\.orca\/artifacts\/A\.md`\) — missing/.test(r.out + r.err));
+  ok("E12 asks the user", /Run the producing step\(s\) now .* \[y\/N\]/.test(r.out + r.err));
+  ok("E12 resume hint", /--from alpha/.test(r.out + r.err));
+  eq("E12 consumer never dispatched", r.by("orchestration task-create").length, 0);
+  eq("E12 status overall", r.status?.overall, "failed");
 });
 
 // ---------------------------------------------------------------------------
