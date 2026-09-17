@@ -6,7 +6,12 @@
 <a href="https://github.com/vankhangfet/orca-sdlc-kit/tags"><img src="https://img.shields.io/github/v/tag/vankhangfet/orca-sdlc-kit?style=flat-square" alt="Release"></a>
 <a href="https://x.com/vankhangfet"><img src="https://img.shields.io/badge/Follow-%40vankhangfet-1DA1F2?style=flat-square&logo=x" alt="Follow on X"></a>
 
-**A pipeline of AI agents that plans, codes, reviews, tests and documents — the whole pipeline (steps, agents, models, retries, parallel groups) defined in one JSON config, no code ever; results land on disk, runs are watchable live, quality failures loop back automatically.**
+**A pipeline of AI agents that plans, codes, reviews, tests and documents — the whole pipeline (steps, agents, models, retries, parallel groups) defined in one JSON config, no code ever; results land on disk, runs are watchable live, quality failures loop back automatically — and every step's verdict can be pushed straight to your team's chat.**
+
+<a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%92%AC-Slack-4A154B?style=flat-square" alt="Slack"></a>
+<a href="#notifications"><img src="https://img.shields.io/badge/%E2%9C%88%EF%B8%8F-Telegram-26A5E4?style=flat-square" alt="Telegram"></a>
+<a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%91%A5-MS_Teams-6264A7?style=flat-square" alt="MS Teams"></a>
+<a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%93%B1-WhatsApp-25D366?style=flat-square" alt="WhatsApp"></a>
 
 ![Orca SDLC Kit in motion: a terminal runs one command — node .orca/flow.mjs
 "Build html game 2048" — then the live status dashboard takes over: the pipeline
