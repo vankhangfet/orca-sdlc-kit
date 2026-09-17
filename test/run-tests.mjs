@@ -382,6 +382,26 @@ scenario("N4 notify still-running hint (points at the NEXT step)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// N5 — mixed parallel group (one live worker + one failed sibling): the chat
+// hint must point past the whole group, never at the failed sibling — re-
+// running its group would re-dispatch the live worker.
+// ---------------------------------------------------------------------------
+scenario("N5 notify mixed group (hint points past the live group)", async () => {
+  const hook = await recordHook();
+  try {
+    const r = await runFlow({ name: "n5", config: "../test/configs/parallel-hang.config.json", scenario: "parallel-mixed.cjs",
+      notify: { enabled: true, provider: "slack", url: hook.url, token: "", chatId: "", to: "", events: ["step", "run"] },
+      budgetMs: 45000 });
+    eq("N5 exit code", r.code, 1);
+    eq("N5 three notifications (right failed, left still-running, run)", hook.hits.length, 3);
+    const runText = hook.hits[2]?.body?.text ?? "";
+    ok("N5 run names the live worker as stuck", /stuck at: left/.test(runText));
+    ok("N5 hint points past the group", /--from join/.test(runText));
+    ok("N5 never suggests re-running the failed sibling's group", !/--from right/.test(runText));
+  } finally { await hook.close(); }
+});
+
+// ---------------------------------------------------------------------------
 // F — fast validation: shipped configs + CLI/config guards. These die (or
 // dry-run) before any agent work; budgets are tight.
 // ---------------------------------------------------------------------------

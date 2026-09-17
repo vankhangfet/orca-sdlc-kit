@@ -51,3 +51,4 @@ the [README](README.md); for every config field see
 - **Nothing is sent and nothing is warned** — the default-off state: `notify.json` is missing or has empty `provider`/`url`. `--dry-run` prints the resolved state (`Notifications: on/off ...`).
 - **Notifications feel slow / a healthy endpoint adds lag** — each event pays one synchronous round-trip; set `"events": ["run"]` to pay it once per run instead of per step.
 - **No notification on the last message of a failed run?** Delivery is attempted before the flow exits — if it still did not arrive, the endpoint rejected it (check the one `[notify]` warning; `HTTP 401` usually means a bad token) or the platform dropped it.
+- **All notifications stopped after one `HTTP 429`/`503`** — the first hard failure latches for the rest of the run (by design: an unhealthy endpoint cannot tax the run's budget); the next run starts fresh. Set `"events": ["run"]` if the endpoint rate-limits per-step bursts.

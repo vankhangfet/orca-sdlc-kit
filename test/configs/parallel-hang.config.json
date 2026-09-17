@@ -1,0 +1,14 @@
+{
+  "defaults": {
+    "timeoutMs": 2000,
+    "hardTimeoutMs": 7000,
+    "startRetryDelayMs": 200,
+    "warmupTimeoutMs": 5000,
+    "startGraceMs": 3000
+  },
+  "pipeline": [
+    { "id": "left", "title": "Left", "agent": "stub", "spec": "Slow left work writing {out}.", "writes": "P1.md" },
+    { "id": "right", "title": "Right", "agent": "stub", "parallelWith": "left", "spec": "Right work writing {out}.", "writes": "P2.md" },
+    { "id": "join", "title": "Join", "agent": "stub", "reads": ["left", "right"], "spec": "Combine {reads} into {out}.", "writes": "P3.md" }
+  ]
+}

@@ -1298,7 +1298,8 @@ function loadNotify() {
   const need = { telegram: ["chatId"], whatsapp: ["token", "to"] }[c.provider] || [];
   const missing = need.filter((k) => !String(c[k] ?? "").trim());
   if (missing.length) { warn(`[notify] disabled: ${c.provider} needs ${missing.map((k) => `"${k}"`).join(", ")}`); return; }
-  NOTIFY.events = new Set(Array.isArray(c.events) && c.events.length ? c.events : ["step", "run"]);
+  NOTIFY.events = new Set(Array.isArray(c.events) ? c.events : ["step", "run"]);   // missing = both; [] = off
+  if (!NOTIFY.events.size) return;
   NOTIFY.on = true;
   const unknown = [...NOTIFY.events].filter((e) => e !== "step" && e !== "run");
   if (unknown.length) warn(`[notify] unknown event(s) ignored: ${unknown.join(", ")}`);
@@ -1356,16 +1357,22 @@ function notifyRun(overall) {
   const obj = objective.length > 80 ? objective.slice(0, 77) + "..." : objective;
   let text = `[orca-flow] Run ${RUN_ID} ${String(overall).toUpperCase()} in ${fmtDurMs(durMs)} — "${obj}" · artifacts: ${statusDir()}`;
   if (overall !== "succeeded") {
-    const bad = (STATUS?.steps || []).find((s) => s.status === "failed") || (STATUS?.steps || []).find((s) => s.status === "running");
+    // Mirror the die site's choice of stuck step: a still-running overall
+    // died on the LIVE member (re-running its group would re-dispatch it);
+    // otherwise the failed member. Unknown settles are named as a last
+    // resort — the console's unknown-die also advises --from the step.
+    const firstOf = (st) => (STATUS?.steps || []).find((s) => s.status === st);
+    const bad = (overall === "still-running" ? firstOf("running") : null) || firstOf("failed") || firstOf("running") || firstOf("unknown");
     if (bad) {
-      // A FAILED worker settled — safe to re-run from it. A still-running
-      // worker was left ALIVE in its terminal: pointing --from at it would
-      // re-dispatch a live task (the double-dispatch this kit forbids), so
-      // point at the next group's first step — same advice as the console's
-      // stop message (falls back to the stuck step when it is the last one).
+      // FAILED/UNKNOWN settles are terminal-safe — they resume from the step
+      // itself. Only a LIVE (running) worker was left ALIVE in its terminal:
+      // pointing --from at it would re-dispatch a live task (the
+      // double-dispatch this kit forbids), so point at the next group's first
+      // step — same advice as the console's stop message (falls back to the
+      // stuck step when it is the last one).
       const gi = groups.findIndex((g) => g.some((s) => s.id === bad.id));
       const next = gi >= 0 ? (groups[gi + 1] || [])[0] : null;
-      const target = bad.status === "failed" ? bad : (next || bad);
+      const target = bad.status === "running" ? (next || bad) : bad;
       text += ` · stuck at: ${bad.id} — continue with: node .orca/flow.mjs --from ${target.id} "<objective>"`;
     }
   }

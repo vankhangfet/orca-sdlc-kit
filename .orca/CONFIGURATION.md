@@ -438,7 +438,7 @@ with `ORCA_FLOW_NOTIFY_FILE`.
   "token": "",              // whatsapp: bearer token
   "chatId": "",             // telegram: chat id
   "to": "",                 // whatsapp: recipient number
-  "events": ["step", "run"] // which notifications to send
+  "events": ["step", "run"] // which notifications to send (missing = both; [] = off)
 }
 ```
 
@@ -453,16 +453,18 @@ with `ORCA_FLOW_NOTIFY_FILE`.
 Semantics: one best-effort POST per event (no retries — the first hard failure
 warns once with a secrets-free reason and disables further attempts for the
 run, so a dead or slow endpoint can never stack timeouts against the run's
-budget). Every settlement notifies — succeeded, failed, still-running,
+budget) — a one-off 429/503 on the first event also latches; the next run
+starts fresh. Every settlement notifies — succeeded, failed, still-running,
 unknown; retries notify per attempt. The run-end message carries the overall
 status, objective (truncated to 80 chars), duration and, on failure, the
 stuck step plus the same safe resume hint the console prints (a FAILED step
 resumes from itself; a still-running worker resumes from the step AFTER it
-(or the stuck step itself if it is the last one) — re-dispatching a live
+(or the stuck step itself if it is the last one), an unknown settle names
+the step itself (inspect before resuming) — re-dispatching a live
 worker is forbidden). Delivery is timeout-guarded (9s
 abort) via a child process, so it never blocks the pipeline indefinitely
-(bounded at 9s per event) and the final message of a dying run is still
-attempted. Notifications never change exit
+(9s inactivity abort, 12s hard cap per event) and the final message of a
+dying run is still attempted. Notifications never change exit
 codes or settlement semantics. `--dry-run` prints the resolved state
 (`Notifications: on (slack, events: step,run)`) and sends nothing. For a
 healthy-but-slow endpoint, set `"events": ["run"]` to pay the round-trip once
