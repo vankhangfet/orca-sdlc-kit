@@ -1,11 +1,4 @@
 {
-  "defaults": {
-    "timeoutMs": 30000,
-    "hardTimeoutMs": 60000,
-    "startRetryDelayMs": 200,
-    "warmupTimeoutMs": 5000,
-    "startGraceMs": 3000
-  },
   "pipeline": [
     { "id": "ghost", "title": "Ghost", "agent": "stub", "spec": "No writes field here.", "enabled": false },
     { "id": "early", "title": "Early", "agent": "stub", "reads": ["ghost"], "spec": "Reads {reads} that can never exist.", "writes": "E.md" }
