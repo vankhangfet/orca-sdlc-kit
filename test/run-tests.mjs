@@ -323,6 +323,33 @@ scenario("E13 readiness-repair (prompt yes -> re-run producer -> continue)", asy
 });
 
 // ---------------------------------------------------------------------------
+// E14 — readiness retries are finite: producer "succeeds" without writing the
+// file; exactly readinessRetries (3) attempts, then the run stops.
+// ---------------------------------------------------------------------------
+scenario("E14 readiness-exhaust (3 attempts, then stop)", async () => {
+  const r = await runFlow({ name: "e14", config: "../test/configs/cold.config.json", scenario: "no-artifact.cjs", args: ["--only", "beta"], stdinText: "y\n", budgetMs: 60000 });
+  ok("E14 not hung", !r.hung);
+  eq("E14 exit code", r.code, 1);
+  eq("E14 exactly 3 repair dispatches", r.by("orchestration worker-start").length, 3);
+  ok("E14 attempt 3 logged", /\[readiness\] re-running "Alpha" \(attempt 3\/3\)/.test(r.out + r.err));
+  ok("E14 exhausted message", /still has no usable artifact after 3 readiness retries/.test(r.out + r.err));
+  eq("E14 consumer never dispatched", r.by("orchestration task-create").length, 1);   // alpha only
+});
+
+// ---------------------------------------------------------------------------
+// E14b — a repair attempt that settles outcome=unknown WITHOUT the artifact
+// must not be blindly re-dispatched (double-dispatch doctrine), even with
+// retries remaining.
+// ---------------------------------------------------------------------------
+scenario("E14b readiness-unknown (no blind retry during repair)", async () => {
+  const r = await runFlow({ name: "e14b", config: "../test/configs/cold.config.json", scenario: "repair-unknown.cjs", args: ["--only", "beta"], stdinText: "y\n", budgetMs: 60000 });
+  ok("E14b not hung", !r.hung);
+  eq("E14b exit code", r.code, 1);
+  ok("E14b no-blind-retry message", /not retrying without a definite outcome/.test(r.out + r.err));
+  eq("E14b exactly one repair dispatch", r.by("orchestration worker-start").length, 1);
+});
+
+// ---------------------------------------------------------------------------
 // E16 — readiness repair is TRANSITIVE: repairing a producer whose own reads
 // are also missing must repair the whole chain, in pipeline order.
 // ---------------------------------------------------------------------------
@@ -337,6 +364,19 @@ scenario("E16 readiness-transitive (repair walks the read chain)", async () => {
   }).filter(Boolean);
   eq("E16 repair order follows the pipeline", order, ["Alpha", "Beta", "Gamma"]);
   ok("E16 pipeline complete", /Pipeline COMPLETE/.test(r.out));
+});
+
+// ---------------------------------------------------------------------------
+// E17 — a repair attempt that never settles exits still-running with the
+// consumer-group resume hint (terminal left open), like the main loop does.
+// ---------------------------------------------------------------------------
+scenario("E17 repair-hang (still-running repair keeps the resume hint)", async () => {
+  const r = await runFlow({ name: "e17", config: "../test/configs/hang.config.json", scenario: "hang.cjs", args: ["--only", "beta"], stdinText: "y\n", budgetMs: 45000 });
+  ok("E17 not hung", !r.hung);
+  eq("E17 exit code", r.code, 1);
+  ok("E17 still-running message", /was left OPEN to finish/.test(r.out + r.err));
+  ok("E17 resume hint points at the consumer", /--from beta/.test(r.out + r.err));
+  eq("E17 status overall", r.status?.overall, "still-running");
 });
 
 // ---------------------------------------------------------------------------
