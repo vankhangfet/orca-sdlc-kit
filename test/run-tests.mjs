@@ -352,6 +352,19 @@ scenario("E14b readiness-unknown (no blind retry during repair)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E15 — min-size verdict: an existing but undersized artifact (5 bytes < the
+// 200 default) is unready; declining stops the run with the too-small reason.
+// ---------------------------------------------------------------------------
+scenario("E15 readiness-min-bytes (undersized artifact is unready)", async () => {
+  const r = await runFlow({ name: "e15", config: "../test/configs/cold.config.json", args: ["--only", "beta"], seedArtifacts: [{ file: "A.md", text: "tiny\n" }], budgetMs: 45000 });
+  ok("E15 not hung", !r.hung);
+  eq("E15 exit code", r.code, 1);
+  ok("E15 too-small reason", /too small \(5 bytes < 200 min\)/.test(r.out + r.err));
+  ok("E15 resume hint", /--from alpha/.test(r.out + r.err));
+  eq("E15 consumer never dispatched", r.by("orchestration task-create").length, 0);
+});
+
+// ---------------------------------------------------------------------------
 // E16 — readiness repair is TRANSITIVE: repairing a producer whose own reads
 // are also missing must repair the whole chain, in pipeline order.
 // ---------------------------------------------------------------------------
