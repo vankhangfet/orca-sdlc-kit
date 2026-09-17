@@ -1,0 +1,13 @@
+{
+  "defaults": {
+    "timeoutMs": 30000,
+    "hardTimeoutMs": 60000,
+    "startRetryDelayMs": 200,
+    "warmupTimeoutMs": 5000,
+    "startGraceMs": 3000
+  },
+  "pipeline": [
+    { "id": "early", "title": "Early", "agent": "stub", "reads": ["late"], "spec": "Needs {reads} before it exists.", "writes": "E.md" },
+    { "id": "late", "title": "Late", "agent": "stub", "spec": "Runs after; write {out}.", "writes": "L.md" }
+  ]
+}

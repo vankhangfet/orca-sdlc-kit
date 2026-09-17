@@ -418,6 +418,8 @@ const BAD_CONFIGS = [
   ["F3 chained parallelWith", "bad-parallel-chain.json", /parallelWith chains are not allowed/],
   ["F4 non-contiguous parallel group", "bad-parallel-gap.json", /must be contiguous/],
   ["F5 member reads its target", "bad-parallel-reads.json", /dependent steps cannot run in parallel with what they read/],
+  ["F10 forward read", "bad-forward-read.json", /reads "late" which has not run yet — reorder the pipeline/],
+  ["F11 read of a writes-less step", "bad-reads-no-writes.json", /reads "ghost" which has no "writes" — nothing to read/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {

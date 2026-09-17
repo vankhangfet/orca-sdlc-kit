@@ -222,6 +222,25 @@ const groups = (() => {
 const isParallel = new Set();
 for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id);
 
+// Forward reads: a read pointing at an in-run step at the same or a later
+// group would make the readiness gate "repair" it by running the producer out
+// of semantic order — reject it at load time instead. Out-of-run reads are
+// exempt (the --from/--only resume case): they are gated at runtime by the
+// readiness check instead. A read of a step with no "writes" can never be
+// satisfied — fail fast rather than burn repair dispatches on it.
+{
+  const groupIdx = new Map();
+  groups.forEach((g, i) => g.forEach((m) => groupIdx.set(m.id, i)));
+  for (const s of steps)
+    for (const id of (s.reads || [])) {
+      if (!byId[id]) continue;
+      if (!byId[id].writes)
+        die(`step "${s.id}" reads "${id}" which has no "writes" — nothing to read.`);
+      if (enabledIds.has(id) && groupIdx.get(id) >= groupIdx.get(s.id))
+        die(`step "${s.id}" reads "${id}" which has not run yet — reorder the pipeline (reads must point at EARLIER steps).`);
+    }
+}
+
 // A step's reads. Steps in this run always count. Steps NOT part of this run
 // (dropped by --from/--only, or disabled) still count when their artifact file
 // already exists in the worktree — that is the RESUME case: `--from coding`
