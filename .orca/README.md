@@ -16,6 +16,7 @@ Installed via `npx github:vankhangfet/orca-sdlc-kit`? You already have all of th
 | `fixbug.config.json` | The bug-fix pipeline (run with `--config fixbug.config.json "<bug + reproduction steps>"`). |
 | `cr.config.json` | The change-request pipeline (run with `--config cr.config.json "<what changes and why>"`). |
 | `workflow-template/` | Variants of the three pipelines that END with a Rebase & Push step (commit, rebase, push). Run with `--config workflow-template/<file>`. |
+| `notify.json` | Chat notifications (Slack/Telegram/Teams/WhatsApp/generic) — empty = off; see CONFIGURATION.md §9 |
 | `CONFIGURATION.md` | Field-by-field reference for all three config files. |
 | `artifacts/` | Runtime output — every step's Markdown artifact lands here (gitignored). |
 

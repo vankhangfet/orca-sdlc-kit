@@ -76,6 +76,9 @@ const die = (m) => {
     // Usage report is best-effort: never mask the real error, never change the
     // exit code. It re-writes status.js with usage fields on success.
     try { reportUsage(); } catch (e) { warn(`[usage] report skipped (${e.message})`); }
+    // Notifications are best-effort too — attempted before exit(1) because
+    // delivery is synchronous; never masks the real error.
+    try { notifyRun(STATUS.overall); } catch { }
   }
   process.exit(1);
 };
@@ -504,6 +507,7 @@ function finishStatus(overall) {
   STATUS.overall = overall;
   STATUS.artifacts = steps.map((s) => outPath(s.writes));
   writeStatus();
+  notifyRun(overall);
 }
 
 // ===== usage-report: pure helpers (extract-tested by .orca/usage-test/run-tests.mjs — keep dependency-free) =====
@@ -1294,6 +1298,113 @@ const STATUS_HTML = `<!doctype html>
 </html>
 `;
 
+// --- Notifications (.orca/notify.json) --------------------------------------
+// Per-step and run-end chat messages (slack/telegram/teams/whatsapp/generic).
+// Best-effort by contract — the status page's rule: a dead webhook may never
+// slow, kill or alter a run. Delivery runs in a short-lived node child (HTTP
+// POST, 9s abort, 12s spawn cap) so the synchronous architecture is intact
+// and the die()-path message is still attempted before process.exit(1). The
+// FIRST hard failure warns once and flips a latch: a dead endpoint cannot
+// stack timeouts against the run's own budget.
+const NOTIFY_FILE = process.env.ORCA_FLOW_NOTIFY_FILE || join(HERE, "notify.json");
+const NOTIFY = { on: false, events: new Set(), cfg: {}, dead: false };
+function loadNotify() {
+  try { NOTIFY.cfg = JSON.parse(readFileSync(NOTIFY_FILE, "utf8")); }
+  catch (e) {
+    if (e.code !== "ENOENT") warn(`[notify] disabled: notify.json unreadable (${e.message})`);
+    return;
+  }
+  const c = NOTIFY.cfg;
+  // Empty template (provider/url blank) or enabled:false: off, silent — the
+  // shipped default. Only a FILLED-but-invalid file warns.
+  if (c.enabled === false || !String(c.provider ?? "").trim() || !String(c.url ?? "").trim()) return;
+  try { new URL(c.url); } catch { warn(`[notify] disabled: "url" is not a valid URL`); return; }
+  const providers = ["slack", "telegram", "teams", "whatsapp", "generic"];
+  if (!providers.includes(c.provider)) { warn(`[notify] disabled: unknown provider "${c.provider}"`); return; }
+  const need = { telegram: ["chatId"], whatsapp: ["token", "to"] }[c.provider] || [];
+  const missing = need.filter((k) => !String(c[k] ?? "").trim());
+  if (missing.length) { warn(`[notify] disabled: ${c.provider} needs ${missing.map((k) => `"${k}"`).join(", ")}`); return; }
+  NOTIFY.events = new Set(Array.isArray(c.events) ? c.events : ["step", "run"]);   // missing = both; [] = off
+  if (!NOTIFY.events.size) return;
+  NOTIFY.on = true;
+  const unknown = [...NOTIFY.events].filter((e) => e !== "step" && e !== "run");
+  if (unknown.length) warn(`[notify] unknown event(s) ignored: ${unknown.join(", ")}`);
+}
+// Inline delivery agent: POSTs {url, headers, body} as JSON; 2xx -> exit 0.
+// stdin carries the JSON payload — never logged, never visible in argv.
+const NOTIFY_SCRIPT = `
+const req = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const u = new URL(req.url);
+const mod = u.protocol === "http:" ? require("http") : require("https");
+const data = Buffer.from(JSON.stringify(req.body));
+const r = mod.request({ hostname: u.hostname, port: u.port || (u.protocol === "http:" ? 80 : 443),
+  path: u.pathname + u.search, method: "POST",
+  headers: Object.assign({ "content-type": "application/json", "content-length": data.length }, req.headers || {}) },
+  (res) => { res.resume(); res.on("end", () => {
+    if (res.statusCode < 200 || res.statusCode >= 300) console.error("HTTP " + res.statusCode);
+    process.exit(res.statusCode >= 200 && res.statusCode < 300 ? 0 : 1);
+  }); });
+r.setTimeout(9000, () => r.destroy(new Error("timeout after 9s")));
+r.on("error", (e) => { console.error(e.message); process.exit(1); });
+r.end(data);
+`;
+function notifySend(kind, payload, text) {
+  if (!NOTIFY.on || NOTIFY.dead || !NOTIFY.events.has(kind)) return;
+  const p = NOTIFY.cfg.provider;
+  const headers = p === "whatsapp" ? { Authorization: `Bearer ${NOTIFY.cfg.token}` } : {};
+  const body = p === "generic" ? payload
+    : p === "telegram" ? { chat_id: NOTIFY.cfg.chatId, text }
+    : p === "whatsapp" ? { messaging_product: "whatsapp", to: NOTIFY.cfg.to, type: "text", text: { body: text } }
+    : p === "teams" ? { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive",
+        content: { type: "AdaptiveCard", version: "1.4", body: [{ type: "TextBlock", text, wrap: true }] } }] }
+    : { text };
+  let r;
+  try {
+    r = spawnSync(process.execPath, ["-e", NOTIFY_SCRIPT],
+      { input: JSON.stringify({ url: NOTIFY.cfg.url, headers, body }), timeout: 12000, encoding: "utf8" });
+  } catch (e) { r = { error: e }; }
+  if (r.error || r.status !== 0) {
+    NOTIFY.dead = true;
+    const reason = r.error ? (r.error.code || r.error.message) : ((r.stderr || "").trim().split(/\r?\n/).pop() || `exit ${r.status}`);
+    warn(`[notify] disabled: delivery failed (${reason}) — further notifications skipped`);
+  }
+}
+function notifyStep(m) {
+  if (!NOTIFY.on || !NOTIFY.events.has("step")) return;
+  const st = statusOf(m.step.id);
+  const text = `[orca-flow] Step "${m.step.title}" ${String(m.outcome || "unknown").toUpperCase()} in ${fmtDurMs(st?.durationMs ?? 0)} (attempt ${st?.attempt ?? 1}) -> ${outPath(m.step.writes)}${m.note ? ` (${m.note})` : ""}`;
+  notifySend("step", { event: "step", run: RUN_ID, objective, step: m.step.id, title: m.step.title,
+    status: m.outcome, attempt: st?.attempt ?? null, durationMs: st?.durationMs ?? null,
+    note: m.note || null, artifact: outPath(m.step.writes) }, text);
+}
+function notifyRun(overall) {
+  if (!NOTIFY.on || !NOTIFY.events.has("run") || !RUN_ID) return;
+  const durMs = Date.now() - (STATUS?.meta?.startedAt ?? Date.now());
+  const obj = objective.length > 80 ? objective.slice(0, 77) + "..." : objective;
+  let text = `[orca-flow] Run ${RUN_ID} ${String(overall).toUpperCase()} in ${fmtDurMs(durMs)} — "${obj}" · artifacts: ${statusDir()}`;
+  if (overall !== "succeeded") {
+    // Mirror the die site's choice of stuck step: a still-running overall
+    // died on the LIVE member (re-running its group would re-dispatch it);
+    // otherwise the failed member. Unknown settles are named as a last
+    // resort — the console's unknown-die also advises --from the step.
+    const firstOf = (st) => (STATUS?.steps || []).find((s) => s.status === st);
+    const bad = (overall === "still-running" ? firstOf("running") : null) || firstOf("failed") || firstOf("running") || firstOf("unknown");
+    if (bad) {
+      // FAILED/UNKNOWN settles are terminal-safe — they resume from the step
+      // itself. Only a LIVE (running) worker was left ALIVE in its terminal:
+      // pointing --from at it would re-dispatch a live task (the
+      // double-dispatch this kit forbids), so point at the next group's first
+      // step — same advice as the console's stop message (falls back to the
+      // stuck step when it is the last one).
+      const gi = groups.findIndex((g) => g.some((s) => s.id === bad.id));
+      const next = gi >= 0 ? (groups[gi + 1] || [])[0] : null;
+      const target = bad.status === "running" ? (next || bad) : bad;
+      text += ` · stuck at: ${bad.id} — continue with: node .orca/flow.mjs --from ${target.id} "<objective>"`;
+    }
+  }
+  notifySend("run", { event: "run", run: RUN_ID, objective, status: overall, durationMs: durMs }, text);
+}
+
 // Terminal command for an agent. Claude Code on Windows can crash with
 // EBADF when its file watcher races the create/delete of
 // ~/.claude/history.jsonl.lock, which is written on every user prompt
@@ -1500,6 +1611,7 @@ function printPlan() {
   log(`Config: ${CONFIG_FILE}${opt.config ? "" : " (default)"}`);
   log(`Worktree: ${WT || WT_PIN || "(auto-detect, unresolved in dry-run)"}  (${wtSource()})`);
   log(`Auto-run: ${AUTO_RUN ? "on — agents run unattended, gates ignored" : "off — steps with 'gate' block for approval"}`);
+  log(`Notifications: ${NOTIFY.on ? `on (${NOTIFY.cfg.provider}, events: ${[...NOTIFY.events].join(",")})` : "off"}`);
   log("Pipeline to run (in order):");
   steps.forEach((s, i) => {
     const reads = effectiveReads(s);
@@ -1568,6 +1680,7 @@ if (opt.statusPreview) {
 ORCA = resolveOrca();
 resolveWorktree(opt.dryRun);
 resolveWorktreePath(opt.dryRun);
+loadNotify();   // validate/announce before the plan prints (dry-run included)
 printPlan();
 if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
 
@@ -1731,6 +1844,7 @@ function settleMember(m, outcome, done) {
   m.done = done || null;
   refreshProgress(m.step);   // final snapshot: catch the last ticks
   statusEnd(m.step.id, outcome, m.note);
+  notifyStep(m);
   if (!m.done) return;
   if (m.terminal) {
     const c = orca(["terminal", "close", "--terminal", m.terminal]);

@@ -6,7 +6,12 @@
 <a href="https://github.com/vankhangfet/orca-sdlc-kit/tags"><img src="https://img.shields.io/github/v/tag/vankhangfet/orca-sdlc-kit?style=flat-square" alt="Release"></a>
 <a href="https://x.com/vankhangfet"><img src="https://img.shields.io/badge/Follow-%40vankhangfet-1DA1F2?style=flat-square&logo=x" alt="Follow on X"></a>
 
-**A pipeline of AI agents that plans, codes, reviews, tests and documents — the whole pipeline (steps, agents, models, retries, parallel groups) defined in one JSON config, no code ever; results land on disk, runs are watchable live, quality failures loop back automatically.**
+**A pipeline of AI agents that plans, codes, reviews, tests and documents — the whole pipeline (steps, agents, models, retries, parallel groups) defined in one JSON config, no code ever; results land on disk, runs are watchable live, quality failures loop back automatically — and every step's verdict can be pushed straight to your team's chat.**
+
+<a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%92%AC-Slack-4A154B?style=flat-square" alt="Slack"></a>
+<a href="#notifications"><img src="https://img.shields.io/badge/%E2%9C%88%EF%B8%8F-Telegram-26A5E4?style=flat-square" alt="Telegram"></a>
+<a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%91%A5-MS_Teams-6264A7?style=flat-square" alt="MS Teams"></a>
+<a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%93%B1-WhatsApp-25D366?style=flat-square" alt="WhatsApp"></a>
 
 ![Orca SDLC Kit in motion: a terminal runs one command — node .orca/flow.mjs
 "Build html game 2048" — then the live status dashboard takes over: the pipeline
@@ -31,6 +36,7 @@ ticking, and artifact chips light up as each Markdown lands on disk](img/banner-
 - [The pipelines](#the-pipelines)
 - [Watch it run — the live status page](#watch-it-run--the-live-status-page)
 - [When something goes wrong](#when-something-goes-wrong)
+- [Notifications](#notifications)
 - [Contributing](#contributing)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -59,6 +65,7 @@ What makes this safe rather than a black box:
 - **Everything is left on disk.** Each step writes a Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result.
 - **Quality failures loop back.** Review, security or test failures send the coder back automatically, up to bounded retries.
 - **Every run is accounted for.** Per-step tokens (in / out / cache) go to `USAGE.md` in the artifacts dir and onto the status page. (Numbers for opencode, gemini, cursor, grok and kiro-cli steps are not available yet.)
+- **Results can reach your team.** Fill in `.orca/notify.json` and every step's verdict — plus the final run summary with a safe resume command — lands in Slack, Telegram, MS Teams or WhatsApp while the run is going (default off). [How](#notifications).
 
 ## Quick start
 
@@ -236,6 +243,31 @@ A `--from` resume continues the same picture, earlier steps keeping their origin
 - **A step ran out of time** — the terminal stays open; re-run with the printed `--from <step>` command.
 
 Details and fixes (claude dialogs, EBADF crash, stale Orca state, version drift): [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+## Notifications
+
+The pipeline can report itself to chat: **every step settlement** (succeeded / failed / still-running — retries notify per attempt) and **one run-end summary** (verdict, duration, and on failure the exact safe `--from` resume command) are POSTed while the run is going.
+
+Fill in [`.orca/notify.json`](.orca/notify.json) — shipped empty, meaning **off** until you do — and pick your platform:
+
+| Platform | `provider` | What goes in the file |
+|---|---|---|
+| Slack | `slack` | `url` = incoming webhook |
+| Telegram | `telegram` | `url` = `https://api.telegram.org/bot<TOKEN>/sendMessage`, plus `chatId` |
+| MS Teams | `teams` | `url` = Workflows incoming webhook (rendered as an Adaptive Card) |
+| WhatsApp | `whatsapp` | `url` = Graph API `.../<PHONE_NUMBER_ID>/messages`, plus `token` + `to` |
+| Anything else | `generic` | `url` = any JSON endpoint; receives the full structured payload |
+
+```jsonc
+{ "enabled": true, "provider": "slack", "url": "https://hooks.slack.com/services/...",
+  "token": "", "chatId": "", "to": "", "events": ["step", "run"] }
+```
+
+- **Never affects the run.** Delivery is timeout-guarded (9s abort / 12s hard cap per message, in a child process); a dead webhook warns once — with a secrets-free reason like `HTTP 401` — and is disabled for the rest of the run.
+- **Tune it.** `"events"` picks what you get (`["step","run"]` = both, `[]` = off, `["run"]` = once per run for slow endpoints). `--dry-run` prints the resolved state (`Notifications: on (slack, events: step,run)`) and sends nothing; `ORCA_FLOW_NOTIFY_FILE` points the run at a different config file.
+- **Secrets stay secret.** The webhook URL and tokens travel via stdin — never in argv or logs. After filling the file in, add `notify.json` to your `.gitignore`.
+
+Full field reference: [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md) §9 · Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#notifications)
 
 ## Contributing
 

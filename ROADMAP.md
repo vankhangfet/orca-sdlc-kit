@@ -1,6 +1,6 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Current release: **v1.6.1** · Last updated: 2026-09-15 · Proposal only — no committed dates.
+Current release: **v1.7.0** · Last updated: 2026-09-17 · Proposal only — no committed dates.
 
 One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on the status page can change a run's outcome, timeout or retry.
 
@@ -8,6 +8,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Track | Milestone | Theme |
 |---|---|---|
+| Shipped | v1.7.0 | Step-completion chat notifications |
 | Shipped | v1.6.1 | E2E test suite + workflow templates |
 | Shipped | v1.6.0 | Change-request (CR) maintenance pipeline |
 | Shipped | v1.5.3 | Parked-prompt detection |
@@ -24,6 +25,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Version | Feature | What shipped |
 |---|---|---|
+| v1.7.0 | **Step-completion chat notifications** | `.orca/notify.json` (shipped empty = off until filled) pushes every step settlement (succeeded/failed/still-running/unknown, retries per attempt) and one run-end summary to **Slack, Telegram, MS Teams, WhatsApp** or any `generic` JSON webhook — provider-specific payloads (Adaptive Card for Teams, Bearer + Graph API for WhatsApp). Never-block contract: delivery in a timeout-guarded child (9s abort / 12s cap), first hard failure warns once (secrets-free reason) and latches; notifications never change exit codes or settlement. Failed-run chat messages carry the console's SAFE resume hint (failed resumes from itself; a live worker from the NEXT step — no double-dispatch, mixed parallel groups included). Secrets ride stdin, never argv/logs; users gitignore the filled file. `ORCA_FLOW_NOTIFY_FILE` overrides the path; `--dry-run` announces the resolved state and sends nothing; `events` toggles step/run (`[]` = off). Pinned E2E by N1-N5 (155/155) via a localhost webhook recorder. Supersedes the queued generic-command notify item; README Contributing now requires `npm test` before pushing |
 | v1.6.1 | **E2E test suite + workflow templates** | `test/` runs the real `flow.mjs` against a fake Orca CLI (`npm test`, 127 assertions, ~2-4 min, fully offline — no Orca runtime, no agents, no real Runs; every scenario watchdog-guarded so a hang fails the suite): 11 E2E scenarios pin the happy paths (cold + manual start incl. the paste ladder and AUTO-RUN claude wrap, parallel launch + join barrier), the `onFailGoto` fix loop (reopen-not-recreate, regression #2), no-blind-retry on unknown outcomes, bounded gates and `--from` resume; 9 fast-validation cases cover the shipped configs' dry-run plus load-time CLI/config guards. `.orca/workflow-template/` ships three ready-to-run variants (sdlc/fixbug/cr) ending with a git-deliver step (commit, rebase onto origin/main, smoke-test, push). Fix: a parked worker's diagnosis note now survives the hard cap into the final status (E6-pinned). Docs: README condensed with Mermaid flowcharts, troubleshooting split into `TROUBLESHOOTING.md`. `test/` is repo-side — deliberately NOT npx-shipped |
 | v1.6.0 | **Change-request (CR) maintenance pipeline** | Third shipped pipeline `cr.config.json`, selected with `--config`: impact analysis on the existing code (claude) -> CR plan with a point-by-point acceptance-criteria checklist (claude) -> CR coding (codex, live checklist `CR_TASKS.md`) -> code review (claude) -> testing incl. regression on the existing suite (opencode) -> acceptance verification against the criteria (opencode); any gate FAIL loops back to the coding step (max 2 retries). CR-specific artifact names, so SDLC/fixbug/CR runs can share a worktree's artifacts dir without collisions. Pure config — `flow.mjs` untouched; shipped via npx (`package.json` `files` + `init.mjs` `FILES` in sync); README, `.orca/README` and CONFIGURATION.md now enumerate all three pipelines |
 | v1.5.3 | **Parked-prompt detection** | A worker parked on a dialog only a human can answer — `permissions.ask` rules (not bypassed by `bypassPermissions`), Claude Code's folder-trust check on a fresh worktree, a CLI update prompt — is recognized from the known dialog texts on its frozen terminal screen: logged once per step per distinct prompt, with a "parked" note on the status page and the answer-it-in-the-terminal hint, instead of silence until the hard cap. Detection only — the flow never answers prompts; wait/fail semantics unchanged (#4) |
@@ -52,7 +54,7 @@ inspectable long after the terminal closes.
 
 | Feature | What changes technically | Where |
 |---|---|---|
-| **End-of-run notifications** | `"notify": {"onEnd": "<cmd>", "onFail": "<cmd>"}` — executed argv-safe (no shell), with status/objective/failed-step/artifacts-dir as env vars. No bundled integrations; you plug in your own webhook/script | config field |
+| **End-of-run notifications** | ✅ Shipped in a richer form (v1.7.0) — per-step AND run-end chat notifications via `.orca/notify.json` (slack / telegram / teams / whatsapp / generic webhook), delivered by a timeout-guarded child process with a fail-once latch and console-matching safe resume hints; the generic-command shape was superseded by bundled provider support | config file |
 | **Agent fallback on retry** | `"agentFallback": ["codex", "claude"]` — attempt N uses agentFallback[N-1]; the page already shows the agent per attempt. `--agent` flag keeps precedence | config field |
 | **Batch mode** | `--batch backlog.json` — array of objectives run sequentially, one Orca Run each, its own status snapshot per item; `--batch --dry-run` previews the whole queue | CLI flag |
 
@@ -73,7 +75,7 @@ inspectable long after the terminal closes.
 ## Not building (by design)
 
 - **A server or installer** — single copy-paste folder, Node only; any future local listener would be opt-in and off by default.
-- **Bundled integrations** — no built-in chat/email/webhook targets; you connect your own.
+- **Bundled integrations beyond plain webhooks** — chat notifications ship as best-effort webhook POSTs (`.orca/notify.json`); what stays out by design: email, OAuth/SDK platform apps, interactive cards. Plain text to endpoints you own is the whole surface.
 - **Checklist gating** — the task checklist stays a live view; the run never waits on checkbox state.
 - **A multi-file rewrite** — `flow.mjs` stays one script; one folder you copy is the product.
 

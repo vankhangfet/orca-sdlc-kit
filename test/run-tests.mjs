@@ -15,6 +15,7 @@
 // (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -39,6 +40,29 @@ const ok = (name, cond, extra) => {
 const eq = (name, got, want) =>
   ok(name, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
 
+// Tiny localhost webhook recorder for the notification scenarios (N1).
+async function recordHook() {
+  const hits = [];
+  const srv = createServer((req, res) => {
+    let b = "";
+    req.on("error", () => {});   // aborted client must not crash the runner
+    req.on("data", (c) => (b += c));
+    req.on("end", () => {
+      let body = null;
+      try { body = b ? JSON.parse(b) : null; } catch { body = `<unparseable: ${b.slice(0, 120)}>`; }
+      hits.push({ path: req.url, body });
+      res.writeHead(204);
+      res.end();
+    });
+  });
+  const listening = new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  srv.on("error", (e) => { throw e; });   // failed listen must fail loudly, not hang the suite
+  await listening;
+  const url = `http://127.0.0.1:${srv.address().port}/hook`;
+  const close = () => new Promise((r) => srv.close(r));
+  return { hits, url, close };
+}
+
 // Tmp dirs survive runFlow; the runner decides their fate AFTER the scenario,
 // so failure evidence (calls.jsonl/state.json/status.js) still exists when
 // assertions report FAIL. Same for HUNG — runFlow sets the flag when it kills.
@@ -49,13 +73,14 @@ let hungInCurrentScenario = false;
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
 // NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
-async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000 }) {
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000, notify = null }) {
   const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
   dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
   mkdirSync(join(wt, ".orca", "artifacts"), { recursive: true });
   mkdirSync(home, { recursive: true });
   for (const a of seedArtifacts) writeFileSync(join(wt, ".orca", "artifacts", a.file), a.text ?? "seeded by harness\n");
+  if (notify) writeFileSync(join(dir, "notify.json"), JSON.stringify(notify, null, 2));
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
   env.ORCA_CLI_COMMAND = NODE;
@@ -76,6 +101,9 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
     } catch { return "{}"; }
   })();
   env.ORCA_FLOW_WORKTREE = "name:testlab";
+  // notify template, when given, is handed to the child via its file's path — the
+  // only source, since every inherited ORCA_* key was stripped above.
+  if (notify) env.ORCA_FLOW_NOTIFY_FILE = join(dir, "notify.json");
   env.USERPROFILE = home;
   env.HOME = home;
   const argv = [FLOW, ...args, "--no-open-status"];
@@ -409,6 +437,102 @@ scenario("E18 readiness-skips-disabled (shipped config, fresh worktree, no promp
   eq("E18 grill stays skipped", r.status?.steps.find((s) => s.id === "grill")?.status, "skipped");
   ok("E18 planning dispatched", r.calls.some((c) => c.cmd === "orchestration task-create" && String(c.flags.spec ?? "").includes("# Planning")));
   ok("E18 pipeline complete", /Pipeline COMPLETE/.test(r.out));
+});
+
+// N3 — default-off: an EMPTY notify template sends nothing and stays silent.
+// Baseline pin recorded BEFORE the engine feature lands; it must hold after.
+// ---------------------------------------------------------------------------
+scenario("N3 notify default-off (empty template: zero sends, zero warns)", async () => {
+  const hook = await recordHook();
+  try {
+    const r = await runFlow({ name: "n3", config: "../test/configs/cold.config.json",
+      notify: { enabled: true, provider: "", url: "", token: "", chatId: "", to: "", events: ["step", "run"] },
+      budgetMs: 90000 });
+    ok("N3 not hung", !r.hung);
+    eq("N3 exit code", r.code, 0);
+    eq("N3 zero notifications", hook.hits.length, 0);
+    ok("N3 no notify output", !/\[notify\]/.test(r.out + r.err));
+  } finally { await hook.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// N1 — happy: every step settlement and the run summary are POSTed to the
+// webhook in order, with the right text; dry-run announces notify state and
+// sends nothing.
+// ---------------------------------------------------------------------------
+scenario("N1 notify happy (2 step + 1 run POSTs, dry-run sends nothing)", async () => {
+  const hook = await recordHook();
+  try {
+    const cfg = { enabled: true, provider: "slack", url: hook.url, token: "", chatId: "", to: "", events: ["step", "run"] };
+    const dry = await runFlow({ name: "n1dry", config: "../test/configs/cold.config.json", args: ["--dry-run"], notify: cfg, budgetMs: 30000 });
+    eq("N1 dry-run exit", dry.code, 0);
+    ok("N1 dry-run announces notify", /Notifications: on \(slack, events: step,run\)/.test(dry.out));
+    eq("N1 dry-run sent nothing", hook.hits.length, 0);
+
+    const r = await runFlow({ name: "n1", config: "../test/configs/cold.config.json", notify: cfg, budgetMs: 90000 });
+    ok("N1 not hung", !r.hung);
+    eq("N1 exit code", r.code, 0);
+    eq("N1 three notifications (2 steps + run)", hook.hits.length, 3);
+    ok("N1 alpha step text", /Step "Alpha" SUCCEEDED in .+ \(attempt 1\) -> \.orca\/artifacts\/A\.md/.test(hook.hits[0]?.body?.text ?? ""));
+    ok("N1 beta step text", /Step "Beta" SUCCEEDED/.test(hook.hits[1]?.body?.text ?? ""));
+    ok("N1 run text", /Run run-\d+ SUCCEEDED in .+ — "test objective"/.test(hook.hits[2]?.body?.text ?? ""));
+  } finally { await hook.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// N2 — degradation: a dead webhook warns exactly once (latch), never blocks
+// and never changes the outcome.
+// ---------------------------------------------------------------------------
+scenario("N2 notify degradation (dead webhook: one warn, run unaffected)", async () => {
+  const r = await runFlow({ name: "n2", config: "../test/configs/cold.config.json",
+    notify: { enabled: true, provider: "slack", url: "http://127.0.0.1:1/hook", token: "", chatId: "", to: "", events: ["step", "run"] },
+    budgetMs: 90000 });
+  ok("N2 not hung", !r.hung);
+  eq("N2 exit code", r.code, 0);
+  const warns = (r.out + r.err).match(/\[notify\] disabled: delivery failed/g) || [];
+  eq("N2 exactly one delivery warn (latch works)", warns.length, 1);
+  eq("N2 pipeline unaffected (both steps ok)", (r.out + r.err).match(/\[ok\] /g)?.length, 2);
+  eq("N2 status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// N4 — the still-running chat hint must point PAST the live worker (re-
+// dispatching it is the double-dispatch the kit forbids), matching the
+// console's advice; a FAILED step resumes from itself (unpinned — shares notifyRun with the pinned path).
+// ---------------------------------------------------------------------------
+scenario("N4 notify still-running hint (points at the NEXT step)", async () => {
+  const hook = await recordHook();
+  try {
+    const r = await runFlow({ name: "n4", config: "../test/configs/hang.config.json", scenario: "hang.cjs",
+      notify: { enabled: true, provider: "slack", url: hook.url, token: "", chatId: "", to: "", events: ["step", "run"] },
+      budgetMs: 45000 });
+    eq("N4 exit code", r.code, 1);
+    eq("N4 two notifications (alpha step + run)", hook.hits.length, 2);
+    const runText = hook.hits[1]?.body?.text ?? "";
+    ok("N4 run names the stuck step", /stuck at: alpha/.test(runText));
+    ok("N4 hint points past the live worker", /--from beta/.test(runText));
+    ok("N4 never suggests re-dispatching the live worker", !/--from alpha/.test(runText));
+  } finally { await hook.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// N5 — mixed parallel group (one live worker + one failed sibling): the chat
+// hint must point past the whole group, never at the failed sibling — re-
+// running its group would re-dispatch the live worker.
+// ---------------------------------------------------------------------------
+scenario("N5 notify mixed group (hint points past the live group)", async () => {
+  const hook = await recordHook();
+  try {
+    const r = await runFlow({ name: "n5", config: "../test/configs/parallel-hang.config.json", scenario: "parallel-mixed.cjs",
+      notify: { enabled: true, provider: "slack", url: hook.url, token: "", chatId: "", to: "", events: ["step", "run"] },
+      budgetMs: 45000 });
+    eq("N5 exit code", r.code, 1);
+    eq("N5 three notifications (right failed, left still-running, run)", hook.hits.length, 3);
+    const runText = hook.hits[2]?.body?.text ?? "";
+    ok("N5 run names the live worker as stuck", /stuck at: left/.test(runText));
+    ok("N5 hint points past the group", /--from join/.test(runText));
+    ok("N5 never suggests re-running the failed sibling's group", !/--from right/.test(runText));
+  } finally { await hook.close(); }
 });
 
 // ---------------------------------------------------------------------------

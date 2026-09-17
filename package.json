@@ -20,6 +20,7 @@
     ".orca/cr.config.json",
     ".orca/CONFIGURATION.md",
     ".orca/README.md",
+    ".orca/notify.json",
     ".orca/workflow-template/README.md",
     ".orca/workflow-template/sdlc.config.json",
     ".orca/workflow-template/fixbug.config.json",
