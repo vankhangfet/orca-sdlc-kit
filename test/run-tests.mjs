@@ -364,7 +364,7 @@ scenario("N2 notify degradation (dead webhook: one warn, run unaffected)", async
 // ---------------------------------------------------------------------------
 // N4 — the still-running chat hint must point PAST the live worker (re-
 // dispatching it is the double-dispatch the kit forbids), matching the
-// console's advice; a FAILED step still resumes from itself.
+// console's advice; a FAILED step resumes from itself (unpinned — shares notifyRun with the pinned path).
 // ---------------------------------------------------------------------------
 scenario("N4 notify still-running hint (points at the NEXT step)", async () => {
   const hook = await recordHook();

@@ -31,6 +31,7 @@ ticking, and artifact chips light up as each Markdown lands on disk](img/banner-
 - [The pipelines](#the-pipelines)
 - [Watch it run — the live status page](#watch-it-run--the-live-status-page)
 - [When something goes wrong](#when-something-goes-wrong)
+- [Notifications](#notifications)
 - [Contributing](#contributing)
 - [Roadmap](#roadmap)
 - [License](#license)
