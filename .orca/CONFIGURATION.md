@@ -29,12 +29,29 @@ config field, with examples for common situations.
 | `defaults.warmupTimeoutMs` | number | no (default 240000 = 4 min) | How long to wait for a freshly created agent TUI to become idle before dispatching into it (prevents `agent_prompt_stalled` on slow boots) |
 | `defaults.startGraceMs` | number | no (default 90000) | After delivering a prompt, how long to watch the TUI for proof it was consumed before re-sending (some TUIs drop input pasted during boot) |
 | `defaults.sendAttempts` | number | no (default 3) | Max prompt deliveries into a warmed terminal before falling back to a cold `worker-start` |
+| `defaults.readinessRetries` | number | no (default 3) | How many times the readiness gate may re-run a producing step whose artifact is missing or undersized before stopping the run |
+| `defaults.readinessMinBytes` | number | no (default 200) | Minimum artifact file size for a step's `writes` to count as ready input for its consumers |
 | `defaults.worktree` | string | no (default: auto-detect from the invoking directory) | Worktree selector where agents run. Leave unset for auto-detect (recommended — works whenever the flow is launched from inside an Orca-managed worktree). Pin (`name:lab2`, `path:C:\\...`) only when launching from OUTSIDE the target worktree. Per-run override: `--worktree <selector>`; per-machine: `ORCA_FLOW_WORKTREE` env. Precedence: flag > env > config > auto-detect. A pinned selector is validated before the run starts — a wrong pin fails fast with the available worktrees listed. |
 | `defaults.model` | string | no (default `"default"`) | Pipeline-wide model for every step; a step's own `model` overrides it. `"default"`/missing = keep each agent's own default model (no flag passed). See `model` under Step structure |
 | `defaults.openStatus` | boolean | no (default `true`) | Auto-open the run's live status page (`status.html` in the worktree's artifacts dir) in your browser when a real run starts. Dry-runs never write or open it. Per-run off-switch: `--no-open-status` (flag wins over config) |
 | `pipeline` | array | **yes** | The steps; **array order = run order** |
 
 ---
+
+### Readiness gate (missing/incomplete inputs)
+
+Before a step launches, the flow checks every one of its **declared** `reads`:
+the artifact file must exist in `artifactsDir` and be at least
+`defaults.readinessMinBytes` (200 bytes) — this catches both "the earlier run
+never produced it" (`--from`/`--only` resumes) and "the step reported success
+but wrote an empty file". If an input is unready, the flow asks at the
+terminal — even in auto-run, because this is input safety, not agent autonomy
+(piped/CI stdin with EOF counts as "no"). Answer `y` to re-run each missing
+producing step now (up to `defaults.readinessRetries` attempts, then the run
+stops); answer `n` (or just Enter) to stop immediately with the exact
+`--from <step>` command that regenerates the missing input. Repair is
+transitive: if a missing producer itself has missing inputs, the whole chain
+is re-generated in pipeline order first.
 
 ## 2. Step structure
 

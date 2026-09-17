@@ -31,6 +31,15 @@ the [README](README.md); for every config field see
   left open and the flow prints the exact `--from <step>` command to
   continue later.
 
+- **"Missing or incomplete input artifact(s)"** — a step about to run declared
+  `reads` whose artifact file is missing or under `defaults.readinessMinBytes`
+  (default 200 bytes). The flow asks whether to re-run the producing step now
+  (up to `defaults.readinessRetries`, default 3, attempts); declining — or EOF
+  on non-interactive stdin — stops the run with the exact `--from <step>`
+  command to generate the input and resume. When resuming a previous run's
+  artifacts, keep them in `<worktree>/.orca/artifacts/` or let the flow re-run
+  the producing steps for you.
+
 - **Stale orchestration state after experiments** —
   `orca orchestration reset --all --json`.
 
