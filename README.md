@@ -289,7 +289,7 @@ Looking for something to pick up? [ROADMAP.md](ROADMAP.md) lists what's planned 
 
 ## Roadmap
 
-Next in the v2.0 line: config validation before any agent starts, an artifact viewer, run history on the status page, and auto-resume; v2.0.x minors add notifications, agent fallback and batch runs — see [ROADMAP.md](ROADMAP.md).
+Next in the v2 line (v2.0.x): the rest of config validation, an artifact viewer, run history on the status page, and auto-resume; later minors add agent fallback and batch runs — see [ROADMAP.md](ROADMAP.md).
 
 ## License
 

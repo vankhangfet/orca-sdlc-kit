@@ -1,6 +1,6 @@
 # Orca SDLC Flow Kit — Roadmap
 
-Current release: **v1.7.0** · Last updated: 2026-09-17 · Proposal only — no committed dates.
+Current release: **v2.0.0** · Last updated: 2026-09-17 · Proposal only — no committed dates.
 
 One folder, Node only, no server. All pipeline behavior lives in the JSON configs; the script stays a generic executor. Monitoring is display-only by contract: nothing on the status page can change a run's outcome, timeout or retry.
 
@@ -8,6 +8,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Track | Milestone | Theme |
 |---|---|---|
+| Shipped | v2.0.0 | Readiness gate — never launch a step on unready inputs |
 | Shipped | v1.7.0 | Step-completion chat notifications |
 | Shipped | v1.6.1 | E2E test suite + workflow templates |
 | Shipped | v1.6.0 | Change-request (CR) maintenance pipeline |
@@ -17,7 +18,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 | Shipped | v1.5.0 | Token usage tracking |
 | Shipped | v1.4.0 | Status page redesign — pipeline rail + detail pane |
 | Shipped | v1.3.0 | Parallel steps (`parallelWith`) |
-| In focus | **v2.0** | Trust & visibility — the next major |
+| In focus | **v2.0.x** | Trust & visibility — finishing the v2 line |
 | Queued | v2.0.x | Speed & supervision — minor releases in the v2 line |
 | Later | — | The longer arc |
 
@@ -25,6 +26,7 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 
 | Version | Feature | What shipped |
 |---|---|---|
+| v2.0.0 | **Readiness gate — never launch a step on unready inputs** | Before each run-order group launches, every member's DECLARED `reads` are verified on disk: artifact present and ≥ `defaults.readinessMinBytes` (200) — closing both blind-start holes at once (`--from`/`--only` resumes silently dropping missing reads; a step reporting success over an empty file). Unready inputs surface at the terminal — `[y/N]` asked even in auto-run (input safety is not agent autonomy; piped/CI stdin EOF = no): decline stops the run with the exact `--from <producer>` command; accept re-runs ONLY the missing producers (singleton groups — parallel siblings untouched), TRANSITIVELY up the read chain in pipeline order, up to `defaults.readinessRetries` (3) attempts, re-dispatching only on definite outcomes (no blind retry — the double-dispatch doctrine). Reads of `enabled:false` steps are exempt (optional inputs, per the config contract). New load-time validation dies before any agent work on forward in-run reads and reads of writes-less steps (the latter previously crashed with a raw TypeError). Repaired out-of-run steps update their status rows like any other. Pinned E2E by E12-E18 + F10/F11 — including E18, the suite's first REAL run of a shipped config (default pipeline, fresh worktree, no prompt). Suite 216/216 with the v1.7.0 notifications line merged |
 | v1.7.0 | **Step-completion chat notifications** | `.orca/notify.json` (shipped empty = off until filled) pushes every step settlement (succeeded/failed/still-running/unknown, retries per attempt) and one run-end summary to **Slack, Telegram, MS Teams, WhatsApp** or any `generic` JSON webhook — provider-specific payloads (Adaptive Card for Teams, Bearer + Graph API for WhatsApp). Never-block contract: delivery in a timeout-guarded child (9s abort / 12s cap), first hard failure warns once (secrets-free reason) and latches; notifications never change exit codes or settlement. Failed-run chat messages carry the console's SAFE resume hint (failed resumes from itself; a live worker from the NEXT step — no double-dispatch, mixed parallel groups included). Secrets ride stdin, never argv/logs; users gitignore the filled file. `ORCA_FLOW_NOTIFY_FILE` overrides the path; `--dry-run` announces the resolved state and sends nothing; `events` toggles step/run (`[]` = off). Pinned E2E by N1-N5 (155/155) via a localhost webhook recorder. Supersedes the queued generic-command notify item; README Contributing now requires `npm test` before pushing |
 | v1.6.1 | **E2E test suite + workflow templates** | `test/` runs the real `flow.mjs` against a fake Orca CLI (`npm test`, 127 assertions, ~2-4 min, fully offline — no Orca runtime, no agents, no real Runs; every scenario watchdog-guarded so a hang fails the suite): 11 E2E scenarios pin the happy paths (cold + manual start incl. the paste ladder and AUTO-RUN claude wrap, parallel launch + join barrier), the `onFailGoto` fix loop (reopen-not-recreate, regression #2), no-blind-retry on unknown outcomes, bounded gates and `--from` resume; 9 fast-validation cases cover the shipped configs' dry-run plus load-time CLI/config guards. `.orca/workflow-template/` ships three ready-to-run variants (sdlc/fixbug/cr) ending with a git-deliver step (commit, rebase onto origin/main, smoke-test, push). Fix: a parked worker's diagnosis note now survives the hard cap into the final status (E6-pinned). Docs: README condensed with Mermaid flowcharts, troubleshooting split into `TROUBLESHOOTING.md`. `test/` is repo-side — deliberately NOT npx-shipped |
 | v1.6.0 | **Change-request (CR) maintenance pipeline** | Third shipped pipeline `cr.config.json`, selected with `--config`: impact analysis on the existing code (claude) -> CR plan with a point-by-point acceptance-criteria checklist (claude) -> CR coding (codex, live checklist `CR_TASKS.md`) -> code review (claude) -> testing incl. regression on the existing suite (opencode) -> acceptance verification against the criteria (opencode); any gate FAIL loops back to the coding step (max 2 retries). CR-specific artifact names, so SDLC/fixbug/CR runs can share a worktree's artifacts dir without collisions. Pure config — `flow.mjs` untouched; shipped via npx (`package.json` `files` + `init.mjs` `FILES` in sync); README, `.orca/README` and CONFIGURATION.md now enumerate all three pipelines |
@@ -35,16 +37,17 @@ One folder, Node only, no server. All pipeline behavior lives in the JSON config
 | v1.4.0 | **Status page redesign** | Two-pane dashboard: a vertical pipeline rail (status dots, purple-bracketed parallel groups, retry/NEXT/gate chips, per-step agent + duration) and a detail pane — Now running cards with big live elapsed timers, notes (quiet-but-alive, fix-from) and task mini-bars, Up next, the Tasks checklist and artifact chips with ✓; a failed run names the failed step and the exact `--from` resume command. Display-only contract and file:// polling unchanged |
 | v1.3.0 | **Parallel steps** | `"parallelWith": "<id>"` runs a step concurrently with an earlier one (flat, contiguous, independent groups); per-task settlement via dispatch-show keeps concurrent workers distinct; join barrier at the next step; retries re-run the target's group. The shipped config runs detailed-design ∥ uiux-design |
 
-## v2.0 — trust & visibility (in focus)
+## v2.0.x — trust & visibility (in focus, continuing the v2 line)
 
-The next major is about confidence: every option does what it says, every config
-mistake surfaces before an agent starts, and everything a run did stays
-inspectable long after the terminal closes.
+The v2 major opened with v2.0.0's readiness gate. The rest of the line is about
+confidence: every option does what it says, every config mistake surfaces before
+an agent starts, and everything a run did stays inspectable long after the
+terminal closes.
 
 | Feature | What changes technically | Where |
 |---|---|---|
 | **Settings that always take effect** | ✅ `model` done — per-step `"model"` + `defaults.model` are honored on the primary dispatch path (`"default"` = the agent's own model, nothing passed; a model flag inside the `agent` string still wins; landed on `main` post-v1.5.1). Still open: `effort` on the primary path | config fields |
-| **Config validation before any agent starts** | Rejects: `reads` referencing unknown ids, `onFailGoto` pointing forward or into a cycle, unknown agent names, duplicate ids, `writes`/`progress` filename collisions. Runs in every mode, not just `--dry-run` | flow startup |
+| **Config validation before any agent starts** | ✅ Partially shipped (v2.0.0) — forward in-run `reads` and reads of writes-less steps die at load, in every mode (F10/F11). Still open: `reads` referencing unknown ids, `onFailGoto` pointing forward or into a cycle, unknown agent names, duplicate ids, `writes`/`progress` filename collisions | flow startup |
 | **Artifact viewer** | Each step row links to the Markdown file it produced; the page lazy-loads it via the same `file://` script-polling trick as `status.js`. Styled preformatted text — no Markdown engine | status page |
 | **Run log** | Every run appends to `FLOW_LOG.md` in the artifacts dir: step transitions, warnings, gate hints, durations — the console, persisted | artifact |
 | **Run history** | Snapshots kept per run (`status-<runId>.js`, last 20) + a run selector on the page; "which step failed last time" answered by looking | status page |
