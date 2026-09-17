@@ -38,7 +38,8 @@ the [README](README.md); for every config field see
   on non-interactive stdin — stops the run with the exact `--from <step>`
   command to generate the input and resume. When resuming a previous run's
   artifacts, keep them in `<worktree>/.orca/artifacts/` or let the flow re-run
-  the producing steps for you.
+  the producing steps for you. Reads of `enabled: false` steps are optional
+  and never trigger this gate.
 
 - **Stale orchestration state after experiments** —
   `orca orchestration reset --all --json`.

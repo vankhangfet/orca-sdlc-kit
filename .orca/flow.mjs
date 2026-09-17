@@ -1906,6 +1906,7 @@ function readinessOf(step) {
   const missing = [];
   for (const id of (step.reads || [])) {
     if (!byId[id]) continue;
+    if (byId[id].enabled === false) continue;   // config-disabled producer: optional input, auto-removed per config contract
     let size = -1;
     try { size = statSync(join(WT_DIR || ".", ART_DIR, byId[id].writes)).size; } catch { }
     const reason = size < 0 ? "missing"
@@ -1978,8 +1979,7 @@ async function readinessGate(members) {
         log(`[readiness] "${step.title}" artifact ready -> ${outPath(step.writes)}`);
         break;
       }
-      if (!artifactReady(step.id))
-        warn(`[readiness] "${step.title}" attempt ${attempt} ended outcome=${r.outcome} without a usable artifact.`);
+      warn(`[readiness] "${step.title}" attempt ${attempt} ended outcome=${r.outcome} without a usable artifact.`);
       if (attempt >= READINESS_RETRIES)
         die(`"${step.title}" still has no usable artifact after ${READINESS_RETRIES} readiness retries ` +
             `(needs ${outPath(step.writes)} with at least ${READINESS_MIN_BYTES} bytes).`);

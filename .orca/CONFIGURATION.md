@@ -52,6 +52,8 @@ stops); answer `n` (or just Enter) to stop immediately with the exact
 `--from <step>` command that regenerates the missing input. Repair is
 transitive: if a missing producer itself has missing inputs, the whole chain
 is re-generated in pipeline order first.
+Reads of `enabled: false` steps are exempt — a disabled step's output is an
+optional input that the config contract auto-removes (see section 2).
 
 ## 2. Step structure
 

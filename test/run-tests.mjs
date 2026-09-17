@@ -397,6 +397,21 @@ scenario("E17 repair-hang (still-running repair keeps the resume hint)", async (
 });
 
 // ---------------------------------------------------------------------------
+// E18 — shipped default config on a fresh worktree: reads of config-DISABLED
+// steps (grill) are optional inputs — the gate must not prompt or abort.
+// ---------------------------------------------------------------------------
+scenario("E18 readiness-skips-disabled (shipped config, fresh worktree, no prompt)", async () => {
+  const r = await runFlow({ name: "e18", config: null, budgetMs: 120000 });
+  ok("E18 not hung", !r.hung);
+  eq("E18 exit code", r.code, 0);
+  ok("E18 never reported missing inputs", !/Missing or incomplete input artifact/.test(r.out + r.err));
+  ok("E18 never prompted", !/Run the producing step/.test(r.out + r.err));
+  eq("E18 grill stays skipped", r.status?.steps.find((s) => s.id === "grill")?.status, "skipped");
+  ok("E18 planning dispatched", r.calls.some((c) => c.cmd === "orchestration task-create" && String(c.flags.spec ?? "").includes("# Planning")));
+  ok("E18 pipeline complete", /Pipeline COMPLETE/.test(r.out));
+});
+
+// ---------------------------------------------------------------------------
 // F — fast validation: shipped configs + CLI/config guards. These die (or
 // dry-run) before any agent work; budgets are tight.
 // ---------------------------------------------------------------------------
