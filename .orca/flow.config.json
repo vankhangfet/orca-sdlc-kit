@@ -15,10 +15,13 @@
   "autoRun": true,
   "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree: \"name:<displayName>\" or \"path:<dir>\". One-off: --worktree <selector>; per-machine: ORCA_FLOW_WORKTREE env. A pin is validated before the run starts.",
   "//model": "Model per step (per harness): optional \"model\" on a step overrides \"defaults.model\" for the whole pipeline. \"default\" (or missing) = keep the agent's own default model — nothing is passed to the CLI. Any other value is passed as `--model <value>` on the manual path and via worker-start's --model on the cold-start fallback; a model flag already inside the \"agent\" string always wins. kiro-cli has no model selection (ignored with a warning).",
+  "//readiness": "Readiness gate (v2): before a step launches, every declared 'reads' artifact must exist and be >= defaults.readinessMinBytes. Unready inputs prompt at the terminal ([y/N], asked even in autoRun; EOF declines); accept re-runs the missing producers (transitively, in pipeline order) up to defaults.readinessRetries times; decline stops with the exact --from resume command. Reads of enabled:false steps are exempt. See CONFIGURATION.md.",
   "defaults": {
     "timeoutMs": 900000,
     "worktree": null,
-    "model": "default"
+    "model": "default",
+    "readinessRetries": 3,
+    "readinessMinBytes": 200
   },
   "pipeline": [
     {
