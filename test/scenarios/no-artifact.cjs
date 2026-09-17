@@ -2,7 +2,6 @@
 // its artifact — the "lying success". The readiness gate must count attempts
 // and stop after readinessRetries instead of looping forever.
 module.exports = {
-  outcomeOf: () => "succeeded",
   handlers: {
     "orchestration worker-start": (c) => {
       const id = "disp-" + c.id();

@@ -334,6 +334,7 @@ scenario("E14 readiness-exhaust (3 attempts, then stop)", async () => {
   ok("E14 attempt 3 logged", /\[readiness\] re-running "Alpha" \(attempt 3\/3\)/.test(r.out + r.err));
   ok("E14 exhausted message", /still has no usable artifact after 3 readiness retries/.test(r.out + r.err));
   eq("E14 consumer never dispatched", r.by("orchestration task-create").length, 1);   // alpha only
+  eq("E14 status overall", r.status?.overall, "failed");
 });
 
 // ---------------------------------------------------------------------------
@@ -347,6 +348,7 @@ scenario("E14b readiness-unknown (no blind retry during repair)", async () => {
   eq("E14b exit code", r.code, 1);
   ok("E14b no-blind-retry message", /not retrying without a definite outcome/.test(r.out + r.err));
   eq("E14b exactly one repair dispatch", r.by("orchestration worker-start").length, 1);
+  eq("E14b status overall", r.status?.overall, "failed");
 });
 
 // ---------------------------------------------------------------------------
@@ -374,8 +376,10 @@ scenario("E17 repair-hang (still-running repair keeps the resume hint)", async (
   const r = await runFlow({ name: "e17", config: "../test/configs/hang.config.json", scenario: "hang.cjs", args: ["--only", "beta"], stdinText: "y\n", budgetMs: 45000 });
   ok("E17 not hung", !r.hung);
   eq("E17 exit code", r.code, 1);
-  ok("E17 still-running message", /was left OPEN to finish/.test(r.out + r.err));
+  ok("E17 still-running message names the producer", /"Alpha" [^\n]*was left OPEN to finish/.test(r.out + r.err));
   ok("E17 resume hint points at the consumer", /--from beta/.test(r.out + r.err));
+  eq("E17 one repair dispatch", r.by("orchestration worker-start").length, 1);
+  ok("E17 producer hard-cap note", /not settled after \d+min/.test(r.status?.steps.find((s) => s.id === "alpha")?.note ?? ""));
   eq("E17 status overall", r.status?.overall, "still-running");
 });
 
