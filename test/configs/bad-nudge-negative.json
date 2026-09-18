@@ -1,0 +1,6 @@
+{
+  "defaults": { "timeoutMs": 2000, "nudgeRetries": -1 },
+  "pipeline": [
+    { "id": "alpha", "title": "Alpha", "agent": "stub", "spec": "Write {out}.", "writes": "A.md" }
+  ]
+}

@@ -244,6 +244,19 @@ for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id
     }
 }
 
+// Nudge fields: sane non-negative integers; the timeout must be positive.
+// Validated at load so a typo cannot silently disable/monkey-wrench nudging.
+{
+  const nudgeFields = (o, where) => {
+    if (o.nudgeRetries != null && (!Number.isInteger(o.nudgeRetries) || o.nudgeRetries < 0))
+      die(`${where} nudgeRetries must be a non-negative integer (got ${JSON.stringify(o.nudgeRetries)}).`);
+    if (o.nudgeTimeoutMs != null && (!Number.isInteger(o.nudgeTimeoutMs) || o.nudgeTimeoutMs <= 0))
+      die(`${where} nudgeTimeoutMs must be a positive integer of milliseconds (got ${JSON.stringify(o.nudgeTimeoutMs)}).`);
+  };
+  nudgeFields(cfg.defaults || {}, "defaults:");
+  for (const s of steps) nudgeFields(s, `step "${s.id}":`);
+}
+
 // A step's reads. Steps in this run always count. Steps NOT part of this run
 // (dropped by --from/--only, or disabled) still count when their artifact file
 // already exists in the worktree — that is the RESUME case: `--from coding`

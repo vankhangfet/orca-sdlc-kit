@@ -559,6 +559,8 @@ const BAD_CONFIGS = [
   ["F5 member reads its target", "bad-parallel-reads.json", /dependent steps cannot run in parallel with what they read/],
   ["F10 forward read", "bad-forward-read.json", /reads "late" which has not run yet — reorder the pipeline/],
   ["F11 read of a writes-less step", "bad-reads-no-writes.json", /reads "ghost" which has no "writes" — nothing to read/],
+  ["F12 negative nudgeRetries", "bad-nudge-negative.json", /nudgeRetries must be a non-negative integer/],
+  ["F12b zero nudgeTimeoutMs", "bad-nudge-zero-timeout.json", /nudgeTimeoutMs must be a positive integer/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {
