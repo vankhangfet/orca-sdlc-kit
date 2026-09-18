@@ -5,6 +5,8 @@
 // cap per #4 semantics.
 module.exports = {
   handlers: {
+    // stylistic override — nothing here ever pushes a done (the default check
+    // handler returns empty anyway); do not assume it is load-bearing.
     "orchestration check": (c) => c.ok({ messages: [] }),
     "orchestration dispatch-show": (c) =>
       c.ok({ dispatch: { status: "dispatching", last_heartbeat_at: new Date(Date.now() - 30 * 60 * 1000).toISOString() } }),

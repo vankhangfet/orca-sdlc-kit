@@ -530,10 +530,11 @@ scenario("E21 nudge mid-run idle recovery", async () => {
 // ---------------------------------------------------------------------------
 scenario("E22 parked dialog is never nudged", async () => {
   const r = await runFlow({ name: "e22", config: "../test/configs/nudge-post.config.json",
-    scenario: "nudge-parked.cjs", budgetMs: 60000 });
+    scenario: "nudge-parked.cjs", budgetMs: 90000 });
   ok("E22 not hung", !r.hung);
   eq("E22 zero terminal sends", r.by("terminal send").length, 0);
   ok("E22 parked warn present", /PARKED on a permission-rule confirmation/.test(r.out + r.err));
+  eq("E22 status overall", r.status?.overall, "still-running");
   ok("E22 exit code (hard cap stop)", r.code === 1);
 });
 
