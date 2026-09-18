@@ -491,6 +491,22 @@ scenario("E25 post-done parked terminal is not nudged", async () => {
   ok("E25 parked note", /artifact missing \(terminal parked on the folder-trust check\)/.test(r.status?.steps[0]?.note ?? ""));
 });
 
+// ---------------------------------------------------------------------------
+// E20 — nudge budget exhaustion: worker_done(succeeded) but no artifact and
+// the terminal never complies => exactly nudgeRetries nudges, then the step
+// settles FAILED (the artifact file is ground truth, not worker_done).
+// ---------------------------------------------------------------------------
+scenario("E20 nudge exhausted settles failed", async () => {
+  const r = await runFlow({ name: "e20", config: "../test/configs/nudge-post.config.json",
+    scenario: "nudge-exhaust.cjs", budgetMs: 60000 });
+  ok("E20 not hung", !r.hung);
+  eq("E20 exit code", r.code, 1);
+  const textSends = r.by("terminal send").filter((cx) => String(cx.flags.text ?? "").includes("[orca-flow]"));
+  eq("E20 exactly two nudge texts", textSends.length, 2);
+  eq("E20 step failed", r.status?.steps[0]?.status, "failed");
+  ok("E20 exhaustion note", /artifact missing after 2 nudge\(s\)/.test(r.status?.steps[0]?.note ?? ""));
+});
+
 // N3 — default-off: an EMPTY notify template sends nothing and stays silent.
 // Baseline pin recorded BEFORE the engine feature lands; it must hold after.
 // ---------------------------------------------------------------------------
