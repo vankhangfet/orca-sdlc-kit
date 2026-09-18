@@ -523,6 +523,20 @@ scenario("E21 nudge mid-run idle recovery", async () => {
   ok("E21 artifact exists", existsSync(join(r.wt, ".orca", "artifacts", "A.md")));
 });
 
+// ---------------------------------------------------------------------------
+// E22 — parked-prompt safety: a nudge-eligible member parked on a dialog is
+// NEVER nudged (zero terminal sends) and keeps the parked semantics (warn +
+// hold to the hard cap). The hard safety rule of the nudge feature.
+// ---------------------------------------------------------------------------
+scenario("E22 parked dialog is never nudged", async () => {
+  const r = await runFlow({ name: "e22", config: "../test/configs/nudge-post.config.json",
+    scenario: "nudge-parked.cjs", budgetMs: 60000 });
+  ok("E22 not hung", !r.hung);
+  eq("E22 zero terminal sends", r.by("terminal send").length, 0);
+  ok("E22 parked warn present", /PARKED on a permission-rule confirmation/.test(r.out + r.err));
+  ok("E22 exit code (hard cap stop)", r.code === 1);
+});
+
 // N3 — default-off: an EMPTY notify template sends nothing and stays silent.
 // Baseline pin recorded BEFORE the engine feature lands; it must hold after.
 // ---------------------------------------------------------------------------
