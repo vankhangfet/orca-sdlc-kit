@@ -1871,14 +1871,27 @@ function maybeNudgeMidRun(m, v) {
 // vitals-recovered outcome) BEFORE settleMember, while the terminal is still
 // open. Artifact already ready (or no writes) => false, settle now. Nudgeable
 // => send the post-done nudge, stash the verdict, return true (member stays
-// in the wait set). Un-nudgeable paths return false with m.note set, and the
-// budget-exhausted path also sets m.outcome="failed" — callers settle with
+// in the wait set). Un-nudgeable paths return false with m.note set; only
+// budget exhaustion WITH delivered attempts sets m.outcome="failed" (we tried
+// and the worker did not comply) — an undeliverable nudge (count 0, e.g. a
+// mid-run send failure already closed the budget) is structurally
+// remedyless, so the ORIGINAL verdict stands. Callers settle with
 // (m.outcome || originalOutcome).
 function holdForNudge(m, outcome, done) {
   if (!m.step.writes || artifactReady(m.step.id)) return false;
   if (nudgeRetriesOf(m.step) <= 0) { m.note = "artifact missing (nudge disabled)"; return false; }
-  if (m.nudge.left <= 0) { m.note = `artifact missing after ${m.nudge.count} nudge(s)`; m.outcome = "failed"; return false; }
+  if (m.nudge.left <= 0) {
+    if (m.nudge.count > 0) { m.note = `artifact missing after ${m.nudge.count} nudge(s)`; m.outcome = "failed"; }
+    else m.note = "artifact missing (nudge undeliverable)";
+    return false;
+  }
   if (!nudgeTerminalOf(m)) { m.note = "artifact missing (no terminal to nudge)"; return false; }
+  // The one forbidden move is typing into a dialog that parked AFTER
+  // worker_done (folder-trust, CLI update): the bare Enter 3 s later would
+  // submit the dialog's default. Check the live preview before pasting.
+  const tinfo = pick(res(orca(["terminal", "show", "--terminal", m.terminal]).json), ["terminal"]) || {};
+  const parked = parkedPromptOf(pick(tinfo, ["preview"]) ?? null);
+  if (parked) { m.note = `artifact missing (terminal parked on ${parked.label})`; return false; }
   const ok = nudgeSend(m, `[orca-flow] Your session completed but the output file was not written — write your complete output to ${outPath(m.step.writes)} now (Markdown). Automated nudge; do not ask questions.`);
   if (!ok) { m.note = "artifact missing (nudge send failed)"; return false; }
   m.nudge.phase = "post-done";
@@ -1913,10 +1926,6 @@ function nudgePoll(m) {
   }
 }
 
-function nudgeInit(m) {
-  m.nudge = { left: nudgeRetriesOf(m.step), phase: null, sentAt: 0, count: 0, outcome: null, done: null };
-}
-
 // =============================================================================
 // Group execution: launch every member's worker, then ONE shared wait loop.
 // A single step is a group of one — semantics identical to the sequential
@@ -1943,7 +1952,8 @@ function launchMember(step) {
     hardCapMs: interactiveNow ? Math.max(baseHardMs, 14400000) : baseHardMs,
     sliceMs: Math.min(120000, maxIdleMs),
     startedAt: Date.now(), lastBusy: Date.now(), lastPreview: undefined,
-    quietWarned: false, parkedSeen: new Set(), parkedLabel: null, settled: false, done: null, note: "", outcome: null, nudge: null,
+    quietWarned: false, parkedSeen: new Set(), parkedLabel: null, settled: false, done: null, note: "", outcome: null,
+    nudge: { left: nudgeRetriesOf(step), phase: null, sentAt: 0, count: 0, outcome: null, done: null },
   };
 }
 
@@ -1981,7 +1991,6 @@ function settleMember(m, outcome, done) {
 function runGroup(members) {
   for (const s of members) statusBegin(s.id);
   const M = members.map(launchMember);
-  for (const m of M) nudgeInit(m);
   while (true) {
     const open = M.filter((m) => !m.settled);
     if (!open.length) break;

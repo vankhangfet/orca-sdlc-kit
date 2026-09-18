@@ -459,6 +459,36 @@ scenario("E19 nudge post-done recovery", async () => {
   eq("E19 status overall", r.status?.overall, "succeeded");
   ok("E19 recovered note", /artifact recovered via nudge \(1 sent\)/.test(r.status?.steps[0]?.note ?? ""));
   ok("E19 artifact exists", existsSync(join(r.wt, ".orca", "artifacts", "A.md")));
+  ok("E19 terminal closed at settlement", r.by("terminal close").length === 1);
+});
+
+// ---------------------------------------------------------------------------
+// E24 — a mid-run nudge send FAILURE closes the budget without a delivered
+// nudge; done-without-artifact then settles with the ORIGINAL outcome and an
+// "(nudge undeliverable)" note — never "failed after 0 nudge(s)".
+// ---------------------------------------------------------------------------
+scenario("E24 nudge undeliverable keeps original outcome", async () => {
+  const r = await runFlow({ name: "e24", config: "../test/configs/nudge-post.config.json",
+    scenario: "nudge-undeliverable.cjs", budgetMs: 60000 });
+  ok("E24 not hung", !r.hung);
+  eq("E24 exit code", r.code, 0);
+  ok("E24 a send was attempted", r.by("terminal send").length >= 1);
+  eq("E24 status overall", r.status?.overall, "succeeded");
+  ok("E24 undeliverable note", /artifact missing \(nudge undeliverable\)/.test(r.status?.steps[0]?.note ?? ""));
+});
+
+// ---------------------------------------------------------------------------
+// E25 — post-done nudge safety: a terminal parked on a dialog after
+// worker_done is NEVER typed into; the step keeps the original outcome.
+// ---------------------------------------------------------------------------
+scenario("E25 post-done parked terminal is not nudged", async () => {
+  const r = await runFlow({ name: "e25", config: "../test/configs/nudge-post.config.json",
+    scenario: "nudge-post-parked.cjs", budgetMs: 60000 });
+  ok("E25 not hung", !r.hung);
+  eq("E25 zero terminal sends", r.by("terminal send").length, 0);
+  eq("E25 exit code", r.code, 0);
+  eq("E25 status overall", r.status?.overall, "succeeded");
+  ok("E25 parked note", /artifact missing \(terminal parked on the folder-trust check\)/.test(r.status?.steps[0]?.note ?? ""));
 });
 
 // N3 — default-off: an EMPTY notify template sends nothing and stays silent.
