@@ -64,6 +64,7 @@ What makes this safe rather than a black box:
 
 - **Everything is left on disk.** Each step writes a Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result.
 - **Quality failures loop back.** Review, security or test failures send the coder back automatically, up to bounded retries.
+- **Nudge (auto-retry)** — a worker that finished (or stalled) without writing its artifact gets its terminal nudged to write it, before any expensive re-dispatch. `nudgeRetries` / `nudgeTimeoutMs`, per-step overridable, `0` disables. Parked dialogs are never touched.
 - **Every run is accounted for.** Per-step tokens (in / out / cache) go to `USAGE.md` in the artifacts dir and onto the status page. (Numbers for opencode, gemini, cursor, grok and kiro-cli steps are not available yet.)
 - **Results can reach your team.** Fill in `.orca/notify.json` and every step's verdict — plus the final run summary with a safe resume command — lands in Slack, Telegram, MS Teams or WhatsApp while the run is going (default off). [How](#notifications).
 
@@ -241,6 +242,7 @@ A `--from` resume continues the same picture, earlier steps keeping their origin
 - **Silence is not failure** — long quiet steps are waited on until they settle or hit their cap; only a definite FAIL verdict loops back.
 - **An agent is PARKED on a prompt** — answer it in that terminal; the run continues on its own.
 - **A step ran out of time** — the terminal stays open; re-run with the printed `--from <step>` command.
+- **`artifact missing after N nudge(s)`** — the worker acknowledged completion but never wrote the file, and N nudges to its terminal went unanswered. Inspect the step's terminal output, fix the cause (context too small, wrong output path in the agent's reply), and resume with `--from <step>`.
 
 Details and fixes (claude dialogs, EBADF crash, stale Orca state, version drift): [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 

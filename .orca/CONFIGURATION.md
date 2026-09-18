@@ -31,6 +31,8 @@ config field, with examples for common situations.
 | `defaults.sendAttempts` | number | no (default 3) | Max prompt deliveries into a warmed terminal before falling back to a cold `worker-start` |
 | `defaults.readinessRetries` | number | no (default 3) | How many times the readiness gate may re-run a producing step whose artifact is missing or undersized before stopping the run |
 | `defaults.readinessMinBytes` | number | no (default 200) | Minimum artifact file size for a step's `writes` to count as ready input for its consumers |
+| `defaults.nudgeRetries` | number | no (default 2) | Nudge budget per step per dispatch (per-step `nudgeRetries` overrides); `0` disables (see "Nudge" section) |
+| `defaults.nudgeTimeoutMs` | number | no (default 120000) | Idle threshold / post-nudge wait in ms (per-step `nudgeTimeoutMs` overrides; see "Nudge" section) |
 | `defaults.worktree` | string | no (default: auto-detect from the invoking directory) | Worktree selector where agents run. Leave unset for auto-detect (recommended — works whenever the flow is launched from inside an Orca-managed worktree). Pin (`name:lab2`, `path:C:\\...`) only when launching from OUTSIDE the target worktree. Per-run override: `--worktree <selector>`; per-machine: `ORCA_FLOW_WORKTREE` env. Precedence: flag > env > config > auto-detect. A pinned selector is validated before the run starts — a wrong pin fails fast with the available worktrees listed. |
 | `defaults.model` | string | no (default `"default"`) | Pipeline-wide model for every step; a step's own `model` overrides it. `"default"`/missing = keep each agent's own default model (no flag passed). See `model` under Step structure |
 | `defaults.openStatus` | boolean | no (default `true`) | Auto-open the run's live status page (`status.html` in the worktree's artifacts dir) in your browser when a real run starts. Dry-runs never write or open it. Per-run off-switch: `--no-open-status` (flag wins over config) |
@@ -54,6 +56,41 @@ transitive: if a missing producer itself has missing inputs, the whole chain
 is re-generated in pipeline order first.
 Reads of `enabled: false` steps are exempt — a disabled step's output is an
 optional input that the config contract auto-removes (see section 2).
+
+### Nudge (auto-retry for missing artifacts)
+
+When a worker finishes — or stalls — without writing its declared artifact,
+the flow nudges that worker's own terminal to write it, reusing the warm
+session instead of paying a full re-dispatch.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `nudgeRetries` | `2` | total nudge budget per step per dispatch (both triggers share it); `0` disables nudging for the step |
+| `nudgeTimeoutMs` | `120000` | mid-run: how frozen + heartbeat-stale before a nudge; post-done: how long to wait for the file after each nudge |
+
+Both accept per-step overrides (`step.nudgeRetries`, `step.nudgeTimeoutMs`),
+validated at load (non-negative integers; the timeout must be positive).
+
+Two triggers:
+- **Mid-run** — preview frozen >= `nudgeTimeoutMs` AND dispatch heartbeat stale >= `nudgeTimeoutMs` (fallback: frozen preview alone when the host reports no heartbeat), artifact missing, no `worker_done` yet. Sends "your response appears truncated — write your complete output to <path> now".
+- **Post-settlement** — `worker_done` arrived but the artifact is missing. Sends "your session completed but the output file was not written — write it to <path> now" and keeps the terminal open.
+
+"Missing" reuses the readiness definition: file absent or `< readinessMinBytes`.
+
+Outcome rules: file recovered -> the step settles with the worker's original
+outcome (note `artifact recovered via N nudge(s)`); budget exhausted or hard
+cap during the post-done wait -> `failed` (`artifact missing after N
+nudge(s)`), flowing into `onFailGoto` fix loops or the `--from` resume hint.
+Structurally-remedyless paths keep the original outcome with an
+`artifact missing (...)` note — `(nudge disabled)`, `(nudge undeliverable)`
+(a send attempt failed), `(no terminal to nudge)`, or `(terminal parked on
+<label>)` — the consumer-side readiness gate remains the safety net there.
+Mid-run nudges never fail a step by themselves; an exhausted mid-run budget
+just resumes legacy wait semantics.
+
+Safety: a terminal parked on a permission / folder-trust / update dialog is
+NEVER nudged — on either trigger the flow checks the rendered preview first
+and never types into a dialog only a human may answer.
 
 ## 2. Step structure
 
