@@ -1,0 +1,10 @@
+{
+  "defaults": {
+    "timeoutMs": 2000, "hardTimeoutMs": 10000,
+    "startRetryDelayMs": 200, "warmupTimeoutMs": 5000, "startGraceMs": 3000,
+    "nudgeRetries": 0, "nudgeTimeoutMs": 3000
+  },
+  "pipeline": [
+    { "id": "alpha", "title": "Alpha", "agent": "stub", "spec": "Write {out}.", "writes": "A.md" }
+  ]
+}

@@ -537,6 +537,21 @@ scenario("E22 parked dialog is never nudged", async () => {
   ok("E22 exit code (hard cap stop)", r.code === 1);
 });
 
+// ---------------------------------------------------------------------------
+// E23 — nudgeRetries: 0 disables nudging for the step: done-without-artifact
+// settles with the ORIGINAL outcome (legacy) and a "(nudge disabled)" note;
+// zero terminal sends. The consumer-side readiness gate remains the net.
+// ---------------------------------------------------------------------------
+scenario("E23 nudgeRetries 0 disables nudging", async () => {
+  const r = await runFlow({ name: "e23", config: "../test/configs/nudge-off.config.json",
+    scenario: "nudge-exhaust.cjs", budgetMs: 45000 });
+  ok("E23 not hung", !r.hung);
+  eq("E23 exit code", r.code, 0);
+  eq("E23 zero terminal sends", r.by("terminal send").length, 0);
+  eq("E23 status overall", r.status?.overall, "succeeded");
+  ok("E23 disabled note", /artifact missing \(nudge disabled\)/.test(r.status?.steps[0]?.note ?? ""));
+});
+
 // N3 — default-off: an EMPTY notify template sends nothing and stays silent.
 // Baseline pin recorded BEFORE the engine feature lands; it must hold after.
 // ---------------------------------------------------------------------------
