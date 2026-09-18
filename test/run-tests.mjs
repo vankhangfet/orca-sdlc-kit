@@ -73,9 +73,9 @@ let hungInCurrentScenario = false;
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
 // NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
-async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000, notify = null }) {
-  const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
-  dirsOfCurrentScenario.push(dir);
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000, notify = null, reuseDir = null }) {
+  const dir = reuseDir ?? mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
+  if (!dirsOfCurrentScenario.includes(dir)) dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
   mkdirSync(join(wt, ".orca", "artifacts"), { recursive: true });
   mkdirSync(home, { recursive: true });
