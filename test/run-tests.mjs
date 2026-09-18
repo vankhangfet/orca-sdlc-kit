@@ -14,7 +14,7 @@
 // Run: node test/run-tests.mjs [--only <substring>]
 // (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -504,6 +504,28 @@ scenario("E26 re-nudge spared when terminal reparks", async () => {
   eq("E26 exactly one nudge text (re-nudge suppressed)", textSends.length, 1);
   eq("E26 status overall", r.status?.overall, "succeeded");
   ok("E26 parked note", /artifact missing \(terminal parked on the folder-trust check\)/.test(r.status?.steps[0]?.note ?? ""));
+});
+
+// ---------------------------------------------------------------------------
+// E27 — run history: starting a NEW run snapshots the previous run's flat
+// artifacts into runs/<seq>-<ts>/ (copy, not move — flat files stay for
+// readiness/resume). A marker written between runs discriminates the
+// archived copy from the run-2 overwrite.
+// ---------------------------------------------------------------------------
+scenario("E27 archive previous run on new run", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e27", config: cfg });
+  ok("E27 run1 ok", r1.code === 0 && !r1.hung);
+  writeFileSync(join(r1.wt, ".orca", "artifacts", "A.md"), "RUN1 MARKER\n");
+  const r2 = await runFlow({ name: "e27", config: cfg, reuseDir: r1.dir });
+  ok("E27 run2 ok", r2.code === 0 && !r2.hung);
+  const runsRoot = join(r2.wt, ".orca", "artifacts", "runs");
+  const entries = existsSync(runsRoot) ? readdirSync(runsRoot) : [];
+  eq("E27 exactly one archive folder", entries.length, 1);
+  ok("E27 folder named seq-ts", /^0001-\d{8}-\d{6}$/.test(entries[0] ?? ""));
+  eq("E27 archived A.md holds the marker", readFileSync(join(runsRoot, entries[0], "A.md"), "utf8"), "RUN1 MARKER\n");
+  ok("E27 archived status.js exists", existsSync(join(runsRoot, entries[0], "status.js")));
+  ok("E27 flat A.md overwritten by run 2", !/RUN1 MARKER/.test(readFileSync(join(r2.wt, ".orca", "artifacts", "A.md"), "utf8")));
 });
 
 // ---------------------------------------------------------------------------

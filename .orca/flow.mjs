@@ -47,7 +47,7 @@
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdirSync, existsSync, writeFileSync, readdirSync, statSync, appendFileSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync, writeFileSync, readdirSync, copyFileSync, statSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -497,6 +497,41 @@ function writeStatus() {
     warn(`status page write failed (${e.message}); continuing without it.`);
   }
 }
+
+// --- Run history: each NEW run snapshots the previous run's flat artifacts
+// into <ART_DIR>/runs/<seq>-<timestamp>/ (COPY — flat files stay in place so
+// readiness/--from resume semantics are untouched). Failures warn and never
+// block a run. Subdirectories (runs/ itself) are skipped.
+function nextRunDirName() {
+  const runsRoot = join(WT_DIR || ".", ART_DIR, "runs");
+  let max = 0;
+  try { for (const e of readdirSync(runsRoot)) { const m = /^(\d{4})-/.exec(e); if (m) max = Math.max(max, Number(m[1])); } } catch { }
+  const t = new Date(), p2 = (n) => String(n).padStart(2, "0");
+  const stamp = `${t.getFullYear()}${p2(t.getMonth() + 1)}${p2(t.getDate())}-${p2(t.getHours())}${p2(t.getMinutes())}${p2(t.getSeconds())}`;
+  return { runsRoot, name: String(max + 1).padStart(4, "0") + "-" + stamp };
+}
+function copyRunFiles(srcDir, destDir, label) {
+  let copied = 0;
+  try {
+    mkdirSync(destDir, { recursive: true });
+    for (const e of readdirSync(srcDir, { withFileTypes: true })) {
+      if (!e.isFile()) continue;
+      try { copyFileSync(join(srcDir, e.name), join(destDir, e.name)); copied++; }
+      catch (e2) { warn(`[history] could not copy ${e.name} ${label}: ${e2.message}`); }
+    }
+  } catch (e) { warn(`[history] ${label} failed: ${e.message}`); }
+  return copied;
+}
+function archiveCurrentRun() {
+  const artDir = join(WT_DIR || ".", ART_DIR);
+  let hasFiles = false;
+  try { hasFiles = readdirSync(artDir, { withFileTypes: true }).some((e) => e.isFile()); } catch { return; }
+  if (!hasFiles) return;                       // first run: nothing to snapshot
+  const { runsRoot, name } = nextRunDirName();
+  const n = copyRunFiles(artDir, join(runsRoot, name), "(archive)");
+  if (n > 0) log(`[history] archived previous run's artifacts -> ${ART_DIR}/runs/${name}/`);
+}
+
 const statusOf = (id) => STATUS.steps.find((x) => x.id === id) || null;
 function statusSet(id, patch) { const st = statusOf(id); if (st) Object.assign(st, patch); }
 function statusBegin(id) {
@@ -1705,6 +1740,7 @@ if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
 resolveWorktree();          // hard-fail here if still unresolved
 const WT_DIR = resolveWorktreePath();
 mkdirSync(join(WT_DIR || ".", ART_DIR), { recursive: true });
+archiveCurrentRun();
 if (!orca(["status"]).ok) die("Orca runtime not ready (orca status failed).");
 
 log(`Creating Run: ${objective}`);
