@@ -14,6 +14,8 @@
     "worktree": null,
     "model": "default",
     "readinessRetries": 3,
+    "nudgeRetries": 2,
+    "nudgeTimeoutMs": 120000,
     "readinessMinBytes": 200
   },
   "pipeline": [
