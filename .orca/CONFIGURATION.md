@@ -95,6 +95,10 @@ Safety: a terminal parked on a permission / folder-trust / update dialog is
 NEVER nudged — on either trigger the flow checks the rendered preview first
 and never types into a dialog only a human may answer.
 
+Manual-mode `interactive` steps (interviews) sit quiet for minutes by design;
+the double idle-evidence gate usually excludes them, but for such steps
+consider a per-step `nudgeTimeoutMs` raise or `nudgeRetries: 0`.
+
 ## 2. Step structure
 
 ```jsonc

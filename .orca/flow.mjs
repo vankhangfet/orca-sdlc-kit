@@ -1917,6 +1917,17 @@ function nudgePoll(m) {
   }
   if (Date.now() - m.nudge.sentAt >= nudgeTimeoutOf(m.step)) {
     if (m.nudge.left > 0) {
+      // Same live-preview parked guard as the first post-done send: a dialog
+      // may have parked BETWEEN nudges (the agent's write attempt can trip a
+      // permissions.ask rule that survives bypassPermissions). Never type
+      // into it — settle with the original outcome per the remedyless rule.
+      const tinfo = pick(res(orca(["terminal", "show", "--terminal", m.terminal]).json), ["terminal"]) || {};
+      const parked = parkedPromptOf(pick(tinfo, ["preview"]) ?? null);
+      if (parked) {
+        m.note = `artifact missing (terminal parked on ${parked.label})`;
+        settleMember(m, m.nudge.outcome || "succeeded", m.nudge.done);
+        return;
+      }
       if (!nudgeSend(m, `[orca-flow] Still missing ${outPath(m.step.writes)} — write your complete output now. (automated nudge ${m.nudge.count + 1}/${nudgeRetriesOf(m.step)})`))
         m.nudge.left = 0;
     } else {

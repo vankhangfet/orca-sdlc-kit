@@ -492,6 +492,21 @@ scenario("E25 post-done parked terminal is not nudged", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E26 — post-done RE-nudge safety: a dialog that parks BETWEEN nudges is
+// never typed into; the step keeps the original outcome (parked note).
+// ---------------------------------------------------------------------------
+scenario("E26 re-nudge spared when terminal reparks", async () => {
+  const r = await runFlow({ name: "e26", config: "../test/configs/nudge-post.config.json",
+    scenario: "nudge-post-reparked.cjs", budgetMs: 60000 });
+  ok("E26 not hung", !r.hung);
+  eq("E26 exit code", r.code, 0);
+  const textSends = r.by("terminal send").filter((cx) => String(cx.flags.text ?? "").includes("[orca-flow]"));
+  eq("E26 exactly one nudge text (re-nudge suppressed)", textSends.length, 1);
+  eq("E26 status overall", r.status?.overall, "succeeded");
+  ok("E26 parked note", /artifact missing \(terminal parked on the folder-trust check\)/.test(r.status?.steps[0]?.note ?? ""));
+});
+
+// ---------------------------------------------------------------------------
 // E20 — nudge budget exhaustion: worker_done(succeeded) but no artifact and
 // the terminal never complies => exactly nudgeRetries nudges, then the step
 // settles FAILED (the artifact file is ground truth, not worker_done).
