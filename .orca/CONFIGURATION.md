@@ -78,13 +78,16 @@ Two triggers:
 "Missing" reuses the readiness definition: file absent or `< readinessMinBytes`.
 
 Outcome rules: file recovered -> the step settles with the worker's original
-outcome (note `artifact recovered via N nudge(s)`); budget exhausted or hard
-cap during the post-done wait -> `failed` (`artifact missing after N
-nudge(s)`), flowing into `onFailGoto` fix loops or the `--from` resume hint.
+outcome (note `artifact recovered via nudge (N sent)`); budget exhausted
+during the post-done wait -> `failed` (`artifact missing after N nudge(s)`);
+hard cap during the post-done wait -> `failed` (`artifact still missing after
+hard cap`), flowing into `onFailGoto` fix loops or the `--from` resume hint.
 Structurally-remedyless paths keep the original outcome with an
 `artifact missing (...)` note — `(nudge disabled)`, `(nudge undeliverable)`
-(a send attempt failed), `(no terminal to nudge)`, or `(terminal parked on
-<label>)` — the consumer-side readiness gate remains the safety net there.
+(the budget closed with zero nudges delivered — a mid-run send failure),
+`(nudge send failed)` (the post-done send itself failed), `(no terminal to
+nudge)`, or `(terminal parked on <label>)` — the consumer-side readiness
+gate remains the safety net there.
 Mid-run nudges never fail a step by themselves; an exhausted mid-run budget
 just resumes legacy wait semantics.
 
