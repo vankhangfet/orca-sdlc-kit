@@ -74,6 +74,8 @@
       "title": "UI/UX Design (mockscreen)",
       "enabled": true,
       "agent": "claude",
+      "timeoutMs": 1800000,
+      "hardTimeoutMs": 7200000,
       "parallelWith": "detailed-design",
       "writes": "UIUX_MOCKS.md",
       "reads": [
