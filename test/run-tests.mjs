@@ -598,6 +598,47 @@ scenario("F9 --from must name an enabled step", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// I — installer (bin/init.mjs, the npx entry). I1 runs it for real in an empty
+// temp "user project" — the exact repro of the v2.0.0 ENOENT (the whitelist
+// gained .orca/workflow-template/* files but only .orca itself was mkdir'd).
+// I2 guards the documented invariant: FILES must mirror package.json "files"
+// (a drift either corrupts the package or makes init die on a missing source).
+// ---------------------------------------------------------------------------
+async function runInit({ name, args = [], budgetMs = 15000 }) {
+  const dir = mkdtempSync(join(tmpdir(), `orca-init-${name}-`));
+  dirsOfCurrentScenario.push(dir);
+  const child = spawn(NODE, [join(REPO, "bin", "init.mjs"), ...args], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+  let out = ""; let err = ""; let hung = false;
+  const timer = setTimeout(() => { hung = true; hungInCurrentScenario = true; child.kill(); }, budgetMs);
+  child.stdout.on("data", (d) => (out += d));
+  child.stderr.on("data", (d) => (err += d));
+  const code = await new Promise((r) => child.on("exit", (c) => r(c)));
+  clearTimeout(timer);
+  return { code, out, err, hung, dir };
+}
+
+scenario("I1 installer (empty project: every whitelisted file lands)", async () => {
+  const r = await runInit({ name: "i1" });
+  ok("I1 not hung", !r.hung);
+  eq("I1 exit code", r.code, 0);
+  ok("I1 no copy failure", !/copy failed/.test(r.out + r.err), (r.out + r.err).trim());
+  for (const f of ["flow.mjs", "flow.config.json", "fixbug.config.json", "cr.config.json", "CONFIGURATION.md", "README.md", "notify.json",
+    "workflow-template/README.md", "workflow-template/sdlc.config.json", "workflow-template/fixbug.config.json", "workflow-template/cr.config.json"])
+    ok(`I1 installed .orca/${f}`, existsSync(join(r.dir, ".orca", f)));
+  ok("I1 installed orca.yaml", existsSync(join(r.dir, "orca.yaml")));
+  ok("I1 .gitignore got the artifacts line", readFileSync(join(r.dir, ".gitignore"), "utf8").includes(".orca/artifacts/"));
+});
+
+scenario("I2 FILES whitelist mirrors package.json files", async () => {
+  const src = readFileSync(join(REPO, "bin", "init.mjs"), "utf8");
+  const files = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).files
+    .filter((f) => f !== "bin/").sort();
+  const whitelist = src.slice(src.indexOf("const FILES = ["), src.indexOf("];", src.indexOf("const FILES = [")))
+    .match(/"[^"]+"/g)?.map((s) => s.slice(1, -1)).sort() ?? [];
+  eq("I2 whitelist matches package.json files", whitelist, files);
+});
+
+// ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();
   for (const s of scenarios) {

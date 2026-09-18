@@ -44,11 +44,13 @@ const missing = FILES.filter((f) => !existsSync(join(KIT_ROOT, f)));
 if (missing.length) die(`corrupt package — missing: ${missing.join(", ")}`);
 
 // --- Copy whitelist into CWD ---
-mkdirSync(".orca", { recursive: true });
+// writeFileSync creates no parent dirs, so mkdir each file's dir (recursive
+// covers .orca, .orca/workflow-template, and "." for root files like orca.yaml).
 const copied = [], skipped = [];
 try {
   for (const f of FILES) {
     if (existsSync(f) && !force) { skipped.push(f); continue; }
+    mkdirSync(dirname(f), { recursive: true });
     writeFileSync(f, readFileSync(join(KIT_ROOT, f)));   // Buffer copy = byte-exact
     copied.push(f);
   }
