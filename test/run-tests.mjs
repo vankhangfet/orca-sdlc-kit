@@ -507,6 +507,22 @@ scenario("E20 nudge exhausted settles failed", async () => {
   ok("E20 exhaustion note", /artifact missing after 2 nudge\(s\)/.test(r.status?.steps[0]?.note ?? ""));
 });
 
+// ---------------------------------------------------------------------------
+// E21 — mid-run nudge: frozen preview + stale heartbeat + missing artifact +
+// no worker_done => nudge fires; the recovered worker_done then settles the
+// step succeeded. Pins the double-idle-evidence path.
+// ---------------------------------------------------------------------------
+scenario("E21 nudge mid-run idle recovery", async () => {
+  const r = await runFlow({ name: "e21", config: "../test/configs/nudge-post.config.json",
+    scenario: "nudge-midrun.cjs", budgetMs: 60000 });
+  ok("E21 not hung", !r.hung);
+  eq("E21 exit code", r.code, 0);
+  const textSends = r.by("terminal send").filter((cx) => String(cx.flags.text ?? "").includes("[orca-flow]"));
+  eq("E21 exactly one nudge text", textSends.length, 1);
+  eq("E21 status overall", r.status?.overall, "succeeded");
+  ok("E21 artifact exists", existsSync(join(r.wt, ".orca", "artifacts", "A.md")));
+});
+
 // N3 — default-off: an EMPTY notify template sends nothing and stays silent.
 // Baseline pin recorded BEFORE the engine feature lands; it must hold after.
 // ---------------------------------------------------------------------------
