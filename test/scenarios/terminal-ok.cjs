@@ -35,6 +35,11 @@ module.exports = {
         c.state.extra.doneFor ||= {};
         if (c.state.extra.doneFor[task]) return c.ok({ messages: [] });
         c.state.extra.doneFor[task] = true;
+        // A worker that actually RAN the preamble writes its declared artifact
+        // (same contract as the default worker-start handler) — without this
+        // the nudge engine correctly holds the step post-done for the missing
+        // file and E2 would grind to the hard cap instead of settling green.
+        c.materialize(c.state.tasks[task] || {}, "succeeded");
         return c.ok({ deliveryId: "dlv-" + c.id(),
           messages: [{ type: "worker_done", taskId: task, payload: JSON.stringify({ outcome: "succeeded" }) }] });
       }

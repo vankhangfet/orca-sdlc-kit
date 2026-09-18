@@ -204,7 +204,10 @@ scenario("E7 fail-retry (onFailGoto reopens the fix target once)", async () => {
   const r = await runFlow({ name: "e7", config: "../test/configs/retry.config.json", scenario: "reviewer-fail-once.cjs", budgetMs: 90000 });
   ok("E7 not hung", !r.hung);
   eq("E7 exit code", r.code, 0);
-  ok("E7 fail jump logged", /\[fail\] Reviewer FAILED -> back to "Coder" \(attempt 1\/1\)/.test(r.out + r.err));
+  // Optional note segment: since the nudge engine (v2.1.0 spec, decision table
+  // "No resolvable terminal"), a failed step with a missing artifact carries
+  // e.g. "(artifact missing (no terminal to nudge))" — outcome stays original.
+  ok("E7 fail jump logged", /\[fail\] Reviewer FAILED( \(.*\))? -> back to "Coder" \(attempt 1\/1\)/.test(r.out + r.err));
   eq("E7 one task-create per step (no double dispatch)", r.by("orchestration task-create").length, 2);
   const reopens = r.by("orchestration task-update").filter((c) => c.flags.status === "ready");
   ok("E7 target reopened", reopens.length >= 1);
@@ -437,6 +440,25 @@ scenario("E18 readiness-skips-disabled (shipped config, fresh worktree, no promp
   eq("E18 grill stays skipped", r.status?.steps.find((s) => s.id === "grill")?.status, "skipped");
   ok("E18 planning dispatched", r.calls.some((c) => c.cmd === "orchestration task-create" && String(c.flags.spec ?? "").includes("# Planning")));
   ok("E18 pipeline complete", /Pipeline COMPLETE/.test(r.out));
+});
+
+// ---------------------------------------------------------------------------
+// E19 — nudge post-done recovery: worker_done(succeeded) but no artifact =>
+// nudge the terminal; the file appears; the step settles with the ORIGINAL
+// outcome and a recovered note. A further worker_done while held must not
+// settle a member whose file was missing.
+// ---------------------------------------------------------------------------
+scenario("E19 nudge post-done recovery", async () => {
+  const r = await runFlow({ name: "e19", config: "../test/configs/nudge-post.config.json",
+    scenario: "nudge-recover.cjs", budgetMs: 60000 });
+  ok("E19 not hung", !r.hung);
+  eq("E19 exit code", r.code, 0);
+  const textSends = r.by("terminal send").filter((cx) => String(cx.flags.text ?? "").includes("[orca-flow]"));
+  eq("E19 exactly one nudge text", textSends.length, 1);
+  ok("E19 nudge names the artifact path", /\.orca\/artifacts\/A\.md/.test(String(textSends[0]?.flags.text ?? "")));
+  eq("E19 status overall", r.status?.overall, "succeeded");
+  ok("E19 recovered note", /artifact recovered via nudge \(1 sent\)/.test(r.status?.steps[0]?.note ?? ""));
+  ok("E19 artifact exists", existsSync(join(r.wt, ".orca", "artifacts", "A.md")));
 });
 
 // N3 — default-off: an EMPTY notify template sends nothing and stays silent.

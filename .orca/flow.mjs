@@ -140,6 +140,8 @@ const DEFAULT_TIMEOUT = cfg.defaults?.timeoutMs ?? 900000;
 // missing producer up to readinessRetries times before stopping.
 const READINESS_RETRIES = cfg.defaults?.readinessRetries ?? 3;
 const READINESS_MIN_BYTES = cfg.defaults?.readinessMinBytes ?? 200;
+const nudgeRetriesOf = (step) => step.nudgeRetries ?? cfg.defaults?.nudgeRetries ?? 2;
+const nudgeTimeoutOf = (step) => step.nudgeTimeoutMs ?? cfg.defaults?.nudgeTimeoutMs ?? 120000;
 const outPath = (file) => `${ART_DIR}/${file}`;
 
 // --- Normalize pipeline: keep enabled steps, build id->step map ---
@@ -1760,7 +1762,7 @@ function outcomeOf(done) {
 // lastOutputAt serve as fallback when no preview is available. Settlement:
 // dispatch.status failed => "failed"; completed => the task record's outcome.
 function workerVitals(taskId, terminal, dispatchId) {
-  const v = { status: null, settled: false, outcome: null, lastBusyMs: 0, preview: null };
+  const v = { status: null, settled: false, outcome: null, lastBusyMs: 0, heartbeatMs: 0, preview: null };
   const d = orca(["orchestration", "dispatch-show", "--task", taskId]);
   const dd = pick(res(d.json), ["dispatch"]) || {};
   v.status = pick(dd, ["status"]);
@@ -1768,7 +1770,7 @@ function workerVitals(taskId, terminal, dispatchId) {
   if (beat) {
     const norm = beat.includes("T") ? beat : beat.replace(" ", "T") + (beat.endsWith("Z") ? "" : "Z");
     const t = Date.parse(norm);
-    if (!Number.isNaN(t)) v.lastBusyMs = t;
+    if (!Number.isNaN(t)) { v.lastBusyMs = t; v.heartbeatMs = t; }
   }
   let tinfo = null;
   if (terminal) {
@@ -1813,6 +1815,109 @@ const parkedPromptOf = (preview) =>
     : null;
 
 // =============================================================================
+// Nudge: auto-retry for missing artifacts (spec: docs/superpowers/specs/
+// 2026-09-18-nudge-auto-retry-design.md). One shared budget per step per
+// dispatch, two triggers: mid-run idle (frozen preview + stale dispatch
+// heartbeat, never while parked on a dialog) and post-settlement
+// (worker_done with the artifact still missing). The artifact file is ground
+// truth (readiness definition: exists and >= readinessMinBytes).
+// =============================================================================
+
+// m.terminal may be null on the cold path — resolve (and cache) the worker's
+// terminal id from the dispatch. Returns null when the host exposes none.
+function nudgeTerminalOf(m) {
+  if (m.terminal) return m.terminal;
+  if (!m.dispatchId) return null;
+  const t = pick(res(orca(["orchestration", "worker-show", "--dispatch", m.dispatchId]).json), ["terminal"]) || {};
+  const id = pick(t, ["id", "terminalId", "terminal_id"]);
+  if (id) m.terminal = id;
+  return id || null;
+}
+
+// Deliver one nudge. Same paste-chip defense as the start ladder: send, then
+// a bare Enter 3 s later. Our own paste rewrites the preview, which resets
+// m.lastBusy — attempts are naturally spaced by nudgeTimeoutMs.
+function nudgeSend(m, text) {
+  const s = orca(["terminal", "send", "--terminal", m.terminal, "--text", text, "--enter"]);
+  if (!s.ok) { warn(`nudge send '${m.step.title}' failed: ${s.stderr || s.raw}`); return false; }
+  sleepMs(3000);
+  orca(["terminal", "send", "--terminal", m.terminal, "--text", "", "--enter"]);
+  m.nudge.left--; m.nudge.count++; m.nudge.sentAt = Date.now();
+  m.lastBusy = Date.now();
+  warn(`[nudge] ${m.nudge.count}/${nudgeRetriesOf(m.step)} sent to "${m.step.title}" (artifact \`${outPath(m.step.writes)}\` missing)`);
+  statusSet(m.step.id, { note: `nudged (${m.nudge.count}/${nudgeRetriesOf(m.step)}) — asked the agent to write ${outPath(m.step.writes)}` });
+  writeStatus();
+  return true;
+}
+
+// Mid-run trigger: called per slice AFTER the parked check (3b). Returns true
+// when a nudge went out. Safety: never fires while parked on a dialog, and
+// demands double idle evidence — preview frozen >= nudgeTimeoutMs AND the
+// dispatch heartbeat stale >= nudgeTimeoutMs (heartbeat unavailable => the
+// frozen preview alone qualifies, per spec fallback).
+function maybeNudgeMidRun(m, v) {
+  if (m.nudge.phase || m.nudge.left <= 0) return false;
+  if (!m.step.writes || artifactReady(m.step.id)) return false;
+  if (v.preview == null || parkedPromptOf(v.preview)) return false;
+  if (Date.now() - m.lastBusy < nudgeTimeoutOf(m.step)) return false;
+  if (v.heartbeatMs > 0 && Date.now() - v.heartbeatMs < nudgeTimeoutOf(m.step)) return false;
+  if (!nudgeTerminalOf(m)) return false;
+  const ok = nudgeSend(m, `[orca-flow] Your response appears truncated — write your complete output to ${outPath(m.step.writes)} now (Markdown). Automated nudge; do not ask questions.`);
+  if (!ok) m.nudge.left = 0;   // undeliverable: stop trying, legacy semantics resume
+  return ok;
+}
+
+// Settlement routing: called with the verdict (worker_done message or
+// vitals-recovered outcome) BEFORE settleMember, while the terminal is still
+// open. Artifact already ready (or no writes) => false, settle now. Nudgeable
+// => send the post-done nudge, stash the verdict, return true (member stays
+// in the wait set). Un-nudgeable paths return false with m.note set, and the
+// budget-exhausted path also sets m.outcome="failed" — callers settle with
+// (m.outcome || originalOutcome).
+function holdForNudge(m, outcome, done) {
+  if (!m.step.writes || artifactReady(m.step.id)) return false;
+  if (nudgeRetriesOf(m.step) <= 0) { m.note = "artifact missing (nudge disabled)"; return false; }
+  if (m.nudge.left <= 0) { m.note = `artifact missing after ${m.nudge.count} nudge(s)`; m.outcome = "failed"; return false; }
+  if (!nudgeTerminalOf(m)) { m.note = "artifact missing (no terminal to nudge)"; return false; }
+  const ok = nudgeSend(m, `[orca-flow] Your session completed but the output file was not written — write your complete output to ${outPath(m.step.writes)} now (Markdown). Automated nudge; do not ask questions.`);
+  if (!ok) { m.note = "artifact missing (nudge send failed)"; return false; }
+  m.nudge.phase = "post-done";
+  m.nudge.outcome = outcome;
+  m.nudge.done = done;
+  return true;
+}
+
+// Post-done phase machine, called per slice. Ready => settle with the
+// ORIGINAL outcome and a recovered note; each nudgeTimeoutMs without the
+// file spends another attempt; exhausted or hard-capped => settle failed
+// (we hold a verdict — still-running is reserved for the no-verdict case).
+function nudgePoll(m) {
+  if (artifactReady(m.step.id)) {
+    m.note = `artifact recovered via nudge (${m.nudge.count} sent)`;
+    settleMember(m, m.nudge.outcome || "succeeded", m.nudge.done);
+    return;
+  }
+  if (Date.now() - m.startedAt >= m.hardCapMs) {
+    m.note = "artifact still missing after hard cap";
+    settleMember(m, "failed", m.nudge.done);
+    return;
+  }
+  if (Date.now() - m.nudge.sentAt >= nudgeTimeoutOf(m.step)) {
+    if (m.nudge.left > 0) {
+      if (!nudgeSend(m, `[orca-flow] Still missing ${outPath(m.step.writes)} — write your complete output now. (automated nudge ${m.nudge.count + 1}/${nudgeRetriesOf(m.step)})`))
+        m.nudge.left = 0;
+    } else {
+      m.note = `artifact missing after ${m.nudge.count} nudge(s)`;
+      settleMember(m, "failed", m.nudge.done);
+    }
+  }
+}
+
+function nudgeInit(m) {
+  m.nudge = { left: nudgeRetriesOf(m.step), phase: null, sentAt: 0, count: 0, outcome: null, done: null };
+}
+
+// =============================================================================
 // Group execution: launch every member's worker, then ONE shared wait loop.
 // A single step is a group of one — semantics identical to the sequential
 // runner. The critical difference from a per-step loop: the run-scoped
@@ -1838,7 +1943,7 @@ function launchMember(step) {
     hardCapMs: interactiveNow ? Math.max(baseHardMs, 14400000) : baseHardMs,
     sliceMs: Math.min(120000, maxIdleMs),
     startedAt: Date.now(), lastBusy: Date.now(), lastPreview: undefined,
-    quietWarned: false, parkedSeen: new Set(), parkedLabel: null, settled: false, done: null, note: "", outcome: null,
+    quietWarned: false, parkedSeen: new Set(), parkedLabel: null, settled: false, done: null, note: "", outcome: null, nudge: null,
   };
 }
 
@@ -1876,6 +1981,7 @@ function settleMember(m, outcome, done) {
 function runGroup(members) {
   for (const s of members) statusBegin(s.id);
   const M = members.map(launchMember);
+  for (const m of M) nudgeInit(m);
   while (true) {
     const open = M.filter((m) => !m.settled);
     if (!open.length) break;
@@ -1896,13 +2002,18 @@ function runGroup(members) {
         log(`  [${ty}] ${pick(msg, ["subject"]) || ""}`);
     }
     for (const m of open) {
+      if (m.nudge.phase === "post-done") { nudgePoll(m); continue; }
       // 1) Fast path: a worker_done message attributable to THIS member.
       const wd = msgs.find((msg) => {
         if (pick(msg, ["type"]) !== "worker_done") return false;
         const mt = taskOfMsg(msg);
         return mt === m.taskId || (mt == null && open.length === 1);
       });
-      if (wd) { settleMember(m, outcomeOf(wd) || "unknown", wd); continue; }
+      if (wd) {
+        const out = outcomeOf(wd) || "unknown";
+        if (!holdForNudge(m, out, wd)) settleMember(m, m.outcome || out, wd);
+        continue;
+      }
       // 2) Authoritative per-task settlement.
       const v = workerVitals(m.taskId, m.terminal, m.dispatchId);
       if (v.settled) {
@@ -1915,8 +2026,9 @@ function runGroup(members) {
         const drained = (pick(dr, ["messages", "msgs"]) || [])
           .find((msg) => pick(msg, ["type"]) === "worker_done" && taskOfMsg(msg) === m.taskId) || null;
         if (drid) orca(["orchestration", "check", "--run", RUN_ID, "--ack", drid]);
-        settleMember(m, (drained && outcomeOf(drained)) || v.outcome || "unknown",
-          drained || { payload: JSON.stringify({ outcome: v.outcome }) });
+        const vout = (drained && outcomeOf(drained)) || v.outcome || "unknown";
+        const vdone = drained || { payload: JSON.stringify({ outcome: v.outcome }) };
+        if (!holdForNudge(m, vout, vdone)) settleMember(m, m.outcome || vout, vdone);
         continue;
       }
       // 3) Liveness/freshness per member (identical to the sequential loop):
@@ -1947,6 +2059,7 @@ function runGroup(members) {
           statusSet(m.step.id, { note: `parked on ${parked.label} — answer it in the terminal` });
         }
       }
+      maybeNudgeMidRun(m, v);
       const silenceMs = Date.now() - m.lastBusy;
       // Hard cap first: absolute per-member limit, busy or quiet.
       if (Date.now() - m.startedAt >= m.hardCapMs) {
