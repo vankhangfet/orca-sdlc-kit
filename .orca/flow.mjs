@@ -140,7 +140,7 @@ const DEFAULT_TIMEOUT = cfg.defaults?.timeoutMs ?? 900000;
 // missing producer up to readinessRetries times before stopping.
 const READINESS_RETRIES = cfg.defaults?.readinessRetries ?? 3;
 const READINESS_MIN_BYTES = cfg.defaults?.readinessMinBytes ?? 200;
-const nudgeRetriesOf = (step) => step.nudgeRetries ?? cfg.defaults?.nudgeRetries ?? 2;
+const nudgeRetriesOf = (step) => step.nudgeRetries ?? cfg.defaults?.nudgeRetries ?? 0;
 const nudgeTimeoutOf = (step) => step.nudgeTimeoutMs ?? cfg.defaults?.nudgeTimeoutMs ?? 120000;
 const outPath = (file) => `${ART_DIR}/${file}`;
 

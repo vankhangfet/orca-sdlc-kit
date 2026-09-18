@@ -64,7 +64,7 @@ What makes this safe rather than a black box:
 
 - **Everything is left on disk.** Each step writes a Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result.
 - **Quality failures loop back.** Review, security or test failures send the coder back automatically, up to bounded retries.
-- **Nudge (auto-retry)** — a worker that finished (or stalled) without writing its artifact gets its terminal nudged to write it, before any expensive re-dispatch. `nudgeRetries` / `nudgeTimeoutMs`, per-step overridable, `0` disables. Parked dialogs are never touched.
+- **Nudge (auto-retry)** — a worker that finished (or stalled) without writing its artifact gets its terminal nudged to write it, before any expensive re-dispatch. Ships disabled; enable by setting `nudgeRetries` > 0 (`nudgeTimeoutMs` tunes the wait). Parked dialogs are never touched.
 - **Every run is accounted for.** Per-step tokens (in / out / cache) go to `USAGE.md` in the artifacts dir and onto the status page. (Numbers for opencode, gemini, cursor, grok and kiro-cli steps are not available yet.)
 - **Results can reach your team.** Fill in `.orca/notify.json` and every step's verdict — plus the final run summary with a safe resume command — lands in Slack, Telegram, MS Teams or WhatsApp while the run is going (default off). [How](#notifications).
 

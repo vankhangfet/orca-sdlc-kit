@@ -31,7 +31,7 @@ config field, with examples for common situations.
 | `defaults.sendAttempts` | number | no (default 3) | Max prompt deliveries into a warmed terminal before falling back to a cold `worker-start` |
 | `defaults.readinessRetries` | number | no (default 3) | How many times the readiness gate may re-run a producing step whose artifact is missing or undersized before stopping the run |
 | `defaults.readinessMinBytes` | number | no (default 200) | Minimum artifact file size for a step's `writes` to count as ready input for its consumers |
-| `defaults.nudgeRetries` | number | no (default 2) | Nudge budget per step per dispatch (per-step `nudgeRetries` overrides); `0` disables (see "Nudge" section) |
+| `defaults.nudgeRetries` | number | no (default 0 = off) | Nudge budget per step per dispatch (per-step `nudgeRetries` overrides); nudging is opt-in — set > 0 to enable (see "Nudge" section) |
 | `defaults.nudgeTimeoutMs` | number | no (default 120000) | Idle threshold / post-nudge wait in ms (per-step `nudgeTimeoutMs` overrides; see "Nudge" section) |
 | `defaults.worktree` | string | no (default: auto-detect from the invoking directory) | Worktree selector where agents run. Leave unset for auto-detect (recommended — works whenever the flow is launched from inside an Orca-managed worktree). Pin (`name:lab2`, `path:C:\\...`) only when launching from OUTSIDE the target worktree. Per-run override: `--worktree <selector>`; per-machine: `ORCA_FLOW_WORKTREE` env. Precedence: flag > env > config > auto-detect. A pinned selector is validated before the run starts — a wrong pin fails fast with the available worktrees listed. |
 | `defaults.model` | string | no (default `"default"`) | Pipeline-wide model for every step; a step's own `model` overrides it. `"default"`/missing = keep each agent's own default model (no flag passed). See `model` under Step structure |
@@ -61,11 +61,13 @@ optional input that the config contract auto-removes (see section 2).
 
 When a worker finishes — or stalls — without writing its declared artifact,
 the flow nudges that worker's own terminal to write it, reusing the warm
-session instead of paying a full re-dispatch.
+session instead of paying a full re-dispatch. Nudging ships DISABLED
+(`nudgeRetries: 0` everywhere by default, all shipped pipelines included) —
+enable per step or via `defaults` by setting `nudgeRetries` > 0.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `nudgeRetries` | `2` | total nudge budget per step per dispatch (both triggers share it); `0` disables nudging for the step |
+| `nudgeRetries` | `0` (off) | total nudge budget per step per dispatch (both triggers share it); nudging ships DISABLED — set > 0 at `defaults` or on a step to enable |
 | `nudgeTimeoutMs` | `120000` | mid-run: how frozen + heartbeat-stale before a nudge; post-done: how long to wait for the file after each nudge |
 
 Both accept per-step overrides (`step.nudgeRetries`, `step.nudgeTimeoutMs`),
