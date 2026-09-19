@@ -529,6 +529,28 @@ scenario("E27 archive previous run on new run", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E28 — chooser defaults & bypass: with previous runs present the flow lists
+// them; EOF/Enter/0 starts a NEW run (archive created, no restore); --new
+// skips the prompt; dry-run lists read-only and archives nothing.
+// ---------------------------------------------------------------------------
+scenario("E28 chooser: EOF=new, --new bypass, dry-run lists only", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e28", config: cfg });
+  ok("E28 run1 ok (no prompt on empty worktree)", r1.code === 0 && !r1.hung);
+  const r2 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir });   // stdin=ignore => EOF => new
+  ok("E28 run2 ok (EOF chose new)", r2.code === 0 && !r2.hung);
+  ok("E28 run2 listed previous runs", /Previous runs in this worktree:/.test(r2.out + r2.err));
+  ok("E28 run2 archived run1", existsSync(join(r2.wt, ".orca", "artifacts", "runs")));
+  const r3 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, args: ["--new"] });
+  ok("E28 run3 --new ok", r3.code === 0 && !r3.hung);
+  ok("E28 run3 no prompt", !/Choose: <n>/.test(r3.out + r3.err));
+  const before = readdirSync(join(r3.wt, ".orca", "artifacts", "runs")).length;
+  const r4 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, args: ["--dry-run"] });
+  ok("E28 dry-run lists runs", /Previous runs in this worktree:/.test(r4.out));
+  eq("E28 dry-run archives nothing", readdirSync(join(r3.wt, ".orca", "artifacts", "runs")).length, before);
+});
+
+// ---------------------------------------------------------------------------
 // E20 — nudge budget exhaustion: worker_done(succeeded) but no artifact and
 // the terminal never complies => exactly nudgeRetries nudges, then the step
 // settles FAILED (the artifact file is ground truth, not worker_done).
