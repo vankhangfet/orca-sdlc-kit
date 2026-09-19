@@ -596,6 +596,22 @@ scenario("E29 resume archived run restores and skips producer", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E30 — chooser: picking a COMPLETED run notes it and runs fresh (archive of
+// the completed state + full re-dispatch from step 1).
+// ---------------------------------------------------------------------------
+scenario("E30 completed-run choice starts a new run", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e30", config: cfg });
+  ok("E30 run1 ok", r1.code === 0 && !r1.hung);
+  const taskCreateAfterRun1 = r1.by("orchestration task-create").length;      // 2
+  const r2 = await runFlow({ name: "e30", config: cfg, reuseDir: r1.dir, stdinText: "1\n" }); // pick (current), completed
+  ok("E30 run2 ok", r2.code === 0 && !r2.hung);
+  ok("E30 already-completed note", /already completed — starting a new run/.test(r2.out + r2.err));
+  eq("E30 full fresh run (both steps re-tasked)", r2.by("orchestration task-create").length - taskCreateAfterRun1, 2);
+  ok("E30 completed state archived", readdirSync(join(r2.wt, ".orca", "artifacts", "runs")).length === 1);
+});
+
+// ---------------------------------------------------------------------------
 // E20 — nudge budget exhaustion: worker_done(succeeded) but no artifact and
 // the terminal never complies => exactly nudgeRetries nudges, then the step
 // settles FAILED (the artifact file is ground truth, not worker_done).
