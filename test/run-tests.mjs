@@ -569,6 +569,33 @@ scenario("E28b resume current incomplete run", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E29 — chooser: resuming an ARCHIVED run. Run 1 fails at beta; its flat
+// state (with a marker) is archived when run 2 starts fresh; run 3 picks the
+// archived entry: run-2 state archived first, run-1 artifacts RESTORED
+// (marker back), producer skipped, resume from beta.
+// ---------------------------------------------------------------------------
+scenario("E29 resume archived run restores and skips producer", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e29", config: cfg, scenario: "chooser-fail-beta.cjs" });
+  eq("E29 run1 exit", r1.code, 1);
+  // The marker must clear readinessMinBytes (200, cf. E15): the restore path
+  // SKIPS the producer, so beta reads this very file — an 11-byte marker
+  // would (correctly) be rejected as "too small" and stop the run.
+  const run1Marker = "RUN1 STATE\n" + "archived-run marker filler line to clear the readiness minimum\n".repeat(8);
+  writeFileSync(join(r1.wt, ".orca", "artifacts", "A.md"), run1Marker);
+  const r2 = await runFlow({ name: "e29", config: cfg, reuseDir: r1.dir });   // EOF => new; archives RUN1 STATE
+  ok("E29 run2 ok", r2.code === 0 && !r2.hung);
+  const taskCreateAfterRun2 = r2.by("orchestration task-create").length;      // 2 more (alpha+beta)
+  const r3 = await runFlow({ name: "e29", config: cfg, reuseDir: r1.dir, stdinText: "2\n" }); // 1=current(run2), 2=archived 0001
+  ok("E29 run3 ok", r3.code === 0 && !r3.hung);
+  ok("E29 restored run 0001", /restored run 0001-\d{8}-\d{6}/.test(r3.out + r3.err));
+  eq("E29 flat A.md restored to run-1 state", readFileSync(join(r3.wt, ".orca", "artifacts", "A.md"), "utf8"), run1Marker);
+  eq("E29 only beta re-tasked", r3.by("orchestration task-create").length - taskCreateAfterRun2, 1);
+  const runsEntries = readdirSync(join(r3.wt, ".orca", "artifacts", "runs"));
+  eq("E29 two archive folders (run1 then run2 states)", runsEntries.length, 2);
+});
+
+// ---------------------------------------------------------------------------
 // E20 — nudge budget exhaustion: worker_done(succeeded) but no artifact and
 // the terminal never complies => exactly nudgeRetries nudges, then the step
 // settles FAILED (the artifact file is ground truth, not worker_done).
