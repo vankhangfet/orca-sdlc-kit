@@ -2314,17 +2314,18 @@ async function runChooser() {
   if (!entries.length) return;
   printRunList(entries);
   const answer = await promptChoice("Choose: <n> = resume that run, 0/Enter = start a new run: ");
-  const idx = Number.parseInt(answer.trim(), 10);
-  const pick = Number.isInteger(idx) && idx >= 1 && idx <= entries.length ? entries[idx - 1] : null;
-  if (!pick) return;   // new run — the main call site archives
+  const t = answer.trim();
+  const idx = /^\d+$/.test(t) ? Number(t) : NaN;
+  const chosen = Number.isInteger(idx) && idx >= 1 && idx <= entries.length ? entries[idx - 1] : null;
+  if (!chosen) return;   // new run — the main call site archives
   const order = (cfg.pipeline || []).filter((s) => s && s.id && s.enabled !== false).map((s) => s.id);
-  const stOf = (id) => (pick.S.steps || []).find((s) => s.id === id);
+  const stOf = (id) => (chosen.S.steps || []).find((s) => s.id === id);
   const firstPending = order.find((id) => stOf(id)?.status !== "succeeded");
-  if (!firstPending) { log(`[history] run ${pick.label} already completed — starting a new run instead.`); return; }
-  if (pick.dir) {
+  if (!firstPending) { log(`[history] run ${chosen.label} already completed — starting a new run instead.`); return; }
+  if (chosen.dir) {
     archiveCurrentRun();   // protect the newest flat state before overwriting it
-    const n = copyRunFiles(pick.dir, join(WT_PATH || ".", ART_DIR), "(restore)");
-    log(`[history] restored run ${pick.label} (${n} files) — resuming from "${firstPending}".`);
+    const n = copyRunFiles(chosen.dir, join(WT_PATH || ".", ART_DIR), "(restore)");
+    log(`[history] restored run ${chosen.label} (${n} files) — resuming from "${firstPending}".`);
   } else {
     log(`[history] resuming the current run from "${firstPending}".`);
   }

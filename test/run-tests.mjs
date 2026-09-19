@@ -31,6 +31,7 @@ if (/\s/.test(PRELOAD)) {
 }
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
+if (process.argv.includes("--only") && !only) { console.error("FAIL - --only requires a non-empty substring"); process.exit(1); }
 let failed = 0; let total = 0;
 const ok = (name, cond, extra) => {
   total++;
@@ -548,6 +549,23 @@ scenario("E28 chooser: EOF=new, --new bypass, dry-run lists only", async () => {
   const r4 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, args: ["--dry-run"] });
   ok("E28 dry-run lists runs", /Previous runs in this worktree:/.test(r4.out));
   eq("E28 dry-run archives nothing", readdirSync(join(r3.wt, ".orca", "artifacts", "runs")).length, before);
+});
+
+// ---------------------------------------------------------------------------
+// E28b — chooser: resuming the (current) incomplete run — no archive, no
+// restore, the succeeded producer is NOT re-dispatched, run resumes from
+// the failed step and completes. "99" (out-of-range) stays a new-run input.
+// ---------------------------------------------------------------------------
+scenario("E28b resume current incomplete run", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e28b", config: cfg, scenario: "chooser-fail-beta.cjs" });
+  eq("E28b run1 exit (beta failed)", r1.code, 1);
+  const taskCreateAfterRun1 = r1.by("orchestration task-create").length;
+  const r2 = await runFlow({ name: "e28b", config: cfg, reuseDir: r1.dir, stdinText: "1\n" });
+  ok("E28b run2 ok", r2.code === 0 && !r2.hung);
+  ok("E28b chose current", /resuming the current run from "beta"/.test(r2.out + r2.err));
+  eq("E28b only beta re-tasked", r2.by("orchestration task-create").length - taskCreateAfterRun1, 1);
+  ok("E28b no archive folder", !existsSync(join(r2.wt, ".orca", "artifacts", "runs")));
 });
 
 // ---------------------------------------------------------------------------
