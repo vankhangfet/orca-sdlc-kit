@@ -545,6 +545,8 @@ scenario("E28 chooser: EOF=new, --new bypass, dry-run lists only", async () => {
   const r3 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, args: ["--new"] });
   ok("E28 run3 --new ok", r3.code === 0 && !r3.hung);
   ok("E28 run3 no prompt", !/Choose: <n>/.test(r3.out + r3.err));
+  const rJunk = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, stdinText: "1x\n" });
+  ok("E28 junk input '1x' starts a new run", rJunk.code === 0 && !/resuming|restored/.test(rJunk.out + rJunk.err));
   const before = readdirSync(join(r3.wt, ".orca", "artifacts", "runs")).length;
   const r4 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, args: ["--dry-run"] });
   ok("E28 dry-run lists runs", /Previous runs in this worktree:/.test(r4.out));
@@ -554,7 +556,7 @@ scenario("E28 chooser: EOF=new, --new bypass, dry-run lists only", async () => {
 // ---------------------------------------------------------------------------
 // E28b — chooser: resuming the (current) incomplete run — no archive, no
 // restore, the succeeded producer is NOT re-dispatched, run resumes from
-// the failed step and completes. "99" (out-of-range) stays a new-run input.
+// the failed step and completes.
 // ---------------------------------------------------------------------------
 scenario("E28b resume current incomplete run", async () => {
   const cfg = "../test/configs/cold.config.json";
@@ -608,7 +610,7 @@ scenario("E30 completed-run choice starts a new run", async () => {
   ok("E30 run2 ok", r2.code === 0 && !r2.hung);
   ok("E30 already-completed note", /already completed — starting a new run/.test(r2.out + r2.err));
   eq("E30 full fresh run (both steps re-tasked)", r2.by("orchestration task-create").length - taskCreateAfterRun1, 2);
-  ok("E30 completed state archived", readdirSync(join(r2.wt, ".orca", "artifacts", "runs")).length === 1);
+  eq("E30 completed state archived", readdirSync(join(r2.wt, ".orca", "artifacts", "runs")).length, 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -889,6 +891,7 @@ scenario("I2 FILES whitelist mirrors package.json files", async () => {
       else { try { rmSync(d, { recursive: true, force: true }); } catch {} }
     }
   }
+  if (only && !total) { console.error(`FAIL - --only "${only}" matched no scenario`); process.exit(1); }
   const dt = Math.round((Date.now() - t0) / 1000);
   console.log(`\n${total - failed}/${total} assertions passed in ${dt}s`);
   if (failed) console.error(`${failed} FAILURE(S)`);
