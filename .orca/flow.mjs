@@ -158,6 +158,9 @@ const outPath = (file) => `${ART_DIR}/${file}`;
 // function declarations that use them (those hoist). ---
 const IS_WIN = process.platform === "win32";
 let ORCA = null;
+// (pick/res were hoisted up from their old spot beside `let RUN_ID` below:
+//  their first consumers are the hoisted resolveWorktree()/resolveWorktreePath()
+//  invoked by the early worktree-resolution block right below this.)
 const pick = (o, keys) => { for (const k of keys) if (o && o[k] != null) return o[k]; };
 // This Orca build wraps payloads in result.{run,task,...}. Unwrap first.
 const res = (j) => (j && j.result) ? j.result : (j || {});
@@ -236,14 +239,14 @@ for (const s of steps) {
     die(`step "${s.id}": parallelWith chains are not allowed — "${id}" itself declares parallelWith.`);
   if (!AUTO_RUN && s.interactive)
     die(`step "${s.id}": interactive steps cannot join a parallel group in manual mode.`);
-  // Declared reads only — NOT effectiveReads(): this loop runs at MODULE LOAD,
-  // before the worktree/ORCA bindings further down exist, and effectiveReads()
-  // soft-resolves the worktree whenever a read points at a step outside this
-  // run (--from/--only/enabled:false) — that path dies in their temporal dead
-  // zone (#3). Verdict-identical regardless: the checks below only query ids
-  // that are IN this run (the target passed the enabledIds guard above; every
-  // member is in `steps`), and enabled ids survive effectiveReads' filter with
-  // no filesystem access.
+  // Declared reads only — NOT effectiveReads(). The worktree/ORCA bindings
+  // now live ABOVE this loop (early-bindings block), so the old temporal-
+  // dead-zone reason is gone; the split stays deliberate: these are pure
+  // config-shape checks over ids that are all IN this run (the target passed
+  // the enabledIds guard above; every member is in `steps`), for which
+  // effectiveReads() returns the declared set unchanged — going through it
+  // would only add its soft worktree resolve + filesystem probe, machinery
+  // that exists solely for out-of-run ids these checks never query.
   const reads = new Set((s.reads || []).filter((id) => byId[id]));
   if (reads.has(id))
     die(`step "${s.id}" reads "${id}" — dependent steps cannot run in parallel with what they read.`);

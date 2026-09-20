@@ -62,7 +62,7 @@ The two design steps run **concurrently** — one `parallelWith` line in the con
 
 What makes this safe rather than a black box:
 
-- **Everything is left on disk.** Each step writes a Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result.
+- **Everything is left on disk.** Each step writes a Markdown artifact (`PLAN.md`, `ARCHITECTURE.md`, `CHANGES.md`, ...) into `.orca/artifacts/` — check, edit or reuse any intermediate result. Every new run also snapshots the previous run's artifacts into `.orca/artifacts/runs/<seq>-<timestamp>/`, so runs can be compared side by side.
 - **Quality failures loop back.** Review, security or test failures send the coder back automatically, up to bounded retries.
 - **Nudge (auto-retry)** — a worker that finished (or stalled) without writing its artifact gets its terminal nudged to write it, before any expensive re-dispatch. Ships disabled; enable by setting `nudgeRetries` > 0 (`nudgeTimeoutMs` tunes the wait). Parked dialogs are never touched.
 - **Every run is accounted for.** Per-step tokens (in / out / cache) go to `USAGE.md` in the artifacts dir and onto the status page. (Numbers for opencode, gemini, cursor, grok and kiro-cli steps are not available yet.)
@@ -159,6 +159,8 @@ node .orca/flow.mjs --worktree name:lab "Objective" # only when launching from o
 
 Manual mode (gates + interviews): set `"autoRun": false` in the config, then run normally.
 
+**Resuming runs.** At startup the flow lists the worktree's previous runs and offers to resume one — picking a run restores its artifacts and continues at its first unfinished step; `0`/Enter starts fresh. Pass `--new` to skip the prompt.
+
 ## The pipelines
 
 **Full SDLC (`flow.config.json`) — the default:**
@@ -243,6 +245,7 @@ A `--from` resume continues the same picture, earlier steps keeping their origin
 - **An agent is PARKED on a prompt** — answer it in that terminal; the run continues on its own.
 - **A step ran out of time** — the terminal stays open; re-run with the printed `--from <step>` command.
 - **`artifact missing after N nudge(s)`** — the worker acknowledged completion but never wrote the file, and N nudges to its terminal went unanswered. Inspect the step's terminal output, fix the cause (context too small, wrong output path in the agent's reply), and resume with `--from <step>`.
+- **Picked the wrong run at startup** — re-run and choose 0 for a fresh start (the previous state was archived — nothing is lost), or pass --new to skip the prompt.
 
 Details and fixes (claude dialogs, EBADF crash, stale Orca state, version drift): [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 

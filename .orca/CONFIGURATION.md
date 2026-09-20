@@ -101,6 +101,19 @@ Manual-mode `interactive` steps (interviews) sit quiet for minutes by design;
 the double idle-evidence gate usually excludes them, but for such steps
 consider a per-step `nudgeTimeoutMs` raise or `nudgeRetries: 0`.
 
+### Run history (per-run snapshots)
+
+Every NEW run snapshots the previous run's flat artifacts into
+`<worktree>/<artifactsDir>/runs/<seq>-<timestamp>/` before its own steps write
+anything — a **copy**, not a move: the flat files stay in place, so readiness
+checks and `--from` resumes see exactly what they always did. Each folder holds
+that run's artifact files plus its `status.js`, which records the objective,
+the per-step outcomes and the token usage — two runs can therefore be compared
+side by side, long after the second one overwrote the first. The snapshots sit
+under `artifactsDir`, so the usual `.gitignore` entry (`.orca/artifacts/`)
+already covers them; nothing is pruned automatically — delete folders you no
+longer need. Snapshot (copy) failures warn and never block a run.
+
 ## 2. Step structure
 
 ```jsonc
@@ -356,6 +369,7 @@ handles it. Always verify with `--dry-run` to see the effective `reads` after fi
 | `--worktree <selector>` | Pin the worktree for this run (default: auto-detect from the invoking directory) | `--worktree name:lab2` |
 | `--from <id>` | Start from a step, drop earlier ones | `--from coding` |
 | `--only a,b,c` | Run only the listed steps | `--only planning,architecture` |
+| `--new` | Skip the startup run chooser, always start a NEW run (the run-history archive of the previous run still happens; see section 5.5) | `--new "x"` |
 | `--agent <id>=<agent>` | Override one step's agent, this run only | `--agent coding=claude` |
 | `--grill-me` | Enable the `grill` step for this run (see section 5.2) | `--grill-me --only grill` |
 | `--no-grill-me` | Disable the `grill` step for this run (see section 5.2) | `--no-grill-me` |
@@ -450,6 +464,31 @@ post-hoc: numbers appear when the run ends, never mid-run. Set
 `ORCA_FLOW_USAGE_HOME` to redirect the log-root lookup — `~/.claude` and
 `~/.codex` are then read under this directory instead of the OS home (testing).
 No config field enables/disables this — it is automatic and display-only.
+
+### 5.5. The startup run chooser (resume a previous run)
+
+When the worktree's artifacts dir holds previous runs — the current flat state
+and/or `runs/` snapshots (see "Run history") — and the command passed none of
+`--from` / `--only` / `--new`, the flow lists the 10 newest runs (newest first,
+the current flat state labeled `(current)`; each line shows the objective,
+steps succeeded and overall verdict) and asks before starting:
+
+- `<n>` — resume that run. For an archived entry the current flat state is
+  archived first, then the chosen run's artifacts are restored into the flat
+  dir (resuming the `(current)` entry restores nothing — it just continues).
+  The resume point is the first enabled step not recorded as `succeeded` in
+  that run's `status.js` — an automatic `--from`.
+- `0`, plain Enter, or EOF — start a NEW run. Piped stdin (scripts, CI) closes
+  with EOF, so automated invocations never block on the prompt.
+- Picking a run that already completed starts a fresh run instead (noted in
+  the log).
+
+`--dry-run` never prompts — it prints the same list read-only above the plan.
+`--new` skips the chooser entirely (the run-history archive still happens).
+
+Note: with previous runs present, a config that fails load-time validation may
+show the chooser (and perform its restore) before the config error appears —
+nothing is lost, the pre-restore state is archived first.
 
 ---
 
