@@ -331,9 +331,9 @@ for both):
 Saves the length of the shorter step; verify the grouping with `--dry-run`.
 When one member of a parallel group FAILs, the `onFailGoto` retry re-runs the
 whole group — a fix can disturb either review, so both look again.
-To skip one member of a parallel pair (`enabled:false`), also remove the
-`parallelWith` line — the loader dies on a `parallelWith` pointing at a
-disabled step.
+To skip one member of a parallel pair (`enabled:false`), also remove the pair's
+`parallelWith` line — the loader dies if the line points at the disabled
+member; skipping the member that carries the line degrades to sequential.
 
 ---
 

@@ -58,7 +58,7 @@ node .orca/flow.mjs "Build a login page with email + Google sign-in"
 
 Specialist agents take over — planner, architect, coder, reviewers, tester, writer — each doing one job and handing its Markdown result to the next. [The shipped pipelines, drawn](#the-pipelines).
 
-The two design steps and the two review steps each run **concurrently** — one `parallelWith` line per pair in the config; any independent pair of steps can. Coding and testing wait for both of their inputs.
+The two design steps and the two review steps each run **concurrently** — one `parallelWith` line per pair in the config; any independent pair of steps can. Coding and testing each wait for both members of their pair.
 
 What makes this safe rather than a black box:
 
