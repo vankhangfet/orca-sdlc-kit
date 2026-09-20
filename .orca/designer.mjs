@@ -114,6 +114,28 @@ function apiSave(body) {
   return { status: 200, saved: body.path.split("\\").join("/") };
 }
 
+function apiDryRun(body) {
+  return new Promise((done) => {
+    if (!body || typeof body.path !== "string") return done({ status: 400, error: "body must be { path }" });
+    const rel = body.path.split("\\").join("/");
+    const full = safePath(rel);
+    if (!full || !existsSync(full)) return done({ status: 404, error: `config not found: ${rel}` });
+    // Dry-run never calls agents (flow.mjs prints the plan and exits), so the
+    // 15s cap only guards against a pathological hang. cwd = project root so
+    // worktree auto-detection behaves like a user-run command.
+    const child = spawn(process.execPath,
+      [FLOW, "designer validation", "--config", rel, "--dry-run", "--no-open-status"],
+      { cwd: ROOT });
+    let out = "";
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, 15000);
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (out += d));
+    child.on("error", (e) => { clearTimeout(timer); done({ status: 500, error: `could not spawn flow.mjs: ${e.message}` }); });
+    child.on("exit", (code) => { clearTimeout(timer); done({ status: 200, code, timedOut, output: out }); });
+  });
+}
+
 // --- page ---
 const PAGE = (() => {
   try { return readFileSync(join(HERE, "designer.html"), "utf8"); }
@@ -140,6 +162,10 @@ const server = createServer(async (req, res) => {
   else if (req.method === "POST" && u.pathname === "/api/save") {
     const b = await readBody(req);
     r = b.ok ? apiSave(b.body) : { status: 400, error: b.error };
+  }
+  else if (req.method === "POST" && u.pathname === "/api/dry-run") {
+    const b = await readBody(req);
+    r = b.ok ? await apiDryRun(b.body) : { status: 400, error: b.error };
   }
   else return sendJson(res, 404, { error: `no route: ${req.method} ${u.pathname}` });
   sendJson(res, r.status, r);

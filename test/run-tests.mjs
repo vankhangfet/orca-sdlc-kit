@@ -875,6 +875,43 @@ scenario("D3 designer path traversal + bad body refused", async () => {
   } finally { d.stop(); }
 });
 
+scenario("D5 designer dry-run validates a good config", async () => {
+  const d = await startDesigner();
+  try {
+    const r = await fetch(`${d.base}/api/dry-run`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: "flow.config.json" }) });
+    eq("D5 status", r.status, 200);
+    const j = await r.json();
+    eq("D5 exit code", j.code, 0);
+    ok("D5 not timed out", !j.timedOut);
+    ok("D5 prints config line", /Config: flow\.config\.json/.test(j.output));
+    ok("D5 prints pipeline", /Pipeline to run \(in order\):/.test(j.output));
+    ok("D5 says no agents called", /Dry-run — no agents called\./.test(j.output));
+  } finally { d.stop(); }
+});
+
+scenario("D6 designer dry-run surfaces flow.mjs validation errors", async () => {
+  const d = await startDesigner();
+  const probe = "designer-test-bad.config.json";
+  try {
+    const broken = { artifactsDir: ".orca/artifacts", maxRetries: 2, autoRun: true, defaults: { timeoutMs: 600000 },
+      pipeline: [
+        { id: "a", title: "A", enabled: true, agent: "claude", writes: "", reads: [], spec: "do A" },
+        { id: "b", title: "B", enabled: true, agent: "claude", writes: "B.md", reads: ["a"], spec: "do B" },
+      ] };
+    await fetch(`${d.base}/api/save`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: probe, config: broken }) });
+    const r = await fetch(`${d.base}/api/dry-run`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: probe }) });
+    const j = await r.json();
+    eq("D6 exit code", j.code, 1);
+    ok("D6 surfaces the reads error", /step "b" reads "a" which has no "writes"/.test(j.output));
+  } finally { d.stop(); rmSync(join(REPO, ".orca", probe), { force: true }); }
+});
+
 // ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();
