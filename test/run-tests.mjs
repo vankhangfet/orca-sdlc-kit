@@ -770,6 +770,60 @@ scenario("I2 FILES whitelist mirrors package.json files", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Designer — local UI server for creating/editing workflow configs (D*).
+// Each scenario boots the real designer.mjs (--port 0 = ephemeral) and talks
+// to its JSON API with fetch; the token is parsed from its stdout line.
+// ---------------------------------------------------------------------------
+async function startDesigner() {
+  const child = spawn(NODE, [join(REPO, ".orca", "designer.mjs"), "--port", "0", "--no-open"],
+    { cwd: REPO, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  const ready = new Promise((rOK, rNO) => {
+    const t = setTimeout(() => rNO(new Error("designer did not start")), 10000);
+    child.stdout.on("data", (d) => {
+      out += d;
+      const m = out.match(/listening (http:\/\/\S+)/);
+      if (m) { clearTimeout(t); rOK(m[1]); }
+    });
+    child.stderr.on("data", (d) => (out += d));
+    child.on("exit", (c) => { clearTimeout(t); rNO(new Error(`designer exited early (${c}): ${out}`)); });
+  });
+  const url = await ready;                      // http://127.0.0.1:<port>/?t=<token>
+  const [base, token] = url.split("/?t=");
+  return { base, token, stop: () => child.kill() };
+}
+function hdr(d) { return { "x-designer-token": d.token }; }
+
+scenario("D1 designer state lists configs + serves page", async () => {
+  const d = await startDesigner();
+  try {
+    const page = await fetch(`${d.base}/?t=${d.token}`);
+    eq("D1 page status", page.status, 200);
+    ok("D1 page is html", /text\/html/.test(page.headers.get("content-type") || ""));
+    ok("D1 page title", (await page.text()).includes("Orca Workflow Designer"));
+    const r = await fetch(`${d.base}/api/state`, { headers: hdr(d) });
+    eq("D1 state status", r.status, 200);
+    const j = await r.json();
+    const paths = j.configs.map((c) => c.path);
+    for (const p of ["flow.config.json", "fixbug.config.json", "cr.config.json",
+      "workflow-template/sdlc.config.json", "workflow-template/fixbug.config.json",
+      "workflow-template/cr.config.json"])
+      ok(`D1 lists ${p}`, paths.includes(p));
+    eq("D1 flow not template", j.configs.find((c) => c.path === "flow.config.json").template, false);
+    eq("D1 template flagged", j.configs.find((c) => c.path === "workflow-template/cr.config.json").template, true);
+  } finally { d.stop(); }
+});
+
+scenario("D4 designer token required", async () => {
+  const d = await startDesigner();
+  try {
+    eq("D4 no token -> 403", (await fetch(`${d.base}/api/state`)).status, 403);
+    eq("D4 bad token -> 403", (await fetch(`${d.base}/api/state`, { headers: { "x-designer-token": "nope" } })).status, 403);
+    eq("D4 page without token -> 403", (await fetch(d.base + "/")).status, 403);
+  } finally { d.stop(); }
+});
+
+// ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();
   for (const s of scenarios) {
