@@ -19,5 +19,8 @@ docs/
 # Visual brainstorm companion (local only)
 .superpowers/
 
+# Local git worktrees (isolated feature work)
+.worktrees/
+
 # Windows redirect artifact
 nul
