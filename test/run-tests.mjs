@@ -856,6 +856,7 @@ scenario("D2 designer save round-trip preserves // keys", async () => {
     eq("D2 maxRetries saved", onDisk.maxRetries, 5);
     eq("D2 title saved", onDisk.pipeline[0].title, "Edited by test");
     ok("D2 // survived the round-trip", typeof onDisk["//"] === "string");
+    eq("D2 // identical after round-trip", onDisk["//"], g.config["//"]);
   } finally { d.stop(); rmSync(join(REPO, ".orca", probe), { force: true }); }
 });
 
