@@ -54,7 +54,7 @@ terminal closes.
 | **Config validation before any agent starts** | ✅ Partially shipped (v2.0.0) — forward in-run `reads` and reads of writes-less steps die at load, in every mode (F10/F11). Still open: `reads` referencing unknown ids, `onFailGoto` pointing forward or into a cycle, unknown agent names, duplicate ids, `writes`/`progress` filename collisions | flow startup |
 | **Artifact viewer** | Each step row links to the Markdown file it produced; the page lazy-loads it via the same `file://` script-polling trick as `status.js`. Styled preformatted text — no Markdown engine | status page |
 | **Run log** | Every run appends to `FLOW_LOG.md` in the artifacts dir: step transitions, warnings, gate hints, durations — the console, persisted | artifact |
-| **Run history** | Snapshots kept per run (`status-<runId>.js`, last 20) + a run selector on the page; "which step failed last time" answered by looking | status page |
+| **Run history** | ✅ Disk side shipped (v2.2.0) — per-run snapshots in `<artifactsDir>/runs/<seq>-<ts>/` plus the startup resume chooser (see Shipped). Still open: a run selector on the status page | status page |
 | **Auto-resume** | `--from auto` loads the previous status snapshot + checks artifacts on disk, resumes at the first unsettled step, prints what it chose and why. Manual `--from <id>` keeps precedence | CLI flag |
 
 ## v2.0.x — speed & supervision (queued, minor releases in the v2 line)
