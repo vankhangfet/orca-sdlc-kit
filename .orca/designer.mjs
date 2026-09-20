@@ -85,6 +85,35 @@ async function apiState() {
   return { status: 200, configs: listConfigs() };
 }
 
+function apiConfig(q) {
+  const rel = q.get("path");
+  if (!rel || !rel.endsWith(".config.json")) return { status: 400, error: "path must be a *.config.json inside .orca/" };
+  const full = safePath(rel);
+  if (!full) return { status: 400, error: "path escapes .orca/ — refused" };
+  if (!existsSync(full)) return { status: 404, error: `config not found: ${rel}` };
+  try { return { status: 200, config: JSON.parse(readFileSync(full, "utf8")) }; }
+  catch (e) { return { status: 400, error: `could not parse ${rel}: ${e.message}` }; }
+}
+
+function apiSave(body) {
+  if (!body || typeof body !== "object" || typeof body.path !== "string" ||
+      typeof body.config !== "object" || body.config === null || Array.isArray(body.config))
+    return { status: 400, error: "body must be { path, config } with config an object" };
+  if (!body.path.endsWith(".config.json")) return { status: 400, error: "path must end in .config.json" };
+  const full = safePath(body.path);
+  if (!full) return { status: 400, error: "path escapes .orca/ — refused" };
+  if (!Array.isArray(body.config.pipeline)) return { status: 400, error: "config.pipeline must be an array" };
+  let text;
+  try { text = JSON.stringify(body.config, null, 2) + "\n"; }
+  catch (e) { return { status: 400, error: `config is not serializable: ${e.message}` }; }
+  // Preservation contract: write EXACTLY the posted object. The UI edits the
+  // parsed raw object in place, so "//" comment keys and unknown fields ride
+  // along untouched. Never rebuild the object here.
+  try { atomicWrite(full, text); }
+  catch (e) { return { status: 500, error: `could not write ${body.path}: ${e.message}` }; }
+  return { status: 200, saved: body.path.split("\\").join("/") };
+}
+
 // --- page ---
 const PAGE = (() => {
   try { return readFileSync(join(HERE, "designer.html"), "utf8"); }
@@ -107,6 +136,11 @@ const server = createServer(async (req, res) => {
 
   let r;
   if (req.method === "GET" && u.pathname === "/api/state") r = await apiState();
+  else if (req.method === "GET" && u.pathname === "/api/config") r = apiConfig(u.searchParams);
+  else if (req.method === "POST" && u.pathname === "/api/save") {
+    const b = await readBody(req);
+    r = b.ok ? apiSave(b.body) : { status: 400, error: b.error };
+  }
   else return sendJson(res, 404, { error: `no route: ${req.method} ${u.pathname}` });
   sendJson(res, r.status, r);
 });

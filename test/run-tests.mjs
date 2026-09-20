@@ -15,7 +15,7 @@
 // (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -820,6 +820,57 @@ scenario("D4 designer token required", async () => {
     eq("D4 no token -> 403", (await fetch(`${d.base}/api/state`)).status, 403);
     eq("D4 bad token -> 403", (await fetch(`${d.base}/api/state`, { headers: { "x-designer-token": "nope" } })).status, 403);
     eq("D4 page without token -> 403", (await fetch(d.base + "/")).status, 403);
+  } finally { d.stop(); }
+});
+
+scenario("D4b designer host header guard", async () => {
+  const d = await startDesigner();
+  try {
+    const u = new URL(d.base);
+    const code = await new Promise((rOK, rNO) => {
+      const req = request({ hostname: u.hostname, port: u.port, method: "GET", path: "/api/state",
+        headers: { host: "evil.example", "x-designer-token": d.token } },
+        (res) => { res.resume(); rOK(res.statusCode); });
+      req.on("error", rNO);
+      req.end();
+    });
+    eq("D4b evil Host with valid token -> 403", code, 403);
+  } finally { d.stop(); }
+});
+
+scenario("D2 designer save round-trip preserves // keys", async () => {
+  const d = await startDesigner();
+  const probe = "designer-test.config.json";
+  try {
+    const g = await (await fetch(`${d.base}/api/config?path=flow.config.json`, { headers: hdr(d) })).json();
+    eq("D2 read ok", g.config != null && Array.isArray(g.config.pipeline), true);
+    ok("D2 has // key", typeof g.config["//"] === "string");
+    // Exactly like the UI: mutate the parsed raw object in place, post it whole.
+    g.config.maxRetries = 5;
+    g.config.pipeline[0].title = "Edited by test";
+    const sv = await fetch(`${d.base}/api/save`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: probe, config: g.config }) });
+    eq("D2 save status", sv.status, 200);
+    const onDisk = JSON.parse(readFileSync(join(REPO, ".orca", probe), "utf8"));
+    eq("D2 maxRetries saved", onDisk.maxRetries, 5);
+    eq("D2 title saved", onDisk.pipeline[0].title, "Edited by test");
+    ok("D2 // survived the round-trip", typeof onDisk["//"] === "string");
+  } finally { d.stop(); rmSync(join(REPO, ".orca", probe), { force: true }); }
+});
+
+scenario("D3 designer path traversal + bad body refused", async () => {
+  const d = await startDesigner();
+  try {
+    const post = (body) => fetch(`${d.base}/api/save`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" }, body });
+    eq("D3 escape ../ refused", (await post(JSON.stringify({ path: "../evil.config.json", config: { pipeline: [] } }))).status, 400);
+    eq("D3 zig-zag escape refused", (await post(JSON.stringify({ path: "workflow-template/../../evil.config.json", config: { pipeline: [] } }))).status, 400);
+    eq("D3 non-config suffix refused", (await post(JSON.stringify({ path: "package.json", config: { pipeline: [] } }))).status, 400);
+    eq("D3 non-array pipeline refused", (await post(JSON.stringify({ path: "x.config.json", config: { pipeline: "no" } }))).status, 400);
+    eq("D3 broken JSON body refused", (await post("{not json")).status, 400);
+    eq("D3 config read traversal refused", (await fetch(`${d.base}/api/config?path=${encodeURIComponent("../../package.json")}`, { headers: hdr(d) })).status, 400);
+    eq("D3 config read missing -> 404", (await fetch(`${d.base}/api/config?path=nope.config.json`, { headers: hdr(d) })).status, 404);
   } finally { d.stop(); }
 });
 
