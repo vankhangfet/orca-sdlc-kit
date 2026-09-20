@@ -919,6 +919,29 @@ scenario("D6 designer dry-run surfaces flow.mjs validation errors", async () => 
   } finally { d.stop(); rmSync(join(REPO, ".orca", probe), { force: true }); }
 });
 
+scenario("D7 designer scaffolds a fresh project workspace", async () => {
+  const d = await startDesigner();
+  const target = mkdtempSync(join(tmpdir(), "orca-designer-"));
+  dirsOfCurrentScenario.push(target);
+  try {
+    const pv = await (await fetch(`${d.base}/api/scaffold/preview?dir=${encodeURIComponent(target)}`, { headers: hdr(d) })).json();
+    eq("D7 preview exists+empty", [pv.exists, pv.empty, pv.hasOrca], [true, true, false]);
+    const r = await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: target, template: "workflow-template/fixbug.config.json", configName: "myproj" }) });
+    eq("D7 scaffold status", r.status, 200);
+    const j = await r.json();
+    eq("D7 config name", j.config, "myproj.config.json");
+    for (const f of [".orca/flow.mjs", ".orca/designer.mjs", ".orca/designer.html",
+      ".orca/myproj.config.json", ".orca/workflow-template/README.md", "orca.yaml"])
+      ok(`D7 created ${f}`, existsSync(join(target, ...f.split("/"))));
+    ok("D7 artifacts/ NOT copied", !existsSync(join(target, ".orca", "artifacts")));
+    eq("D7 scaffold into same dir refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: target, template: "flow.config.json", configName: "again" }) })).status, 400);
+  } finally { d.stop(); }
+});
+
 // ---------------------------------------------------------------------------
 (async () => {
   const t0 = Date.now();

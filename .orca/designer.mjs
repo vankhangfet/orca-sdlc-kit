@@ -137,6 +137,63 @@ function apiDryRun(body) {
   });
 }
 
+function dirState(dirRaw) {
+  const dir = resolve(ROOT, dirRaw);
+  let exists = false, empty = false, hasOrca = false;
+  try {
+    exists = existsSync(dir);
+    if (exists) {
+      empty = readdirSync(dir).length === 0;
+      hasOrca = existsSync(join(dir, ".orca"));
+    }
+  } catch {}
+  return { dir, exists, empty, hasOrca };
+}
+function apiScaffoldPreview(q) {
+  const dirRaw = q.get("dir");
+  if (!dirRaw) return { status: 400, error: "dir query param required" };
+  return { status: 200, ...dirState(dirRaw) };
+}
+function apiScaffold(body) {
+  if (!body || typeof body.dir !== "string" || typeof body.template !== "string" || typeof body.configName !== "string")
+    return { status: 400, error: "body must be { dir, template, configName }" };
+  const name = body.configName.replace(/\.config\.json$/, "");
+  if (!/^[\w.-]+$/.test(name)) return { status: 400, error: "configName may only contain letters, digits, '.', '_', '-'" };
+  const tplFull = safePath(body.template);
+  if (!tplFull || !body.template.endsWith(".config.json") || !existsSync(tplFull))
+    return { status: 400, error: `unknown template: ${body.template}` };
+  const st = dirState(body.dir);
+  if (st.dir === ROOT || st.dir === HERE || (st.dir + sep).startsWith(HERE + sep))
+    return { status: 400, error: "refusing to scaffold inside the kit's own folder" };
+  if (st.hasOrca) return { status: 400, error: `${st.dir} already contains .orca/ — refusing to overwrite` };
+  try {
+    mkdirSync(st.dir, { recursive: true });
+    // Copy the whole kit (.orca/), minus runtime/junk output. orca.yaml rides along.
+    cpSync(HERE, join(st.dir, ".orca"), {
+      recursive: true,
+      filter: (src) => {
+        const rel = src.slice(HERE.length).split(sep).join("/");
+        if (rel === "") return true;
+        if (/^\/(artifacts|status-preview|usage-test)(\/|$)/.test(rel)) return false;
+        return !/\.(log|tmp)$/.test(rel);
+      },
+    });
+    const orcaYaml = join(ROOT, "orca.yaml");
+    if (existsSync(orcaYaml)) writeFileSync(join(st.dir, "orca.yaml"), readFileSync(orcaYaml));
+    // First config: the chosen template, under the project's own name.
+    atomicWrite(join(st.dir, ".orca", `${name}.config.json`), readFileSync(tplFull, "utf8"));
+    // .gitignore: extend an existing one exactly once (mirror init.mjs).
+    const gi = join(st.dir, ".gitignore");
+    if (existsSync(gi)) {
+      const t = readFileSync(gi, "utf8");
+      if (!t.split(/\r?\n/).includes(".orca/artifacts/"))
+        writeFileSync(gi, t.replace(/\r?\n?$/, "\n") + ".orca/artifacts/\n");
+    }
+  } catch (e) { return { status: 500, error: `scaffold failed: ${e.message}` }; }
+  return { status: 200, dir: st.dir, config: `${name}.config.json`,
+    command: `node .orca/flow.mjs "<objective>" --config ${name}.config.json` };
+}
+
 // --- page ---
 const PAGE = (() => {
   try { return readFileSync(join(HERE, "designer.html"), "utf8"); }
@@ -167,6 +224,11 @@ const server = createServer(async (req, res) => {
   else if (req.method === "POST" && u.pathname === "/api/dry-run") {
     const b = await readBody(req);
     r = b.ok ? await apiDryRun(b.body) : { status: 400, error: b.error };
+  }
+  else if (req.method === "GET" && u.pathname === "/api/scaffold/preview") r = apiScaffoldPreview(u.searchParams);
+  else if (req.method === "POST" && u.pathname === "/api/scaffold") {
+    const b = await readBody(req);
+    r = b.ok ? apiScaffold(b.body) : { status: 400, error: b.error };
   }
   else return sendJson(res, 404, { error: `no route: ${req.method} ${u.pathname}` });
   sendJson(res, r.status, r);
