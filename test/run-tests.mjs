@@ -775,8 +775,13 @@ scenario("I2 FILES whitelist mirrors package.json files", async () => {
 // to its JSON API with fetch; the token is parsed from its stdout line.
 // ---------------------------------------------------------------------------
 async function startDesigner() {
+  // Hermetic: dry-run children resolve the orca CLI via ORCA_CLI_COMMAND —
+  // node.exe stands in (version probe succeeds, worktree probe fails soft).
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
+  env.ORCA_CLI_COMMAND = NODE;
   const child = spawn(NODE, [join(REPO, ".orca", "designer.mjs"), "--port", "0", "--no-open"],
-    { cwd: REPO, stdio: ["ignore", "pipe", "pipe"] });
+    { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"] });
   let out = "";
   const ready = new Promise((rOK, rNO) => {
     const t = setTimeout(() => rNO(new Error("designer did not start")), 10000);
@@ -900,12 +905,14 @@ scenario("D6 designer dry-run surfaces flow.mjs validation errors", async () => 
         { id: "a", title: "A", enabled: true, agent: "claude", writes: "", reads: [], spec: "do A" },
         { id: "b", title: "B", enabled: true, agent: "claude", writes: "B.md", reads: ["a"], spec: "do B" },
       ] };
-    await fetch(`${d.base}/api/save`, { method: "POST",
+    const sv = await fetch(`${d.base}/api/save`, { method: "POST",
       headers: { ...hdr(d), "content-type": "application/json" },
       body: JSON.stringify({ path: probe, config: broken }) });
+    eq("D6 probe saved", sv.status, 200);
     const r = await fetch(`${d.base}/api/dry-run`, { method: "POST",
       headers: { ...hdr(d), "content-type": "application/json" },
       body: JSON.stringify({ path: probe }) });
+    eq("D6 status", r.status, 200);
     const j = await r.json();
     eq("D6 exit code", j.code, 1);
     ok("D6 surfaces the reads error", /step "b" reads "a" which has no "writes"/.test(j.output));

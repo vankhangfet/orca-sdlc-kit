@@ -118,6 +118,7 @@ function apiDryRun(body) {
   return new Promise((done) => {
     if (!body || typeof body.path !== "string") return done({ status: 400, error: "body must be { path }" });
     const rel = body.path.split("\\").join("/");
+    if (!rel.endsWith(".config.json")) return done({ status: 400, error: "path must be a *.config.json inside .orca/" });
     const full = safePath(rel);
     if (!full || !existsSync(full)) return done({ status: 404, error: `config not found: ${rel}` });
     // Dry-run never calls agents (flow.mjs prints the plan and exits), so the
@@ -132,7 +133,7 @@ function apiDryRun(body) {
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
     child.on("error", (e) => { clearTimeout(timer); done({ status: 500, error: `could not spawn flow.mjs: ${e.message}` }); });
-    child.on("exit", (code) => { clearTimeout(timer); done({ status: 200, code, timedOut, output: out }); });
+    child.on("close", (code) => { clearTimeout(timer); done({ status: 200, code, timedOut, output: out }); });
   });
 }
 
