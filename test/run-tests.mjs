@@ -91,7 +91,7 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
   env.ORCA_CLI_COMMAND = NODE;
-  // Per-scenario env (NOT ORCA_*-prefixed — those are stripped below on purpose).
+  // Per-scenario env (NOT ORCA_*-prefixed — those were stripped above on purpose).
   if (extraEnv) Object.assign(env, extraEnv);
   // Backslashes inside NODE_OPTIONS quotes are eaten by Node's POSIX-style
   // tokenizer (C:\Working -> C:Working), so the preload must be forward-slashed.
