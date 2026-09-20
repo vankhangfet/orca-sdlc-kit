@@ -1,4 +1,4 @@
-# Orca SDLC Flow Kit
+# Orca Flow Kit — Any Workflow, Not Just SDLC
 
 <a href="https://deepwiki.com/vankhangfet/orca-sdlc-kit"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 <a href="https://github.com/vankhangfet/orca-sdlc-kit"><img src="https://img.shields.io/github/stars/vankhangfet/orca-sdlc-kit?style=flat-square" alt="GitHub Stars"></a>
@@ -13,7 +13,7 @@
 <a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%91%A5-MS_Teams-6264A7?style=flat-square" alt="MS Teams"></a>
 <a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%93%B1-WhatsApp-25D366?style=flat-square" alt="WhatsApp"></a>
 
-![Orca SDLC Kit in motion: a terminal runs one command — node .orca/flow.mjs
+![The Orca Flow Kit in motion: a terminal runs one command — node .orca/flow.mjs
 "Build html game 2048" — then the live status dashboard takes over: the pipeline
 rail advances step by step, two design steps run in parallel with elapsed timers
 ticking, artifact chips light up as each Markdown lands on disk — and finally a
