@@ -26,8 +26,16 @@ and the run-end summary land in Telegram, Slack, MS Teams or WhatsApp](img/banne
 
 **Customize everything in `.orca/flow.config.json`** — add or reorder steps, swap any step's agent, pick models per step, set retries and timeouts, run steps in parallel: plain JSON, zero code. [See how](#2-configure-your-pipeline).
 
+## What's new
+
+- **Run history & one-key resume** *(v2.2.0)* — every new run snapshots the previous run's results into `.orca/artifacts/runs/`, so nothing is ever overwritten and any two runs can be compared side by side. At startup the kit lists previous runs and lets you continue one exactly where it stopped — press `0`/Enter for a fresh run, pass `--new` to skip the question. Scripts and CI are never blocked.
+- **Nudge — auto-retry for missing outputs** *(v2.1.0)* — an agent that finished (or stalled) without writing its file gets a short reminder in its own terminal, reusing the live session instead of a costly re-run. Ships off; enable with `nudgeRetries` > 0. A terminal waiting on a human-only dialog is never touched.
+
+Full history: [Roadmap](#roadmap) · [Releases](https://github.com/vankhangfet/orca-sdlc-kit/releases).
+
 ## Contents
 
+- [What's new](#whats-new)
 - [Why this kit](#why-this-kit)
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
