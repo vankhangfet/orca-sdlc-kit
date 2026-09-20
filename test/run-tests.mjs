@@ -690,6 +690,11 @@ const BAD_CONFIGS = [
   ["F11 read of a writes-less step", "bad-reads-no-writes.json", /reads "ghost" which has no "writes" — nothing to read/],
   ["F12 negative nudgeRetries", "bad-nudge-negative.json", /nudgeRetries must be a non-negative integer/],
   ["F12b zero nudgeTimeoutMs", "bad-nudge-zero-timeout.json", /nudgeTimeoutMs must be a positive integer/],
+  ["F13 unknown skill ref", "bad-skill-unknown-ref.json", /references unknown skill "ghost"/],
+  ["F14 unknown mcp ref", "bad-mcp-unknown-ref.json", /references unknown mcp server "ghost"/],
+  ["F15 skill with both path and prompt", "bad-skill-both.json", /skill "broken": "path" and "prompt" are mutually exclusive/],
+  ["F16 mcp with neither command nor url", "bad-mcp-none.json", /mcp server "broken": must have either "command" or "url"/],
+  ["F17 skill path not found", "bad-skill-path-missing.json", /skill "broken": path "skills\/nope-does-not-exist" not found/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {

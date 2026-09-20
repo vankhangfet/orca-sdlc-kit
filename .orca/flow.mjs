@@ -52,6 +52,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import readline from "node:readline";
+import { validateAgentConfig, materializeAgentConfig, restoreAgentConfig } from "./agent-config.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Live-page accumulator: null until the status section assigns it (before any
@@ -258,6 +259,10 @@ for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id
   nudgeFields(cfg.defaults || {}, "defaults:");
   for (const s of steps) nudgeFields(s, `step "${s.id}":`);
 }
+
+// Skills + MCP registries: schema and refs validated at load so a typo dies
+// in --dry-run instead of mid-pipeline. Materialization happens per group.
+validateAgentConfig({ cfg, configDir: HERE, steps, die });
 
 // A step's reads. Steps in this run always count. Steps NOT part of this run
 // (dropped by --from/--only, or disabled) still count when their artifact file

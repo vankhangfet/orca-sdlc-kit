@@ -1,0 +1,6 @@
+{
+  "mcpServers": { "broken": { "args": ["x"] } },
+  "pipeline": [
+    { "id": "a", "title": "A", "agent": "claude", "spec": "Write {out}.", "writes": "A.md", "mcp": ["broken"] }
+  ]
+}
