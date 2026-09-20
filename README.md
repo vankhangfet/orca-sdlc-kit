@@ -6,7 +6,7 @@
 <a href="https://github.com/vankhangfet/orca-sdlc-kit/tags"><img src="https://img.shields.io/github/v/tag/vankhangfet/orca-sdlc-kit?style=flat-square" alt="Release"></a>
 <a href="https://x.com/vankhangfet"><img src="https://img.shields.io/badge/Follow-%40vankhangfet-1DA1F2?style=flat-square&logo=x" alt="Follow on X"></a>
 
-**A pipeline of AI agents that plans, codes, reviews, tests and documents — the whole pipeline (steps, agents, models, retries, parallel groups) defined in one JSON config, no code ever; results land on disk, runs are watchable live, quality failures loop back automatically — and every step's verdict can be pushed straight to your team's chat.**
+**Build and run any AI workflow — any idea, not just SDLC. Describe the work once as a pipeline of steps (agents, models, retries, parallel groups) in one JSON config, no code ever; specialist agents do each step and write results to disk, runs are watchable live, failures loop back automatically — and every step's verdict can be pushed straight to your team's chat.**
 
 <a href="#notifications"><img src="https://img.shields.io/badge/%F0%9F%92%AC-Slack-4A154B?style=flat-square" alt="Slack"></a>
 <a href="#notifications"><img src="https://img.shields.io/badge/%E2%9C%88%EF%B8%8F-Telegram-26A5E4?style=flat-square" alt="Telegram"></a>
@@ -22,7 +22,7 @@ and the run-end summary land in Telegram, Slack, MS Teams or WhatsApp](img/banne
 
 *One command starts the whole pipeline; the status page opens in your browser and updates itself while the agents work — and every verdict can be pushed to your team's chat. [Details](#watch-it-run--the-live-status-page) · [chat notifications](#notifications) · [HD video](img/banner-animation.mp4) · [interactive version](img/banner-animation.html)*
 
-**Three flows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines). **Deliver-the-code variants** of all three live in `.orca/workflow-template/` — same pipelines plus a final Rebase & Push step.
+**Three workflows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines). **Deliver-the-code variants** of all three live in `.orca/workflow-template/` — same pipelines plus a final Rebase & Push step. They are ready-made examples, not the ceiling: any workflow you can describe as steps in JSON runs the same way. [Use cases](#use-cases).
 
 **Customize everything in `.orca/flow.config.json`** — add or reorder steps, swap any step's agent, pick models per step, set retries and timeouts, run steps in parallel: plain JSON, zero code. [See how](#2-configure-your-pipeline).
 
@@ -38,6 +38,7 @@ Full history: [Roadmap](#roadmap) · [Releases](https://github.com/vankhangfet/o
 
 - [What's new](#whats-new)
 - [Why this kit](#why-this-kit)
+- [Use cases](#use-cases)
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
   - [1. Set up your project](#1-set-up-your-project)
@@ -54,12 +55,22 @@ Full history: [Roadmap](#roadmap) · [Releases](https://github.com/vankhangfet/o
 
 ## Why this kit
 
-Hand-driving AI agents doesn't survive a real feature: prompts shuttle between terminals, fresh chats forget old decisions, and nothing forces a review or a test to happen.
+Hand-driving AI agents doesn't survive real work: prompts shuttle between terminals, fresh chats forget old decisions, and nothing forces a review or a test to happen.
 
-This kit turns that into an assembly line on **[Orca ADE](https://www.onorca.dev/)** — specialist agents (planner, architect, coder, reviewers, tester, writer) each do one job, write it to disk as Markdown, and hand it to the next. Two ideas drive it:
+This kit turns any multi-step job into an assembly line on **[Orca ADE](https://www.onorca.dev/)** — specialist agents each do one job, write it to disk as Markdown, and hand it to the next. The shipped flows speak software, but the engine is workflow-agnostic: any sequence of steps you can describe in JSON runs the same way. Two ideas drive it:
 
-- **A real SDLC** — quality gates between specialists; the pipeline defends its quality, it doesn't just generate code.
-- **A swappable harness** — any CLI agent Orca supports, mixed freely, changed in one JSON line. No code edits, ever.
+- **Any workflow as config** — steps, agents, models, quality gates, retries, parallel groups: the whole workflow is one JSON file, no code ever. SDLC is just the first example.
+- **A swappable harness** — any CLI agent Orca supports, mixed freely, changed in one JSON line.
+
+## Use cases
+
+If an idea fits "a few agents, each doing one job, passing its result to the next", it's a workflow this kit can run — SDLC is just the one that ships in the box. Three examples:
+
+- **Ship a feature — full SDLC.** *"Build a login page with email + Google sign-in."* Planning → architecture → coding → parallel code + security review → testing → docs; a failed review or test sends the coder back automatically. This is the shipped default ([drawn here](#the-pipelines)).
+- **Turn a rough idea into a plan.** *"Plan our migration from REST to GraphQL."* One agent researches the codebase, another drafts options with trade-offs, a reviewer challenges them — a decision-ready `PLAN.md` lands on disk. No coding step at all: the pipeline is just research → draft → review.
+- **Draft, critique, polish — any content.** *"Write the v2 launch announcement."* Research → outline → draft → review loop → final text: the same retry-on-fail discipline as code, with prose artifacts instead of patches.
+
+Each of these is just a different JSON config — the engine (retries, parallel steps, live status page, chat notifications) stays the same. [Build your own](#2-configure-your-pipeline).
 
 ## How it works
 
@@ -67,7 +78,7 @@ This kit turns that into an assembly line on **[Orca ADE](https://www.onorca.dev
 node .orca/flow.mjs "Build a login page with email + Google sign-in"
 ```
 
-Specialist agents take over — planner, architect, coder, reviewers, tester, writer — each doing one job and handing its Markdown result to the next. [The shipped pipelines, drawn](#the-pipelines).
+Specialist agents take over — in the shipped flow that's planner, architect, coder, reviewers, tester, writer — each doing one job and handing its Markdown result to the next. Your workflow, your specialists. [The shipped pipelines, drawn](#the-pipelines).
 
 The two design steps and the two review steps each run **concurrently** — one `parallelWith` line per pair in the config; any independent pair of steps can. Coding and testing each wait for both members of their pair.
 
