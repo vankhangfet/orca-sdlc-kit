@@ -475,7 +475,9 @@ steps succeeded and overall verdict) and asks before starting:
 
 - `<n>` — resume that run. For an archived entry the current flat state is
   archived first, then the chosen run's artifacts are restored into the flat
-  dir (resuming the `(current)` entry restores nothing — it just continues).
+  dir (a copy-over, non-destructive restore — flat files that are not part
+  of the chosen run's snapshot are left in place; resuming the `(current)`
+  entry restores nothing — it just continues).
   The resume point is the first enabled step not recorded as `succeeded` in
   that run's `status.js` — an automatic `--from`.
 - `0`, plain Enter, or EOF — start a NEW run. Piped stdin (scripts, CI) closes
