@@ -695,6 +695,9 @@ const BAD_CONFIGS = [
   ["F15 skill with both path and prompt", "bad-skill-both.json", /skill "broken": "path" and "prompt" are mutually exclusive/],
   ["F16 mcp with neither command nor url", "bad-mcp-none.json", /mcp server "broken": must have either "command" or "url"/],
   ["F17 skill path not found", "bad-skill-path-missing.json", /skill "broken": path "skills\/nope-does-not-exist" not found/],
+  ["F13b skill with neither path nor prompt", "bad-skill-none.json", /skill "broken": must have either "path" or "prompt"/],
+  ["F13c inline skill missing description", "bad-skill-no-desc.json", /skill "broken": inline skill requires "description"/],
+  ["F16b mcp with both command and url", "bad-mcp-both.json", /mcp server "broken": "command" and "url" are mutually exclusive/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {
