@@ -124,6 +124,7 @@
       "agent": "claude",
       "timeoutMs": 1800000,
       "hardTimeoutMs": 7200000,
+      "parallelWith": "code-review",
       "writes": "SECURITY_REVIEW.md",
       "reads": [
         "coding",
