@@ -73,17 +73,26 @@ let hungInCurrentScenario = false;
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
 // NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
-async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000, notify = null }) {
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], seedWorktree = [], env: extraEnv = null, stdinText = null, budgetMs = 90000, notify = null }) {
   const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
   dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
   mkdirSync(join(wt, ".orca", "artifacts"), { recursive: true });
   mkdirSync(home, { recursive: true });
   for (const a of seedArtifacts) writeFileSync(join(wt, ".orca", "artifacts", a.file), a.text ?? "seeded by harness\n");
+  // Worktree-ROOT fixtures (agent-config files, stale manifests, user-owned
+  // AGENTS.md/.mcp.json) — unlike seedArtifacts, which target .orca/artifacts.
+  for (const w of seedWorktree) {
+    const p = join(wt, w.file);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, w.text);
+  }
   if (notify) writeFileSync(join(dir, "notify.json"), JSON.stringify(notify, null, 2));
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
   env.ORCA_CLI_COMMAND = NODE;
+  // Per-scenario env (NOT ORCA_*-prefixed — those are stripped below on purpose).
+  if (extraEnv) Object.assign(env, extraEnv);
   // Backslashes inside NODE_OPTIONS quotes are eaten by Node's POSIX-style
   // tokenizer (C:\Working -> C:Working), so the preload must be forward-slashed.
   env.NODE_OPTIONS = `--require "${PRELOAD.split("\\").join("/")}"`;
