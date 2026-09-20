@@ -1,0 +1,16 @@
+{
+  "maxRetries": 1,
+  "defaults": {
+    "timeoutMs": 30000,
+    "hardTimeoutMs": 60000,
+    "startRetryDelayMs": 200,
+    "warmupTimeoutMs": 5000,
+    "startGraceMs": 3000
+  },
+  "pipeline": [
+    { "id": "coder", "title": "Coder", "agent": "stub", "spec": "Implement the feature; update {out}.", "writes": "CHANGES.md" },
+    { "id": "code-review", "title": "Code Review", "agent": "stub", "reads": ["coder"], "onFailGoto": "coder", "spec": "Review {reads}; write the verdict to {out}.", "writes": "REVIEW.md" },
+    { "id": "security-review", "title": "Security Review", "agent": "stub", "parallelWith": "code-review", "reads": ["coder"], "onFailGoto": "coder", "spec": "Security-review {reads}; write the verdict to {out}.", "writes": "SECURITY_REVIEW.md" },
+    { "id": "testing", "title": "Testing", "agent": "stub", "reads": ["coder", "code-review", "security-review"], "onFailGoto": "coder", "spec": "Test {reads}; write results to {out}.", "writes": "TEST_REPORT.md" }
+  ]
+}

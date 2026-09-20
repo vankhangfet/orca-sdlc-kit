@@ -334,12 +334,19 @@ its hard cap. Raise the cap when a full implementation legitimately runs long:
 
 ### 3.9. Run two steps at the same time
 Independent steps that both depend on the same input can run concurrently — the
-shipped config does this for the two design passes (both read Architecture,
-Coding waits for both):
+shipped config does this twice: the two design passes (both read Architecture;
+Coding waits for both) and the two reviews (both read Coding; Testing waits
+for both):
 ```jsonc
-{ "id": "uiux-design", "parallelWith": "detailed-design", /* ... */ }
+{ "id": "uiux-design",     "parallelWith": "detailed-design", /* ... */ }
+{ "id": "security-review", "parallelWith": "code-review",     /* ... */ }
 ```
 Saves the length of the shorter step; verify the grouping with `--dry-run`.
+When one member of a parallel group FAILs, the `onFailGoto` retry re-runs the
+whole group — a fix can disturb either review, so both look again.
+To skip one member of a parallel pair (`enabled:false`), also remove the pair's
+`parallelWith` line — the loader dies if the line points at the disabled
+member; skipping the member that carries the line degrades to sequential.
 
 ---
 

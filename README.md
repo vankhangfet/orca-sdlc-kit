@@ -28,6 +28,7 @@ and the run-end summary land in Telegram, Slack, MS Teams or WhatsApp](img/banne
 
 ## What's new
 
+- **Parallel reviews** *(v2.3.0)* — code review and security review now run at the same time on the same coding output; testing waits for both, and either review failing sends the coder back, after which both reviews run again on the fix.
 - **Run history & one-key resume** *(v2.2.0)* — every new run snapshots the previous run's results into `.orca/artifacts/runs/`, so nothing is ever overwritten and any two runs can be compared side by side. At startup the kit lists previous runs and lets you continue one exactly where it stopped — press `0`/Enter for a fresh run, pass `--new` to skip the question. Scripts and CI are never blocked.
 - **Nudge — auto-retry for missing outputs** *(v2.1.0)* — an agent that finished (or stalled) without writing its file gets a short reminder in its own terminal, reusing the live session instead of a costly re-run. Ships off; enable with `nudgeRetries` > 0. A terminal waiting on a human-only dialog is never touched.
 
@@ -68,7 +69,7 @@ node .orca/flow.mjs "Build a login page with email + Google sign-in"
 
 Specialist agents take over — planner, architect, coder, reviewers, tester, writer — each doing one job and handing its Markdown result to the next. [The shipped pipelines, drawn](#the-pipelines).
 
-The two design steps run **concurrently** — one `parallelWith` line in the config; any independent pair of steps can. Coding waits for both.
+The two design steps and the two review steps each run **concurrently** — one `parallelWith` line per pair in the config; any independent pair of steps can. Coding and testing each wait for both members of their pair.
 
 What makes this safe rather than a black box:
 
@@ -183,7 +184,7 @@ flowchart LR
     P --> U[UI / UX]
     D --> C["Coding (codex)"]
     U --> C
-    C --> R["Review + security"]
+    C --> R["Code review ∥ security review"]
     R -- fail --> C
     R -- pass --> T["Testing (opencode)"]
     T -- fail --> C

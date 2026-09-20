@@ -229,6 +229,36 @@ scenario("E8 retry-exhaust (loop is finite)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E31 — parallel REVIEW group + onFailGoto: Security Review fails once inside
+// the [code-review ∥ security-review] group; the fix loop jumps back to the
+// Coder and the retry re-runs the WHOLE group — a second dispatch for BOTH
+// review members, not just the failed one. Expected worker-starts: coder,
+// both reviews (round 1), coder (fix), both reviews (round 2), testing = 7.
+// ---------------------------------------------------------------------------
+scenario("E31 parallel-review fail-retry (group re-runs both reviews after fix)", async () => {
+  const r = await runFlow({ name: "e31", config: "../test/configs/parallel-review.config.json",
+    scenario: "parallel-review-fail-once.cjs", budgetMs: 90000 });
+  ok("E31 not hung", !r.hung);
+  eq("E31 exit code", r.code, 0);
+  const starts = r.calls.map((c, i) => (c.cmd === "orchestration worker-start" ? i : -1)).filter((i) => i > -1);
+  const checkAfterFirstReview = r.calls.findIndex((c, i) => c.cmd === "orchestration check" && i > starts[1]);
+  ok("E31 both reviews launched before the group's first wait", starts[2] > -1 && checkAfterFirstReview > starts[2]);
+  ok("E31 fail jump logged", /\[fail\] Security Review FAILED( \(.*\))? -> back to "Coder" \(attempt 1\/1\)/.test(r.out + r.err));
+  eq("E31 one task-create per step (cached tasks reopened, not re-created)", r.by("orchestration task-create").length, 4);
+  eq("E31 worker-start total (coder x2, each review x2, testing x1)", r.by("orchestration worker-start").length, 7);
+  const reopens = r.by("orchestration task-update").filter((c) => c.flags.status === "ready");
+  ok("E31 coder reopened with fix note", reopens.some((c) => String(c.flags.result ?? "").includes("fix from security-review")));
+  eq("E31 security-review flagged parallel", r.status?.steps.find((s) => s.id === "security-review")?.parallel, true);
+  eq("E31 coder attempt 2", r.status?.steps.find((s) => s.id === "coder")?.attempt, 2);
+  eq("E31 security-review attempt 2", r.status?.steps.find((s) => s.id === "security-review")?.attempt, 2);
+  const joinCreate = r.calls.findIndex((c) => c.cmd === "orchestration task-create" && String(c.flags.spec ?? "").includes("# Testing"));
+  const checkAfterRetry = r.calls.findIndex((c, i) => c.cmd === "orchestration check" && i > starts[5]);
+  ok("E31 testing tasked only after the retry round settles", joinCreate > -1 && checkAfterRetry > -1 && joinCreate > checkAfterRetry);
+  ok("E31 testing ok line (join after both reviews)", /\[ok\] Testing done -> \.orca\/artifacts\/TEST_REPORT\.md/.test(r.out + r.err));
+  eq("E31 status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
 // E2 — manual start path: warm the TUI, fetch the preamble, substitute
 // ctx_dryrun, paste + bare-Enter, verify consumption, close on settle.
 // Also pins the AUTO-RUN claude command wrap.
