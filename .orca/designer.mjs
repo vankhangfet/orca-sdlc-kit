@@ -36,6 +36,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 const log = (...a) => console.log("[designer]", ...a);
 const die = (m) => { console.error("[designer] ERROR:", m); process.exit(1); };
+if (!Number.isInteger(portArg) || portArg < 0 || portArg > 65535) die("--port must be an integer 0..65535");
 
 // --- shared helpers ---
 // Client-supplied config paths may only address files INSIDE .orca/. Returns

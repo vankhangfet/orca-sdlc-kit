@@ -788,7 +788,7 @@ async function startDesigner() {
     child.stderr.on("data", (d) => (out += d));
     child.on("exit", (c) => { clearTimeout(t); rNO(new Error(`designer exited early (${c}): ${out}`)); });
   });
-  const url = await ready;                      // http://127.0.0.1:<port>/?t=<token>
+  const url = await ready.catch((e) => { child.kill(); throw e; }); // never leak a live child
   const [base, token] = url.split("/?t=");
   return { base, token, stop: () => child.kill() };
 }
