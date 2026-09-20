@@ -22,6 +22,7 @@
     --amber:    #d29922;
     --blue:     #58a6ff;
     --violet:   #a371f7;
+    --red:      #f85149;
 
     --font-mono: 'JetBrains Mono','SFMono-Regular',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
     --font-ui:   -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
@@ -232,6 +233,85 @@
   .chip.ready { opacity: 1; color: #c9d4e0; border-color: rgba(63,185,80,.3); }
   .chip.ready .ck { color: var(--green); }
 
+  /* ============ BEAT 3 — chat notifications ============ */
+  .json-card {
+    background: #0b0f14; border: 1px solid var(--border); border-radius: 12px;
+    padding: 13px 16px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7;
+  }
+  .json-card .jf {
+    color: var(--muted); margin-bottom: 8px; letter-spacing: .02em;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .json-card .jf .fdot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 8px rgba(210,153,34,.6); }
+  .json-card .jf .c { color: var(--faint); }
+  .json-card .jl { opacity: 0; transform: translateY(3px); transition: .35s ease; white-space: pre; }
+  .json-card .jl.in { opacity: 1; transform: none; }
+  .jk { color: #79c0ff; } .js2 { color: #a5d6ff; } .jb { color: #ff7b72; }
+  .jp { color: #c9d4e0; } .c { color: var(--faint); }
+
+  .provs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .prov {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+    border: 1px solid var(--border2); background: var(--surface2);
+    border-radius: 999px; padding: 4px 10px 4px 7px;
+    opacity: .4; transition: .35s ease;
+  }
+  .prov svg { width: 13px; height: 13px; display: block; }
+  .prov.on { opacity: 1; color: #c9d4e0; border-color: rgba(88,166,255,.35); box-shadow: 0 0 10px rgba(88,166,255,.10); }
+  .note-line { margin-top: 14px; font-size: 11px; color: var(--faint); line-height: 1.55; }
+  .note-line b { color: var(--muted); font-weight: 550; }
+
+  .chat {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  }
+  .chat-bar {
+    height: 42px; flex: 0 0 42px; display: flex; align-items: center; gap: 10px;
+    padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border2);
+  }
+  .bot-av {
+    width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+    background: linear-gradient(150deg, #10261a, #0c1a12);
+    border: 1px solid rgba(63,185,80,0.4); box-shadow: 0 0 12px rgba(63,185,80,.2);
+  }
+  .bot-av svg { width: 14px; height: 14px; }
+  .chat-title { font-size: 12.5px; font-weight: 600; }
+  .chat-sub { font-family: var(--font-mono); font-size: 9.5px; color: var(--faint); letter-spacing: .06em; }
+  .chat-body {
+    flex: 1; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+    justify-content: flex-end; overflow: hidden;
+  }
+  .msg {
+    display: flex; gap: 10px; align-items: flex-start;
+    opacity: 0; transform: translateY(10px) scale(.985);
+    transition: .45s cubic-bezier(.2,.7,.3,1.08);
+  }
+  .msg.in { opacity: 1; transform: none; }
+  .msg .m-av {
+    flex: 0 0 26px; width: 26px; height: 26px; border-radius: 8px; margin-top: 2px;
+    display: grid; place-items: center;
+    background: linear-gradient(150deg, #10261a, #0c1a12);
+    border: 1px solid rgba(63,185,80,0.35);
+  }
+  .msg .m-av svg { width: 15px; height: 15px; }
+  .msg .bubble {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: 4px 12px 12px 12px; padding: 9px 14px; max-width: 620px;
+  }
+  .msg .m1 { font-size: 13px; font-weight: 550; color: #cdd9e5; display: flex; align-items: center; gap: 9px; }
+  .msg .m2 { display: block; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-top: 4px; letter-spacing: .02em; }
+  .vdot {
+    width: 17px; height: 17px; border-radius: 50%; flex: 0 0 17px;
+    display: inline-grid; place-items: center; font-size: 10px; font-weight: 700;
+  }
+  .v-ok  { background: rgba(63,185,80,.14);  color: var(--green); border: 1px solid rgba(63,185,80,.45); }
+  .v-no  { background: rgba(248,81,73,.13);  color: var(--red);   border: 1px solid rgba(248,81,73,.45); }
+  .v-run { background: rgba(88,166,255,.13); color: var(--blue);  border: 1px solid rgba(88,166,255,.45); }
+  .msg.fail .bubble { border-color: rgba(248,81,73,.35); background: rgba(248,81,73,.04); }
+  .msg.summary .bubble { border-color: rgba(63,185,80,.35); background: rgba(63,185,80,.05); }
+  .time-st { margin-left: auto; font-family: var(--font-mono); font-size: 9.5px; color: var(--faint); }
+
   /* ---- caption / progress ticks ---- */
   .cap {
     position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
@@ -334,12 +414,118 @@
         </div>
       </div>
 
+      <!-- ============ BEAT 3 : CHAT NOTIFICATIONS ============ -->
+      <div class="beat" id="beat3">
+        <div class="b2-wrap">
+          <div class="cols">
+            <!-- setup sidebar -->
+            <div class="pipeline">
+              <div class="sect-label">Setup · once</div>
+              <div class="json-card">
+                <div class="jf"><span class="fdot"></span><span><span class="c">.orca/</span>notify.json</span></div>
+                <div class="jl"><span class="jp">{</span></div>
+                <div class="jl">  <span class="jk">"enabled"</span><span class="jp">:</span> <span class="jb">true</span><span class="jp">,</span></div>
+                <div class="jl">  <span class="jk">"provider"</span><span class="jp">:</span> <span class="js2">"telegram"</span><span class="jp">,</span></div>
+                <div class="jl">  <span class="c">// or slack · teams · whatsapp</span></div>
+                <div class="jl">  <span class="jk">"url"</span><span class="jp">:</span> <span class="js2">"…/bot&lt;TOKEN&gt;/sendMessage"</span><span class="jp">,</span></div>
+                <div class="jl">  <span class="jk">"chatId"</span><span class="jp">:</span> <span class="js2">"-1001240221…"</span><span class="jp">,</span></div>
+                <div class="jl">  <span class="jk">"events"</span><span class="jp">:</span> <span class="jp">[</span><span class="js2">"step"</span><span class="jp">,</span> <span class="js2">"run"</span><span class="jp">]</span></div>
+                <div class="jl"><span class="jp">}</span></div>
+              </div>
+              <div class="provs">
+                <span class="prov" id="pv1">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#26A5E4"/><path fill="#fff" d="M17.6 6.7 6.4 11.1c-.7.27-.67 1.25.05 1.47l2.84.95 1.06 3.2c.2.62 1 .76 1.39.25l1.54-1.97 3.03 2.22c.53.39 1.29.11 1.42-.52l1.87-8.94c.16-.79-.6-1.43-1.32-1.15l-.18.08z"/></svg>
+                  Telegram
+                </span>
+                <span class="prov" id="pv2">
+                  <svg viewBox="0 0 24 24"><g><rect x="9.7" y="2.2" width="4.4" height="10.4" rx="2.2" fill="#36C5F0"/><rect x="14.3" y="11.6" width="4.4" height="10.4" rx="2.2" fill="#2EB67D" transform="rotate(90 16.5 16.8)"/><rect x="9.9" y="11.4" width="4.4" height="10.4" rx="2.2" fill="#ECB22E" transform="rotate(180 12.1 16.6)"/><rect x="5.3" y="2" width="4.4" height="10.4" rx="2.2" fill="#E01E5A" transform="rotate(-90 7.5 7.2)"/></g></svg>
+                  Slack
+                </span>
+                <span class="prov" id="pv3">
+                  <svg viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="19" height="19" rx="4.5" fill="#6264A7"/><rect x="6.8" y="6.6" width="10.4" height="2.9" fill="#fff"/><rect x="10.5" y="6.6" width="3" height="10.8" fill="#fff"/></svg>
+                  MS Teams
+                </span>
+                <span class="prov" id="pv4">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#25D366"/><path fill="#fff" d="M12 4.6a7.3 7.3 0 0 0-6.2 11.2L4.6 19.4l3.7-1a7.3 7.3 0 1 0 3.7-13.8z"/><path fill="#25D366" d="M9.4 7.9c-.16 0-.33.02-.44.14-.36.35-.7.72-.87 1.2-.22.65-.06 1.44.34 2.26.55 1.14 1.5 2.4 2.72 3.4 1.1.9 2.28 1.5 3.24 1.6.6.07 1.13-.1 1.55-.5.28-.27.5-.63.63-.93.1-.24.06-.5-.13-.63l-1.6-1.1c-.2-.13-.44-.1-.63.03l-.7.5c-.13.1-.3.1-.44.02-.6-.33-1.24-.85-1.75-1.4-.5-.55-.93-1.2-1.17-1.77-.05-.14-.02-.3.09-.4l.57-.55c.16-.15.2-.38.1-.57l-.78-1.6c-.08-.16-.24-.26-.41-.26z"/></svg>
+                  WhatsApp
+                </span>
+              </div>
+              <div class="note-line">shipped <b>empty = off</b> · delivered in a guarded child process — a dead webhook <b>never stalls the run</b></div>
+            </div>
+
+            <!-- chat window -->
+            <div class="chat">
+              <div class="chat-bar">
+                <span class="bot-av">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12c2.5-5 7-7 11-6 3 .8 6 3 7 7-3 1-5 1-7 0" />
+                    <path d="M3 12c0 4 3 7 8 7 3 0 5-1 7-3" />
+                    <circle cx="15" cy="10" r="1.1" fill="#3fb950" stroke="none" />
+                  </svg>
+                </span>
+                <span>
+                  <div class="chat-title">orca-flow bot</div>
+                  <div class="chat-sub">posting while the run is going</div>
+                </span>
+              </div>
+              <div class="chat-body">
+                <div class="msg" id="m1">
+                  <span class="m-av">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c2.5-5 7-7 11-6 3 .8 6 3 7 7-3 1-5 1-7 0" /><path d="M3 12c0 4 3 7 8 7 3 0 5-1 7-3" /><circle cx="15" cy="10" r="1.1" fill="#3fb950" stroke="none" /></svg>
+                  </span>
+                  <span class="bubble">
+                    <span class="m1"><span class="vdot v-ok">✓</span>Planning — passed<span class="time-st">14:32</span></span>
+                    <span class="m2">2m 10s · PLAN.md on disk · agent claude</span>
+                  </span>
+                </div>
+                <div class="msg" id="m2">
+                  <span class="m-av">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c2.5-5 7-7 11-6 3 .8 6 3 7 7-3 1-5 1-7 0" /><path d="M3 12c0 4 3 7 8 7 3 0 5-1 7-3" /><circle cx="15" cy="10" r="1.1" fill="#3fb950" stroke="none" /></svg>
+                  </span>
+                  <span class="bubble">
+                    <span class="m1"><span class="vdot v-ok">✓</span>Detailed Design ‖ UI/UX Design — passed<span class="time-st">14:37</span></span>
+                    <span class="m2">parallel · 4m 39s · DETAILED_DESIGN.md + UIUX_MOCKS.md</span>
+                  </span>
+                </div>
+                <div class="msg fail" id="m3">
+                  <span class="m-av">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#f85149" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c2.5-5 7-7 11-6 3 .8 6 3 7 7-3 1-5 1-7 0" /><path d="M3 12c0 4 3 7 8 7 3 0 5-1 7-3" /><circle cx="15" cy="10" r="1.1" fill="#f85149" stroke="none" /></svg>
+                  </span>
+                  <span class="bubble">
+                    <span class="m1"><span class="vdot v-no">✕</span>Code Review — failed<span class="time-st">14:49</span></span>
+                    <span class="m2">quality loop → Coding · attempt 2/3 · notified per attempt</span>
+                  </span>
+                </div>
+                <div class="msg" id="m4">
+                  <span class="m-av">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c2.5-5 7-7 11-6 3 .8 6 3 7 7-3 1-5 1-7 0" /><path d="M3 12c0 4 3 7 8 7 3 0 5-1 7-3" /><circle cx="15" cy="10" r="1.1" fill="#3fb950" stroke="none" /></svg>
+                  </span>
+                  <span class="bubble">
+                    <span class="m1"><span class="vdot v-ok">✓</span>Code Review — passed<span class="time-st">14:55</span></span>
+                    <span class="m2">attempt 2 · REVIEW.md · coder fixed what review flagged</span>
+                  </span>
+                </div>
+                <div class="msg summary" id="m5">
+                  <span class="m-av">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c2.5-5 7-7 11-6 3 .8 6 3 7 7-3 1-5 1-7 0" /><path d="M3 12c0 4 3 7 8 7 3 0 5-1 7-3" /><circle cx="15" cy="10" r="1.1" fill="#58a6ff" stroke="none" /></svg>
+                  </span>
+                  <span class="bubble">
+                    <span class="m1"><span class="vdot v-run">▸</span>Run complete — 10/10 steps<span class="time-st">15:03</span></span>
+                    <span class="m2">24m 51s · artifacts in .orca/artifacts/ · on failure: exact --from resume cmd</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="scan"></div>
 
       <!-- caption + beat ticks -->
       <div class="cap">
         <span id="capText">Run a workflow from one command</span>
-        <span class="beats"><i class="on" id="t1"></i><i id="t2"></i></span>
+        <span class="beats"><i class="on" id="t1"></i><i id="t2"></i><i id="t3"></i></span>
       </div>
 
     </div>
@@ -431,8 +617,8 @@
   var chipEls = Array.prototype.slice.call(chipsEl.children);
 
   // ---------- beat helpers ----------
-  var beat1 = document.getElementById('beat1'), beat2 = document.getElementById('beat2');
-  var t1 = document.getElementById('t1'), t2 = document.getElementById('t2');
+  var beat1 = document.getElementById('beat1'), beat2 = document.getElementById('beat2'), beat3 = document.getElementById('beat3');
+  var t1 = document.getElementById('t1'), t2 = document.getElementById('t2'), t3 = document.getElementById('t3');
   var capText = document.getElementById('capText');
   var stepFlag = document.getElementById('stepFlag');
 
@@ -501,9 +687,17 @@
       runBeat2();
     }, 560);
   }
-  function toBeat1() {
+  function toBeat3() {
     beat2.classList.remove('on');
-    t2.classList.remove('on'); t1.classList.add('on');
+    t2.classList.remove('on'); t3.classList.add('on');
+    T(function () {
+      beat3.classList.add('on');
+      runBeat3();
+    }, 560);
+  }
+  function toBeat1() {
+    beat2.classList.remove('on'); beat3.classList.remove('on');
+    t2.classList.remove('on'); t3.classList.remove('on'); t1.classList.add('on');
     T(function () {
       beat1.classList.add('on');
       runBeat1();
@@ -533,8 +727,36 @@
     readyOrder.forEach(function (ci, k) {
       T(function () { chipEls[ci].classList.add('ready'); }, 1950 + k*260);
     });
-    // hold, then loop back
-    T(toBeat1, 4200);
+    // hold, then move on to the notifications beat
+    T(toBeat3, 4200);
+  }
+
+  // ---------- BEAT 3 : chat notifications ----------
+  var jEls   = Array.prototype.slice.call(document.querySelectorAll('#beat3 .jl'));
+  var pvEls  = [1,2,3,4].map(function (n) { return document.getElementById('pv' + n); });
+  var msgEls = [1,2,3,4,5].map(function (n) { return document.getElementById('m' + n); });
+
+  function resetNotify() {
+    jEls.forEach(function (el)   { el.classList.remove('in'); });
+    pvEls.forEach(function (el)  { el.classList.remove('on'); });
+    msgEls.forEach(function (el) { el.classList.remove('in'); });
+  }
+
+  function runBeat3() {
+    clearAll();
+    resetNotify();
+    capText.textContent = "Verdicts land in your team's chat";
+    stepFlag.innerHTML = '.orca/notify.json · <em>telegram</em>';
+
+    // notify.json fills in, line by line
+    jEls.forEach(function (el, i) { T(function () { el.classList.add('in'); }, 350 + i * 210); });
+    // platform pills light up — same messages, any chat
+    pvEls.forEach(function (el, i) { T(function () { el.classList.add('on'); }, 1950 + i * 230); });
+    // the bot reports while the run is going
+    msgEls.forEach(function (el, i) { T(function () { el.classList.add('in'); }, 3050 + i * 900); });
+
+    // hold, then loop back to the terminal
+    T(toBeat1, 8600);
   }
 
   // ---------- boot ----------

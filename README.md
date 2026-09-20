@@ -16,9 +16,11 @@
 ![Orca SDLC Kit in motion: a terminal runs one command — node .orca/flow.mjs
 "Build html game 2048" — then the live status dashboard takes over: the pipeline
 rail advances step by step, two design steps run in parallel with elapsed timers
-ticking, and artifact chips light up as each Markdown lands on disk](img/banner-animation.gif)
+ticking, artifact chips light up as each Markdown lands on disk — and finally a
+team chat lights up too: every step verdict (passed / failed with its retry loop)
+and the run-end summary land in Telegram, Slack, MS Teams or WhatsApp](img/banner-animation.gif)
 
-*One command starts the whole pipeline; the status page opens in your browser and updates itself while the agents work. [Details](#watch-it-run--the-live-status-page) · [HD video](img/banner-animation.mp4) · [interactive version](img/banner-animation.html)*
+*One command starts the whole pipeline; the status page opens in your browser and updates itself while the agents work — and every verdict can be pushed to your team's chat. [Details](#watch-it-run--the-live-status-page) · [chat notifications](#notifications) · [HD video](img/banner-animation.mp4) · [interactive version](img/banner-animation.html)*
 
 **Three flows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines). **Deliver-the-code variants** of all three live in `.orca/workflow-template/` — same pipelines plus a final Rebase & Push step.
 
