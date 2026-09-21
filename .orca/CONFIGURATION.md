@@ -11,7 +11,7 @@ config field, with examples for common situations.
 ```jsonc
 {
   "artifactsDir": ".orca/artifacts",   // where step outputs are stored
-  "maxRetries": 2,                      // max retries per onFailGoto loop
+  "maxRetries": 2,                      // default retry budget per onFailGoto loop (a step's own "maxRetries" overrides)
   "autoRun": true,                      // fully automatic (default): no questions, no gates
   "defaults": { "timeoutMs": 900000 },  // default per-step timeout (ms)
   "pipeline": [ /* list of steps, run in array order */ ]
@@ -21,7 +21,7 @@ config field, with examples for common situations.
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `artifactsDir` | string | no (default `.orca/artifacts`) | Folder holding the artifact files steps write |
-| `maxRetries` | number | no (default 2) | Cap on how many times a `fail -> onFailGoto` pair may loop before stopping |
+| `maxRetries` | number | no (default 2) | Default cap on how many times a `fail -> onFailGoto` pair may loop before stopping; a step's own `maxRetries` overrides it for that step's loop |
 | `autoRun` | boolean | no (default `true`) | `true` = fully automatic: every step's spec carries an autonomy directive (never ask the user, decide and record assumptions in the artifact) and `gate` flags are ignored. `false` = manual mode: agents may ask questions and steps with `gate:true` block on an approval gate. In auto-run, claude agents also start with permission bypass (`--permission-mode bypassPermissions`) so their terminal never waits for an approval — Claude Code asks you to accept bypass mode once per machine on first use (see the README's troubleshooting); manual mode keeps default prompting. |
 | `defaults.gateTimeoutMs` | number | no (default 3600000 = 60 min) | Manual mode only: how long to wait for a decision gate to be resolved before continuing anyway |
 | `defaults.timeoutMs` | number | no (default 900000 = 15 min) | Max worker **silence** (no terminal output, no heartbeat). Silence is NOT a failure verdict: a worker deep in one long tool call can look quiet for most of an hour. A quiet-but-alive dispatch is waited on (with a warning) until it settles or the hard cap hits; only a positive failure (dispatch failed / worker report) fails the step |
@@ -127,6 +127,7 @@ longer need. Snapshot (copy) failures warn and never block a run.
   "reads": ["detailed-design"],  // ids of steps whose output this step needs
   "spec": "...{reads}...{out}...",// prompt given to the agent
   "onFailGoto": "coding",        // (optional) loop back here on outcome=failed
+  "maxRetries": 20,              // (optional) retry budget for THIS step's onFailGoto loop (overrides global)
   "parallelWith": "",            // (optional) id of an EARLIER step to run concurrently with
   "gate": false,                 // (optional) true = wait for approval after the step
   "model": "default",            // (optional) "default"/missing = agent's own model; else passed as --model
@@ -187,7 +188,10 @@ the agent always knows the overall goal regardless of where the step sits.
 
 **`onFailGoto`** — (optional) the `id` of an earlier step. When the current step
 returns `outcome=failed`, the orchestrator loops back to that step to fix things,
-then resumes. Set to `null` or omit to disable. Loop count is bounded by `maxRetries`.
+then resumes. Set to `null` or omit to disable. Loop count is bounded by this
+step's `maxRetries` when set, else the global `maxRetries` (default 2). A budget
+of `0` means the first failure stops the run (fail fast, never loop). With a
+per-step budget declared, `--dry-run` shows the loop as `onFail-><id> xN`.
 
 **`parallelWith`** — (optional) id of an **earlier** step this step runs **concurrently**
 with. Both start together as one group; the first step *after* the group waits for
@@ -529,6 +533,7 @@ entry. If `--dry-run` reports "Could not read flow.config.json", check those two
 - `enabled`: `true` · `false`
 - `gate`: `true` · `false`
 - `onFailGoto`: any `id` earlier in the pipeline, or `null`
+- `maxRetries` (step): non-negative integer — this step's `onFailGoto` loop budget; overrides the global `maxRetries`
 - `model`: `"default"` (agent's own model, nothing passed — also when missing/empty) or any model name string (passed as `--model`)
 - `parallelWith`: an earlier step `id` (members run concurrently; the next step waits for all)
 - `reads`: array of `id`s (empty `[]` for a starting step)
