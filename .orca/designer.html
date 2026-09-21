@@ -247,11 +247,188 @@ async function duplicateCurrent() {
 
 // --- rendering (canvas/form bodies land in Task 6) ---------------------------
 function renderAll() { renderCanvas(); renderForm(); renderCmd(); }
-function renderCanvas() {
-  $("canvas").innerHTML = S.cfg ? "" : '<div class="empty">No workflow open — pick one above or use New.</div>';
+
+// --- advisory validation (mirrors flow.mjs load-time rules; never blocks) ---
+function parallelGroupOf(steps) {
+  const idx = new Map(steps.map((s, i) => [s.id, i]));
+  const groupOf = new Map();
+  steps.forEach((s) => {
+    if (s.parallelWith && idx.has(s.parallelWith)) {
+      const g = groupOf.get(s.parallelWith) ?? s.parallelWith;
+      groupOf.set(s.id, g);
+      if (!groupOf.has(s.parallelWith)) groupOf.set(s.parallelWith, g);
+    }
+  });
+  return groupOf;
 }
+function validateCfg(cfg) {
+  const errs = [];
+  const steps = (cfg.pipeline || []).filter((s) => s && s.id);
+  const idx = new Map(steps.map((s, i) => [s.id, i]));
+  steps.forEach((s, i) => {
+    const seen = errs.some((e) => e.msg.includes(`duplicate id "${s.id}"`));
+    if (steps.filter((x) => x.id === s.id).length > 1 && !seen) errs.push({ id: s.id, msg: `duplicate id "${s.id}"` });
+    if (!s.agent) errs.push({ id: s.id, msg: `"${s.id}" has no agent` });
+    (s.reads || []).forEach((rd) => {
+      if (!idx.has(rd)) errs.push({ id: s.id, msg: `"${s.id}" reads unknown "${rd}"` });
+      else if (idx.get(rd) >= i) errs.push({ id: s.id, msg: `"${s.id}" reads "${rd}" which is not EARLIER` });
+      else if (!steps[idx.get(rd)].writes) errs.push({ id: s.id, msg: `"${s.id}" reads "${rd}" which has no writes` });
+    });
+    if (s.onFailGoto && !idx.has(s.onFailGoto)) errs.push({ id: s.id, msg: `"${s.id}" onFailGoto "${s.onFailGoto}" does not exist` });
+    if (s.parallelWith && !idx.has(s.parallelWith)) errs.push({ id: s.id, msg: `"${s.id}" parallelWith unknown "${s.parallelWith}"` });
+    else if (s.parallelWith && idx.get(s.parallelWith) >= i) errs.push({ id: s.id, msg: `"${s.id}" parallelWith must point at an EARLIER step` });
+  });
+  // parallel groups: contiguous + no intra-group reads (flat, like flow.mjs)
+  const groupOf = parallelGroupOf(steps);
+  for (const g of new Set(groupOf.values())) {
+    const members = steps.filter((s) => s.id === g || groupOf.get(s.id) === g);
+    const pos = members.map((s) => idx.get(s.id)).sort((a, b) => a - b);
+    if (pos.some((p, k) => p !== pos[0] + k)) errs.push({ id: g, msg: `parallel group of "${g}" must be contiguous` });
+    for (const m of members)
+      for (const rd of m.reads || [])
+        if (members.some((x) => x.id === rd)) errs.push({ id: m.id, msg: `"${m.id}" reads "${rd}" inside its own parallel group` });
+  }
+  return errs;
+}
+
+// --- pipeline canvas --------------------------------------------------------
+function renderCanvas() {
+  const host = $("canvas");
+  host.innerHTML = "";
+  if (!S.cfg) { host.innerHTML = '<div class="empty">No workflow open — pick one above or use New.</div>'; return; }
+  const errs = validateCfg(S.cfg);
+  S.cfg.pipeline.forEach((s, i) => {
+    const mine = errs.filter((e) => e.id === s.id);
+    const card = document.createElement("div");
+    card.className = "card" + (i === S.sel ? " sel" : "") + (s.enabled === false ? " off" : "");
+    card.draggable = true;
+    card.innerHTML = `
+      <div class="cardrow">
+        <span class="dot">${i + 1}</span>
+        <span class="cid">${esc(s.id || "(no id)")}</span>
+        <span class="ctitle">${esc(s.title || "")}</span>
+        ${mine.length ? `<span class="errbadge" title="${esc(mine.map((e) => e.msg).join("\n"))}">⚠ ${mine.length}</span>` : ""}
+      </div>
+      <div class="chips">
+        <span class="chip agent">${esc(s.agent || "?")}</span>
+        ${s.parallelWith ? `<span class="chip">∥ ${esc(s.parallelWith)}</span>` : ""}
+        ${s.gate ? '<span class="chip">gate</span>' : ""}
+        ${s.interactive ? '<span class="chip">interactive</span>' : ""}
+        ${s.onFailGoto ? `<span class="chip">⟲ ${esc(s.onFailGoto)}</span>` : ""}
+        ${(s.reads || []).length ? `<span class="chip">reads: ${esc(s.reads.join(", "))}</span>` : ""}
+      </div>`;
+    card.addEventListener("click", () => { S.sel = i; renderCanvas(); renderForm(); });
+    card.addEventListener("dragstart", (ev) => ev.dataTransfer.setData("text/plain", String(i)));
+    card.addEventListener("dragover", (ev) => ev.preventDefault());
+    card.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      const from = Number(ev.dataTransfer.getData("text/plain"));
+      if (Number.isInteger(from) && from !== i) {
+        const [moved] = S.cfg.pipeline.splice(from, 1);
+        S.cfg.pipeline.splice(i, 0, moved);
+        S.sel = i; markDirty(); renderCanvas(); renderForm();
+      }
+    });
+    host.appendChild(card);
+  });
+  const add = document.createElement("button");
+  add.className = "addstep"; add.textContent = "+ add step";
+  add.addEventListener("click", () => {
+    let n = 1; while (S.cfg.pipeline.some((s) => s.id === `step-${n}`)) n++;
+    S.cfg.pipeline.push({ id: `step-${n}`, title: `Step ${n}`, enabled: true, agent: "claude", writes: `STEP${n}.md`, reads: [], spec: "You are ... Based on {reads}, write {out}: ..." });
+    S.sel = S.cfg.pipeline.length - 1; markDirty(); renderCanvas(); renderForm();
+  });
+  host.appendChild(add);
+}
+
+// --- step detail form -------------------------------------------------------
+const STEP_TEXT_FIELDS = [
+  ["id", "id", "planning"], ["title", "title", "Planning"], ["agent", "agent (CLI)", "claude"],
+  ["model", "model (optional)", ""], ["writes", "writes (artifact file)", "PLAN.md"],
+  ["progress", "progress (optional checklist file)", ""], ["effort", "effort (cold-start only)", ""],
+];
+const STEP_NUM_FIELDS = [
+  ["timeoutMs", "timeoutMs"], ["hardTimeoutMs", "hardTimeoutMs"],
+  ["nudgeRetries", "nudgeRetries"], ["nudgeTimeoutMs", "nudgeTimeoutMs"], ["startTimeoutMs", "startTimeoutMs"],
+];
 function renderForm() {
-  $("stepForm").innerHTML = '<div class="empty">Select a step on the left.</div>';
+  const host = $("stepForm");
+  const s = S.cfg && S.sel >= 0 ? S.cfg.pipeline[S.sel] : null;
+  if (!s) { host.innerHTML = '<div class="empty">Select a step on the left.</div>'; return; }
+  const i = S.sel;
+  const earlier = S.cfg.pipeline.slice(0, i);
+  const allIds = S.cfg.pipeline.map((x) => x.id).filter(Boolean);
+  const datalist = `<datalist id="agents">${AGENTS.map((a) => `<option value="${a}">`).join("")}</datalist>`;
+  const textHtml = STEP_TEXT_FIELDS.map(([k, label, ph]) => `
+    <label class="f"><span>${label}</span>
+      <input data-k="${k}" value="${esc(s[k] ?? "")}" ${k === "agent" ? 'list="agents"' : ""} ${ph ? `placeholder="${esc(ph)}"` : ""}></label>`).join("");
+  const numHtml = STEP_NUM_FIELDS.map(([k, label]) => `
+    <label class="f"><span>${label}</span><input type="number" data-num="${k}" value="${esc(s[k] ?? "")}"></label>`).join("");
+  const readsHtml = earlier.length
+    ? earlier.map((e2) => `
+      <label class="readcb"><input type="checkbox" data-read="${esc(e2.id)}" ${(s.reads || []).includes(e2.id) ? "checked" : ""}>
+        ${esc(e2.id)}${e2.writes ? ` → ${esc(e2.writes)}` : " ⚠ no writes"}</label>`).join("")
+    : '<span class="dim">no earlier steps</span>';
+  const optHtml = (list, cur, none) =>
+    `<option value="" ${cur ? "" : "selected"}>${none}</option>` +
+    list.map((v) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v)}</option>`).join("");
+  host.innerHTML = `
+    ${datalist}
+    <div class="grid">
+      ${textHtml}
+      ${numHtml}
+      <label class="f"><span>onFailGoto (loop back on failure)</span>
+        <select data-sel="onFailGoto">${optHtml(allIds, s.onFailGoto, "— none —")}</select></label>
+      <label class="f"><span>parallelWith (run concurrently with)</span>
+        <select data-sel="parallelWith">${optHtml(earlier.map((e2) => e2.id), s.parallelWith, "— none —")}</select></label>
+      <label class="f"><span>flags</span>
+        <span>
+          <label class="readcb"><input type="checkbox" data-flag="enabled" ${s.enabled !== false ? "checked" : ""}> enabled</label>
+          <label class="readcb"><input type="checkbox" data-flag="gate" ${s.gate ? "checked" : ""}> gate</label>
+          <label class="readcb"><input type="checkbox" data-flag="interactive" ${s.interactive ? "checked" : ""}> interactive</label>
+        </span></label>
+      <label class="f full"><span>spec (prompt; {out} {reads} {tasks} are substituted)</span>
+        <textarea data-k="spec">${esc(s.spec ?? "")}</textarea></label>
+      <label class="f full"><span>reads (steps this one consumes)</span><span>${readsHtml}</span></label>
+    </div>
+    <div class="formfoot">
+      <span class="dim">step ${i + 1} of ${S.cfg.pipeline.length}</span>
+      <button class="right" id="btnDupStep">Duplicate</button>
+      <button id="btnDelStep" style="color:var(--red);">Delete step</button>
+    </div>`;
+
+  const touch = () => { markDirty(); renderCanvas(); };   // canvas only — the form keeps focus
+  host.querySelectorAll("[data-k]").forEach((el) =>
+    el.addEventListener("input", () => { s[el.dataset.k] = el.value; touch(); }));
+  host.querySelectorAll("[data-num]").forEach((el) =>
+    el.addEventListener("input", () => { if (el.value === "") delete s[el.dataset.num]; else s[el.dataset.num] = Number(el.value); touch(); }));
+  host.querySelectorAll("[data-sel]").forEach((el) =>
+    el.addEventListener("change", () => { if (el.value === "") delete s[el.dataset.sel]; else s[el.dataset.sel] = el.value; touch(); }));
+  host.querySelectorAll("[data-flag]").forEach((el) =>
+    el.addEventListener("change", () => {
+      const k = el.dataset.flag;
+      if (k === "enabled") s.enabled = el.checked;
+      else if (el.checked) s[k] = true; else delete s[k];
+      touch();
+    }));
+  host.querySelectorAll("[data-read]").forEach((el) =>
+    el.addEventListener("change", () => {
+      const id = el.dataset.read;
+      s.reads = s.reads || [];
+      s.reads = el.checked ? [...s.reads, id] : s.reads.filter((x) => x !== id);
+      touch();
+    }));
+  $("btnDelStep").addEventListener("click", () => {
+    S.cfg.pipeline.splice(i, 1);
+    S.sel = Math.min(i, S.cfg.pipeline.length - 1);
+    markDirty(); renderCanvas(); renderForm();
+  });
+  $("btnDupStep").addEventListener("click", () => {
+    let n = 1; const base = s.id || "step";
+    while (S.cfg.pipeline.some((x) => x.id === `${base}-${n}`)) n++;
+    S.cfg.pipeline.splice(i + 1, 0, JSON.parse(JSON.stringify({ ...s, id: `${base}-${n}` })));
+    S.sel = i + 1; markDirty(); renderCanvas(); renderForm();
+  });
 }
 function renderDefaults() { /* Task 7 */ }
 
