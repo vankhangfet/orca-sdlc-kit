@@ -1712,6 +1712,10 @@ if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
 resolveWorktree();          // hard-fail here if still unresolved
 const WT_DIR = resolveWorktreePath();
 mkdirSync(join(WT_DIR || ".", ART_DIR), { recursive: true });
+// Crash recovery: a previous run killed between materialize and restore leaves
+// the manifest behind — put the worktree back before anything else runs.
+if (restoreAgentConfig({ worktree: WT_DIR || ".", warn }))
+  log("[agent-config] restored worktree files left behind by a previous run.");
 if (!orca(["status"]).ok) die("Orca runtime not ready (orca status failed).");
 
 log(`Creating Run: ${objective}`);

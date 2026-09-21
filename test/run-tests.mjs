@@ -387,6 +387,19 @@ scenario("S1c invalid pre-existing mcp.json dies WITH a manifest (abort window h
   eq("S1c original file untouched", readFileSync(join(r.wt, ".mcp.json"), "utf8"), "this is not json");
 });
 
+scenario("S2 stale manifest self-heals at startup", async () => {
+  const r = await runFlow({ name: "s2", config: "../test/configs/nudge-post.config.json",
+    seedWorktree: [
+      { file: ".mcp.json", text: '{"mcpServers":{"stale":{}}}\n' },
+      { file: ".orca-agent-config.json", text: JSON.stringify({ created: [".mcp.json"], modified: [] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S2 not hung", !r.hung);
+  eq("S2 exit code", r.code, 0);
+  ok("S2 stale .mcp.json removed", !existsSync(join(r.wt, ".mcp.json")));
+  ok("S2 manifest removed", !existsSync(join(r.wt, ".orca-agent-config.json")));
+  ok("S2 self-heal log", /leftover manifest|restored worktree files/.test(r.out + r.err));
+});
+
 scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => {
   const r = await runFlow({ name: "s6", config: "../test/configs/agent-skills-path.config.json",
     scenario: "agent-config-snap.cjs", budgetMs: 90000 });
