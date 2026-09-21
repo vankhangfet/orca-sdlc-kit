@@ -263,20 +263,40 @@ function parallelGroupOf(steps) {
 }
 function validateCfg(cfg) {
   const errs = [];
-  const steps = (cfg.pipeline || []).filter((s) => s && s.id);
+  const raw = cfg.pipeline || [];
+  const steps = raw.filter((s) => s && s.id);
   const idx = new Map(steps.map((s, i) => [s.id, i]));
+  // flow.mjs silently DROPS id-less steps — surface that, don't hide it.
+  raw.forEach((s, i) => {
+    if (!s || !s.id) errs.push({ id: s ? s.id : undefined, msg: `pipeline entry ${i + 1} has no id — flow.mjs silently skips it` });
+  });
   steps.forEach((s, i) => {
     const seen = errs.some((e) => e.msg.includes(`duplicate id "${s.id}"`));
     if (steps.filter((x) => x.id === s.id).length > 1 && !seen) errs.push({ id: s.id, msg: `duplicate id "${s.id}"` });
-    if (!s.agent) errs.push({ id: s.id, msg: `"${s.id}" has no agent` });
+    if (s.enabled !== false && !s.agent) errs.push({ id: s.id, msg: `"${s.id}" has no agent` });
     (s.reads || []).forEach((rd) => {
       if (!idx.has(rd)) errs.push({ id: s.id, msg: `"${s.id}" reads unknown "${rd}"` });
-      else if (idx.get(rd) >= i) errs.push({ id: s.id, msg: `"${s.id}" reads "${rd}" which is not EARLIER` });
-      else if (!steps[idx.get(rd)].writes) errs.push({ id: s.id, msg: `"${s.id}" reads "${rd}" which has no writes` });
+      else {
+        const t = steps[idx.get(rd)];
+        if (!t.writes) errs.push({ id: s.id, msg: `"${s.id}" reads "${rd}" which has no writes` });
+        else if (t.enabled !== false && idx.get(rd) >= i) errs.push({ id: s.id, msg: `"${s.id}" reads "${rd}" which is not EARLIER` });
+      }
     });
     if (s.onFailGoto && !idx.has(s.onFailGoto)) errs.push({ id: s.id, msg: `"${s.id}" onFailGoto "${s.onFailGoto}" does not exist` });
-    if (s.parallelWith && !idx.has(s.parallelWith)) errs.push({ id: s.id, msg: `"${s.id}" parallelWith unknown "${s.parallelWith}"` });
-    else if (s.parallelWith && idx.get(s.parallelWith) >= i) errs.push({ id: s.id, msg: `"${s.id}" parallelWith must point at an EARLIER step` });
+    if (s.parallelWith) {
+      if (!idx.has(s.parallelWith)) errs.push({ id: s.id, msg: `"${s.id}" parallelWith unknown "${s.parallelWith}"` });
+      else {
+        const t = steps[idx.get(s.parallelWith)];
+        if (idx.get(s.parallelWith) >= i) errs.push({ id: s.id, msg: `"${s.id}" parallelWith must point at an EARLIER step` });
+        else if (t.parallelWith) errs.push({ id: s.id, msg: `"${s.id}" parallelWith "${s.parallelWith}" which itself has parallelWith — chains are not allowed` });
+        else if (t.enabled === false) errs.push({ id: s.id, msg: `"${s.id}" parallelWith "${s.parallelWith}" which is disabled` });
+      }
+    }
+    for (const [k, min] of [["nudgeRetries", 0], ["nudgeTimeoutMs", 1]]) {
+      const v = s[k];
+      if (v != null && (!Number.isInteger(v) || v < min))
+        errs.push({ id: s.id, msg: `"${s.id}" ${k} must be an integer >= ${min}` });
+    }
   });
   // parallel groups: contiguous + no intra-group reads (flat, like flow.mjs)
   const groupOf = parallelGroupOf(steps);
@@ -296,8 +316,9 @@ function renderCanvas() {
   const host = $("canvas");
   host.innerHTML = "";
   if (!S.cfg) { host.innerHTML = '<div class="empty">No workflow open — pick one above or use New.</div>'; return; }
+  const pipe = S.cfg.pipeline || (S.cfg.pipeline = []);
   const errs = validateCfg(S.cfg);
-  S.cfg.pipeline.forEach((s, i) => {
+  pipe.forEach((s, i) => {
     const mine = errs.filter((e) => e.id === s.id);
     const card = document.createElement("div");
     card.className = "card" + (i === S.sel ? " sel" : "") + (s.enabled === false ? " off" : "");
@@ -322,8 +343,9 @@ function renderCanvas() {
     card.addEventListener("dragover", (ev) => ev.preventDefault());
     card.addEventListener("drop", (ev) => {
       ev.preventDefault();
-      const from = Number(ev.dataTransfer.getData("text/plain"));
-      if (Number.isInteger(from) && from !== i) {
+      const rawTxt = ev.dataTransfer.getData("text/plain");
+      const from = /^\d+$/.test(rawTxt) ? Number(rawTxt) : -1;
+      if (from >= 0 && from < S.cfg.pipeline.length && from !== i) {
         const [moved] = S.cfg.pipeline.splice(from, 1);
         S.cfg.pipeline.splice(i, 0, moved);
         S.sel = i; markDirty(); renderCanvas(); renderForm();
@@ -334,8 +356,8 @@ function renderCanvas() {
   const add = document.createElement("button");
   add.className = "addstep"; add.textContent = "+ add step";
   add.addEventListener("click", () => {
-    let n = 1; while (S.cfg.pipeline.some((s) => s.id === `step-${n}`)) n++;
-    S.cfg.pipeline.push({ id: `step-${n}`, title: `Step ${n}`, enabled: true, agent: "claude", writes: `STEP${n}.md`, reads: [], spec: "You are ... Based on {reads}, write {out}: ..." });
+    let n = 1; while (pipe.some((s) => s.id === `step-${n}`)) n++;
+    pipe.push({ id: `step-${n}`, title: `Step ${n}`, enabled: true, agent: "claude", writes: `STEP${n}.md`, reads: [], spec: "You are ... Based on {reads}, write {out}: ..." });
     S.sel = S.cfg.pipeline.length - 1; markDirty(); renderCanvas(); renderForm();
   });
   host.appendChild(add);
@@ -380,7 +402,7 @@ function renderForm() {
       <label class="f"><span>onFailGoto (loop back on failure)</span>
         <select data-sel="onFailGoto">${optHtml(allIds, s.onFailGoto, "— none —")}</select></label>
       <label class="f"><span>parallelWith (run concurrently with)</span>
-        <select data-sel="parallelWith">${optHtml(earlier.map((e2) => e2.id), s.parallelWith, "— none —")}</select></label>
+        <select data-sel="parallelWith">${optHtml(earlier.map((e2) => e2.id).filter(Boolean), s.parallelWith, "— none —")}</select></label>
       <label class="f"><span>flags</span>
         <span>
           <label class="readcb"><input type="checkbox" data-flag="enabled" ${s.enabled !== false ? "checked" : ""}> enabled</label>
@@ -414,7 +436,7 @@ function renderForm() {
   host.querySelectorAll("[data-read]").forEach((el) =>
     el.addEventListener("change", () => {
       const id = el.dataset.read;
-      s.reads = s.reads || [];
+      s.reads = Array.isArray(s.reads) ? s.reads : [];
       s.reads = el.checked ? [...s.reads, id] : s.reads.filter((x) => x !== id);
       touch();
     }));
@@ -453,6 +475,9 @@ document.querySelectorAll("nav.tabs button").forEach((b) =>
     $("tab-" + b.dataset.tab).classList.add("active");
   }));
 window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+// A missed drop (header/form/tabs) must not navigate the page away.
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => e.preventDefault());
 
 loadState().catch((e) => toast(e.message, true));
 </script>
