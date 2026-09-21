@@ -14,7 +14,7 @@
 // Run: node test/run-tests.mjs [--only <substring>]
 // (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, rmdirSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ import { dirname, join, resolve } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
+const ROOT = resolve(HERE, "..");
 const FLOW = join(REPO, ".orca", "flow.mjs");
 const NODE = process.execPath;
 const PRELOAD = join(HERE, "orca-preload.cjs");
@@ -920,6 +921,10 @@ scenario("D6 designer dry-run surfaces flow.mjs validation errors", async () => 
 });
 
 scenario("D7 designer scaffolds a fresh project workspace", async () => {
+  // Seed junk the copy-filter must exclude (dir rule + *.log/*.tmp rules).
+  mkdirSync(join(REPO, ".orca", "artifacts"), { recursive: true });
+  writeFileSync(join(REPO, ".orca", "artifacts", "designer-probe.log"), "junk\n");
+  writeFileSync(join(REPO, ".orca", "designer-filter-test.tmp"), "junk\n");
   const d = await startDesigner();
   const target = mkdtempSync(join(tmpdir(), "orca-designer-"));
   dirsOfCurrentScenario.push(target);
@@ -936,10 +941,26 @@ scenario("D7 designer scaffolds a fresh project workspace", async () => {
       ".orca/myproj.config.json", ".orca/workflow-template/README.md", "orca.yaml"])
       ok(`D7 created ${f}`, existsSync(join(target, ...f.split("/"))));
     ok("D7 artifacts/ NOT copied", !existsSync(join(target, ".orca", "artifacts")));
+    ok("D7 seeded junk log NOT copied", !existsSync(join(target, ".orca", "artifacts", "designer-probe.log")));
+    ok("D7 junk .tmp NOT copied", !existsSync(join(target, ".orca", "designer-filter-test.tmp")));
     eq("D7 scaffold into same dir refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
       headers: { ...hdr(d), "content-type": "application/json" },
       body: JSON.stringify({ dir: target, template: "flow.config.json", configName: "again" }) })).status, 400);
-  } finally { d.stop(); }
+    eq("D7 scaffold into repo root refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: REPO, template: "flow.config.json", configName: "nope" }) })).status, 400);
+    eq("D7 case-mangled kit dir refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: join(ROOT, ".ORCA"), template: "flow.config.json", configName: "nope2" }) })).status, 400);
+    eq("D7 bad configName refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: target, template: "flow.config.json", configName: "bad name!" }) })).status, 400);
+  } finally {
+    d.stop();
+    rmSync(join(REPO, ".orca", "artifacts", "designer-probe.log"), { force: true });
+    try { rmdirSync(join(REPO, ".orca", "artifacts")); } catch {}
+    rmSync(join(REPO, ".orca", "designer-filter-test.tmp"), { force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

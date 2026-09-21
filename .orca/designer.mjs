@@ -13,7 +13,7 @@
 // token (query ?t= or x-designer-token header) and a localhost Host header.
 
 import { createServer } from "node:http";
-import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync, mkdirSync, cpSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync, mkdirSync, cpSync, rmSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join, resolve, sep } from "node:path";
@@ -163,7 +163,10 @@ function apiScaffold(body) {
   if (!tplFull || !body.template.endsWith(".config.json") || !existsSync(tplFull))
     return { status: 400, error: `unknown template: ${body.template}` };
   const st = dirState(body.dir);
-  if (st.dir === ROOT || st.dir === HERE || (st.dir + sep).startsWith(HERE + sep))
+  // NTFS is case-insensitive: normalize case on Windows so a case-mangled
+  // path into the kit's own folder cannot bypass the refusal.
+  const norm = (p) => (IS_WIN ? p.toLowerCase() : p);
+  if (norm(st.dir) === norm(ROOT) || norm(st.dir) === norm(HERE) || norm(st.dir + sep).startsWith(norm(HERE) + sep))
     return { status: 400, error: "refusing to scaffold inside the kit's own folder" };
   if (st.hasOrca) return { status: 400, error: `${st.dir} already contains .orca/ — refusing to overwrite` };
   try {
@@ -179,7 +182,8 @@ function apiScaffold(body) {
       },
     });
     const orcaYaml = join(ROOT, "orca.yaml");
-    if (existsSync(orcaYaml)) writeFileSync(join(st.dir, "orca.yaml"), readFileSync(orcaYaml));
+    if (existsSync(orcaYaml) && !existsSync(join(st.dir, "orca.yaml")))
+      writeFileSync(join(st.dir, "orca.yaml"), readFileSync(orcaYaml));
     // First config: the chosen template, under the project's own name.
     atomicWrite(join(st.dir, ".orca", `${name}.config.json`), readFileSync(tplFull, "utf8"));
     // .gitignore: extend an existing one exactly once (mirror init.mjs).
@@ -189,7 +193,12 @@ function apiScaffold(body) {
       if (!t.split(/\r?\n/).includes(".orca/artifacts/"))
         writeFileSync(gi, t.replace(/\r?\n?$/, "\n") + ".orca/artifacts/\n");
     }
-  } catch (e) { return { status: 500, error: `scaffold failed: ${e.message}` }; }
+  } catch (e) {
+    // hasOrca was verified false beforehand — any .orca present here is
+    // provably ours. Remove the partial copy so a retry is not wedged.
+    try { rmSync(join(st.dir, ".orca"), { recursive: true, force: true }); } catch {}
+    return { status: 500, error: `scaffold failed: ${e.message} (partial copy removed — safe to retry)` };
+  }
   return { status: 200, dir: st.dir, config: `${name}.config.json`,
     command: `node .orca/flow.mjs "<objective>" --config ${name}.config.json` };
 }
