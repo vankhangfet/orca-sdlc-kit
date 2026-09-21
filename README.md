@@ -39,6 +39,7 @@ Full history: [Roadmap](#roadmap) · [Releases](https://github.com/vankhangfet/o
 - [What's new](#whats-new)
 - [Why this kit](#why-this-kit)
 - [Use cases](#use-cases)
+- [How it compares](#how-it-compares)
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
   - [1. Set up your project](#1-set-up-your-project)
@@ -71,6 +72,22 @@ If an idea fits "a few agents, each doing one job, passing its result to the nex
 - **Draft, critique, polish — any content.** *"Write the v2 launch announcement."* Research → outline → draft → review loop → final text: the same retry-on-fail discipline as code, with prose artifacts instead of patches.
 
 Each of these is just a different JSON config — the engine (retries, parallel steps, live status page, chat notifications) stays the same. [Build your own](#2-configure-your-pipeline).
+
+## How it compares
+
+Same goal — get work done with AI — but different tools live at different layers:
+
+![Orca Flow Kit vs. LangGraph, CrewAI, OpenAI Agents SDK and n8n — same goal, different layers, different strengths](img/orca-kit-comparison.png)
+
+| | **This kit** | **LangGraph** | **CrewAI** | **OpenAI Agents SDK** | **n8n** |
+|---|---|---|---|---|---|
+| Main idea | Workflow layer for coding agents | Graph engine for agent logic | Teams of agents | Agent runtime + SDK | Visual workflow automation |
+| Defined in | JSON — no code | Python | Python / YAML | Python | Visual UI |
+| Agents | The CLI agents you already have — `claude`, `codex`, `cursor`, ... | You build them | You build them | You build them | Tool nodes |
+| Key strength | Instant preview, live status page, results on disk | Dynamic logic, full graph control | Role-based collaboration | SDK integrations | Tools, hooks, data apps |
+| Best for | Multi-step work done end to end by your coding agents | Complex custom agent graphs | Multi-agent teamwork | Lightweight OpenAI projects | General automation |
+
+**Different layers, not competitors.** LangGraph, CrewAI and the OpenAI Agents SDK are the *agent brain* — you code your own agents and their logic. n8n wires tools and data together. This kit is the *workflow layer above real agents*: it takes the coding-agent CLIs you already use and runs them as a disciplined pipeline — retries, gates, parallel steps, observability — from one JSON file. Use the right layer for the right job.
 
 ## How it works
 
