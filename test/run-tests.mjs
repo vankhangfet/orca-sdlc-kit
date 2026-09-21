@@ -891,6 +891,7 @@ scenario("F14 dry-run shows per-step retry budget", async () => {
   eq("F14 exit code", r.code, 0);
   ok("F14 step budget flag rendered", /\{onFail->coder x3\}/.test(r.out));
   ok("F14 bare flag not left behind", !/\{onFail->coder\}/.test(r.out));
+  ok("F14 global budget not suffixed", !/x1\}/.test(r.out));
 });
 
 // ---------------------------------------------------------------------------

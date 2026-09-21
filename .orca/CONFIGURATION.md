@@ -189,7 +189,8 @@ the agent always knows the overall goal regardless of where the step sits.
 **`onFailGoto`** — (optional) the `id` of an earlier step. When the current step
 returns `outcome=failed`, the orchestrator loops back to that step to fix things,
 then resumes. Set to `null` or omit to disable. Loop count is bounded by this
-step's `maxRetries` when set, else the global `maxRetries` (default 2). A budget
+step's `maxRetries` when set — declare it here, on the failing step, not on the
+step it jumps back to — else the global `maxRetries` (default 2). A budget
 of `0` means the first failure stops the run (fail fast, never loop). With a
 per-step budget declared, `--dry-run` shows the loop as `onFail-><id> xN`.
 
