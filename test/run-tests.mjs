@@ -259,6 +259,24 @@ scenario("E31 parallel-review fail-retry (group re-runs both reviews after fix)"
 });
 
 // ---------------------------------------------------------------------------
+// E32 — per-step maxRetries: the reviewer declares maxRetries:3 over the
+// global 1; the fix loop must honor the STEP budget — attempts render n/3,
+// exhaustion lands at 3, and the coder is re-dispatched exactly 3 times.
+// ---------------------------------------------------------------------------
+scenario("E32 retry-per-step (step budget overrides global)", async () => {
+  const r = await runFlow({ name: "e32", config: "../test/configs/retry-per-step.config.json", scenario: "reviewer-fail-always.cjs", budgetMs: 90000 });
+  ok("E32 not hung", !r.hung);
+  eq("E32 exit code", r.code, 1);
+  const log = r.out + r.err;
+  ok("E32 attempt 1/3", /\[fail\] Reviewer FAILED( \(.*\))? -> back to "Coder" \(attempt 1\/3\)/.test(log));
+  ok("E32 attempt 2/3", /\(attempt 2\/3\)/.test(log));
+  ok("E32 attempt 3/3", /\(attempt 3\/3\)/.test(log));
+  ok("E32 exhausted at step budget", /exhausted 3 retries/.test(log));
+  ok("E32 never used the global budget", !/exhausted 1 retries/.test(log));
+  eq("E32 worker-start count bounded (4 coder + 4 reviewer)", r.by("orchestration worker-start").length, 8);
+});
+
+// ---------------------------------------------------------------------------
 // E2 — manual start path: warm the TUI, fetch the preamble, substitute
 // ctx_dryrun, paste + bare-Enter, verify consumption, close on settle.
 // Also pins the AUTO-RUN claude command wrap.
