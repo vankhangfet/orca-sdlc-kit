@@ -478,7 +478,9 @@ scenario("S5 cursor/gemini/opencode adapters", async () => {
   eq("S5 exit code", r.code, 0);
   // cursor: .cursor/mcp.json + .cursor/rules/<name>.mdc
   const cur = snapOf(r, "Cur");
-  ok("S5 cursor mcp file", cur?.[".cursor/mcp.json"]?.includes('"github"') === true);
+  const cm = cur?.[".cursor/mcp.json"] ? JSON.parse(cur[".cursor/mcp.json"]) : {};
+  eq("S5 cursor mcp key", Object.keys(cm), ["mcpServers"]);
+  ok("S5 cursor server present", cm.mcpServers?.github?.command === "npx");
   ok("S5 cursor rule file", /^---\ndescription: How to write commits\n---\n\nUse conventional commits\./.test(cur?.[".cursor/rules/commit-style.mdc"] ?? ""));
   // gemini: .gemini/settings.json (mcpServers key) + GEMINI.md section
   const gem = snapOf(r, "Gem");
@@ -494,6 +496,7 @@ scenario("S5 cursor/gemini/opencode adapters", async () => {
   ok("S5 opencode section", (opn?.["AGENTS.md"] ?? "").includes("### commit-style"));
   // Each step only sees ITS files (prior steps restored).
   ok("S5 cursor files restored before gemini", gem?.[".cursor/mcp.json"] === null);
+  ok("S5 cursor rules dir gone before gemini", gem?.[".cursor/rules"] === null);
   ok("S5 gemini files restored before opencode", opn?.[".gemini/settings.json"] === null);
   // Clean at the end.
   for (const f of [".cursor", ".gemini", "opencode.json", "GEMINI.md", "AGENTS.md"])
