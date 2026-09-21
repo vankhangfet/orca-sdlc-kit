@@ -98,13 +98,39 @@
 </section>
 
 <section id="tab-defaults" class="tab">
-  <!-- Task 7 fills this form -->
-  <div class="empty">Config-level fields editor arrives with the next commit.</div>
+  <div id="defaultsForm" style="max-width:560px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;">
+    <div class="grid" id="dGrid">
+      <label class="f"><span>artifactsDir</span><input id="d-artifactsDir"></label>
+      <label class="f"><span>maxRetries</span><input id="d-maxRetries" type="number"></label>
+      <label class="f"><span>autoRun (false = manual gates)</span>
+        <span><label class="readcb"><input id="d-autoRun" type="checkbox" checked> run unattended</label></span></label>
+      <label class="f"><span>defaults.timeoutMs (silence budget)</span><input id="d-timeoutMs" type="number" placeholder="900000"></label>
+      <label class="f"><span>defaults.hardTimeoutMs</span><input id="d-hardTimeoutMs" type="number" placeholder="4 × timeout"></label>
+      <label class="f"><span>defaults.worktree (pin)</span><input id="d-worktree" placeholder="auto-detect"></label>
+      <label class="f"><span>defaults.model</span><input id="d-model" placeholder="default"></label>
+      <label class="f"><span>defaults.readinessRetries</span><input id="d-readinessRetries" type="number" placeholder="3"></label>
+      <label class="f"><span>defaults.readinessMinBytes</span><input id="d-readinessMinBytes" type="number" placeholder="200"></label>
+      <label class="f"><span>defaults.nudgeRetries (0 = off)</span><input id="d-nudgeRetries" type="number" placeholder="0"></label>
+      <label class="f"><span>defaults.nudgeTimeoutMs</span><input id="d-nudgeTimeoutMs" type="number" placeholder="120000"></label>
+      <label class="f"><span>defaults.openStatus</span>
+        <span><label class="readcb"><input id="d-openStatus" type="checkbox" checked> auto-open status page</label></span></label>
+    </div>
+  </div>
 </section>
 
 <section id="tab-scaffold" class="tab">
-  <!-- Task 7 fills this form -->
-  <div class="empty">Project scaffolding arrives with the next commit.</div>
+  <div style="max-width:560px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;">
+    <p class="dim">Create a fresh project workspace: copies the whole kit into the target folder and drops in your first workflow config.</p>
+    <label class="f"><span>target folder (absolute or relative to this project)</span><input id="sc-dir" placeholder="C:\projects\my-app"></label>
+    <label class="f"><span>first workflow from</span><select id="sc-template"></select></label>
+    <label class="f"><span>workflow name (file: &lt;name&gt;.config.json)</span><input id="sc-name" placeholder="myproj"></label>
+    <div style="display:flex;gap:8px;">
+      <button id="sc-preview">Preview folder</button>
+      <button id="sc-create" class="primary">Create project</button>
+    </div>
+    <div id="sc-state" class="dim"></div>
+    <div id="sc-result"></div>
+  </div>
 </section>
 
 <div id="toasts"></div>
@@ -452,7 +478,35 @@ function renderForm() {
     S.sel = i + 1; markDirty(); renderCanvas(); renderForm();
   });
 }
-function renderDefaults() { /* Task 7 */ }
+function renderDefaults() {
+  if (!S.cfg) return;
+  const d = S.cfg, def = d.defaults || {};
+  $("d-artifactsDir").value = d.artifactsDir ?? ".orca/artifacts";
+  $("d-maxRetries").value = d.maxRetries ?? 2;
+  $("d-autoRun").checked = d.autoRun ?? true;
+  $("d-worktree").value = def.worktree ?? "";
+  $("d-model").value = def.model ?? "";
+  $("d-openStatus").checked = def.openStatus ?? true;
+  for (const k of ["timeoutMs", "hardTimeoutMs", "readinessRetries", "readinessMinBytes", "nudgeRetries", "nudgeTimeoutMs"])
+    $("d-" + k).value = def[k] ?? "";
+}
+function bindDefaults() {
+  const num = (el, c, k) => { if (el.value === "") delete c.defaults[k]; else c.defaults[k] = Number(el.value); };
+  const binds = [
+    ["d-artifactsDir", (el, c) => { c.artifactsDir = el.value || ".orca/artifacts"; }],
+    ["d-maxRetries", (el, c) => { c.maxRetries = el.value === "" ? 2 : Number(el.value); }],
+    ["d-autoRun", (el, c) => { c.autoRun = el.checked; }],
+    ["d-worktree", (el, c) => { c.defaults = c.defaults || {}; if (el.value === "") delete c.defaults.worktree; else c.defaults.worktree = el.value; }],
+    ["d-model", (el, c) => { c.defaults = c.defaults || {}; if (el.value === "") delete c.defaults.model; else c.defaults.model = el.value; }],
+    ["d-openStatus", (el, c) => { c.defaults = c.defaults || {}; c.defaults.openStatus = el.checked; }],
+  ];
+  for (const [k, fn] of [["timeoutMs", num], ["hardTimeoutMs", num], ["readinessRetries", num], ["readinessMinBytes", num], ["nudgeRetries", num], ["nudgeTimeoutMs", num]])
+    binds.push(["d-" + k, (el, c) => { c.defaults = c.defaults || {}; num(el, c, k); }]);
+  for (const [id, fn] of binds) {
+    const el = $(id);
+    el.addEventListener("input", () => { if (!S.cfg) return; fn(el, S.cfg); markDirty(); });
+  }
+}
 
 // --- wire-up ----------------------------------------------------------------
 $("cfgSelect").addEventListener("change", (e) => { if (e.target.value !== "__new__" && confirmDiscard()) loadConfig(e.target.value); });
@@ -479,7 +533,40 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => e.preventDefault());
 
-loadState().catch((e) => toast(e.message, true));
+// --- scaffold tab -----------------------------------------------------------
+function fillTemplateSelect() {
+  const sel = $("sc-template");
+  sel.innerHTML = "";
+  for (const c of [...S.configs.filter((x) => x.template), ...S.configs.filter((x) => !x.template)]) {
+    const o = document.createElement("option");
+    o.value = c.path;
+    o.textContent = `${c.template ? "template: " : ""}${c.name} (${c.path})`;
+    sel.appendChild(o);
+  }
+}
+async function scaffoldPreview() {
+  const dir = $("sc-dir").value.trim();
+  if (!dir) return toast("enter a target folder", true);
+  try {
+    const j = await api("GET", "/api/scaffold/preview?dir=" + encodeURIComponent(dir));
+    $("sc-state").textContent = `exists: ${j.exists} · empty: ${j.empty} · has .orca: ${j.hasOrca} → ${j.dir}`;
+  } catch (e) { toast(e.message, true); }
+}
+async function scaffoldCreate() {
+  const body = { dir: $("sc-dir").value.trim(), template: $("sc-template").value, configName: $("sc-name").value.trim() };
+  if (!body.dir || !body.configName) return toast("target folder and workflow name are required", true);
+  try {
+    const j = await api("POST", "/api/scaffold", body);
+    $("sc-result").innerHTML =
+      `<pre>created: ${esc(j.dir)}\n\nNext:\n  cd "${esc(j.dir)}"\n  ${esc(j.command.replace("<objective>", "Build something great"))}\n  ${esc(j.command.replace("<objective>", "Build something great")).replace("flow.mjs", "flow.mjs --dry-run")}  (preview first)</pre>`;
+    toast("project scaffolded");
+  } catch (e) { toast(e.message, true); }
+}
+$("sc-preview").addEventListener("click", scaffoldPreview);
+$("sc-create").addEventListener("click", scaffoldCreate);
+bindDefaults();
+
+loadState().then(fillTemplateSelect).catch((e) => toast(e.message, true));
 </script>
 </body>
 </html>
