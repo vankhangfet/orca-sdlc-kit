@@ -435,6 +435,7 @@ scenario("S3 pre-existing files merge, then restore verbatim", async () => {
   ok("S3 user skill folder kept", existsSync(join(r.wt, ".claude", "skills", "review-checklist", "README.md")));
   ok("S3 user skill content intact", readFileSync(join(r.wt, ".claude", "skills", "review-checklist", "README.md"), "utf8") === "user-owned skill\n");
   ok("S3 collision warn", /already exists in the worktree — keeping yours/.test(r.out + r.err));
+  eq("S3 no SKILL.md injected into user folder", cl?.[".claude/skills/review-checklist/SKILL.md"] ?? null, null);
   // During the codex step: AGENTS.md = original + marked section; group-1 files already restored.
   const cx = snapOf(r, "Cx");
   const agents = cx?.["AGENTS.md"] ?? "";
