@@ -139,6 +139,12 @@ function toast(msg, bad = false) {
   setTimeout(() => t.remove(), 3500);
 }
 function markDirty() { S.dirty = true; $("dirtyBadge").classList.remove("hidden"); }
+function confirmDiscard() {
+  if (!S.dirty) return true;
+  const yes = confirm("Discard unsaved changes?");
+  if (!yes) $("cfgSelect").value = S.path && S.configs.some((c) => c.path === S.path) ? S.path : "__new__";
+  return yes;
+}
 
 // --- config lifecycle -------------------------------------------------------
 async function loadState() {
@@ -164,21 +170,25 @@ async function loadConfig(path) {
     S.path = path; S.cfg = j.config; S.sel = -1; S.dirty = false;
     $("dirtyBadge").classList.add("hidden");
     renderAll(); renderDefaults();
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    toast(e.message, true);
+    $("cfgSelect").value = S.path && S.configs.some((c) => c.path === S.path) ? S.path : "__new__";
+  }
 }
 async function save() {
-  if (!S.path || !S.cfg) return;
+  if (!S.path || !S.cfg) return false;
   try {
     await api("POST", "/api/save", { path: S.path, config: S.cfg });
     S.dirty = false; $("dirtyBadge").classList.add("hidden");
     toast(`saved ${S.path}`);
     await loadState();
-  } catch (e) { toast(e.message, true); }
+    return true;
+  } catch (e) { toast(e.message, true); return false; }
 }
 async function dryRun() {
   if (!S.path || !S.cfg) return;
   try {
-    if (S.dirty) await save();          // dry-run reads the file on disk
+    if (S.dirty && !(await save())) return;   // dry-run reads the file on disk — bail on failed save
     const j = await api("POST", "/api/dry-run", { path: S.path });
     $("modalTitle").textContent = `dry-run ${S.path} — exit ${j.code}${j.timedOut ? " (TIMED OUT)" : ""}`;
     $("modalText").textContent = j.output || "(no output)";
@@ -190,7 +200,7 @@ async function dryRun() {
 function runCmd() {
   if (!S.path) return "";
   const cfgFlag = S.path !== "flow.config.json" ? ` --config ${S.path}` : "";
-  const obj = S.objective || "<objective>";
+  const obj = (S.objective || "<objective>").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   return `node .orca/flow.mjs "${obj}"${cfgFlag}`;
 }
 function renderCmd() { $("cmdText").value = runCmd(); }
@@ -206,9 +216,11 @@ async function askName(def) {
   const name = prompt("Workflow name (file: <name>.config.json in .orca/):", def);
   if (name == null) return null;
   if (!/^[\w.-]+$/.test(name)) { toast("name may only contain letters, digits, '.', '_', '-'", true); return null; }
+  if (S.configs.some((c) => c.name === name) && !confirm(`${name}.config.json already exists — overwrite it on Save?`)) return null;
   return name;
 }
 function adoptNew(name, cfg) {
+  if (!confirmDiscard()) return;
   S.path = `${name}.config.json`; S.cfg = cfg; S.sel = 0; S.dirty = true;
   $("dirtyBadge").classList.remove("hidden");
   renderAll(); renderDefaults();
@@ -244,7 +256,7 @@ function renderForm() {
 function renderDefaults() { /* Task 7 */ }
 
 // --- wire-up ----------------------------------------------------------------
-$("cfgSelect").addEventListener("change", (e) => { if (e.target.value !== "__new__") loadConfig(e.target.value); });
+$("cfgSelect").addEventListener("change", (e) => { if (e.target.value !== "__new__" && confirmDiscard()) loadConfig(e.target.value); });
 $("btnSave").addEventListener("click", save);
 $("btnDryRun").addEventListener("click", dryRun);
 $("btnCopyCmd").addEventListener("click", copyCmd);
