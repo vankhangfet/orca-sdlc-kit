@@ -1,0 +1,6 @@
+{
+  "maxRetries": 1.5,
+  "pipeline": [
+    { "id": "coder", "title": "Coder", "agent": "stub", "spec": "Write {out}.", "writes": "A.md" }
+  ]
+}

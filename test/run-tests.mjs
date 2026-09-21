@@ -845,6 +845,8 @@ const BAD_CONFIGS = [
   ["F11 read of a writes-less step", "bad-reads-no-writes.json", /reads "ghost" which has no "writes" — nothing to read/],
   ["F12 negative nudgeRetries", "bad-nudge-negative.json", /nudgeRetries must be a non-negative integer/],
   ["F12b zero nudgeTimeoutMs", "bad-nudge-zero-timeout.json", /nudgeTimeoutMs must be a positive integer/],
+  ["F13 negative step maxRetries", "bad-retry-per-step.json", /step "reviewer": maxRetries must be a non-negative integer \(got -1\)/],
+  ["F13b fractional global maxRetries", "bad-retry-global.json", /config: maxRetries must be a non-negative integer \(got 1.5\)/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {

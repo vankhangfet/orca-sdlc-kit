@@ -311,6 +311,17 @@ for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id
   for (const s of steps) nudgeFields(s, `step "${s.id}":`);
 }
 
+// Retry budgets: non-negative integers wherever declared — per step or at the
+// top level. Validated at load so a typo cannot silently change a fix loop's
+// budget (a string "20" or a fraction would compare wrongly and mis-exhaust).
+{
+  if (cfg.maxRetries != null && (!Number.isInteger(cfg.maxRetries) || cfg.maxRetries < 0))
+    die(`config: maxRetries must be a non-negative integer (got ${JSON.stringify(cfg.maxRetries)}).`);
+  for (const s of steps)
+    if (s.maxRetries != null && (!Number.isInteger(s.maxRetries) || s.maxRetries < 0))
+      die(`step "${s.id}": maxRetries must be a non-negative integer (got ${JSON.stringify(s.maxRetries)}).`);
+}
+
 // A step's reads. Steps in this run always count. Steps NOT part of this run
 // (dropped by --from/--only, or disabled) still count when their artifact file
 // already exists in the worktree — that is the RESUME case: `--from coding`
