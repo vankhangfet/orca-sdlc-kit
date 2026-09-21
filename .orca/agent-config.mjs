@@ -17,6 +17,10 @@ import { dirname, join, resolve } from "node:path";
 export const MANIFEST_FILE = ".orca-agent-config.json";
 const SECTION_BEGIN = "<!-- orca-agent-config BEGIN -->";
 const SECTION_END = "<!-- orca-agent-config END -->";
+// Managed-section stripper, CRLF-safe (single replace — no "g" flag needed).
+const SECTION_RX = new RegExp(
+  "\\r?\\n?" + SECTION_BEGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+  "[\\s\\S]*?" + SECTION_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\r?\\n?");
 
 // Per-harness delivery channels (all paths relative to the worktree root).
 //   mcpFile/mcpKey: JSON file + key holding MCP server defs (null = no MCP support)
@@ -37,17 +41,22 @@ const harnessOf = (agent) => String(agent || "").trim().split(/\s+/)[0] || "";
 // JSON. Unset variable -> warn + empty string; the harness surfaces the
 // resulting auth/connection error to the agent.
 const ENV_REF = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g;
-export function expandEnvDeep(value, warn, where) {
+// `warned` (shared per materialize) dedupes the unset-var warnings: the same
+// missing variable referenced by several servers warns once, not per server.
+export function expandEnvDeep(value, warn, where, warned = new Set()) {
   if (typeof value === "string")
     return value.replace(ENV_REF, (m, name) => {
       if (process.env[name] == null || process.env[name] === "") {
-        warn("[agent-config] " + where + ": ${env:" + name + "} is not set — substituting an empty string.");
+        if (!warned.has(name)) {
+          warned.add(name);
+          warn("[agent-config] " + where + ": ${env:" + name + "} is not set — substituting an empty string.");
+        }
       }
       return process.env[name] ?? "";
     });
-  if (Array.isArray(value)) return value.map((v) => expandEnvDeep(v, warn, where));
+  if (Array.isArray(value)) return value.map((v) => expandEnvDeep(v, warn, where, warned));
   if (value && typeof value === "object")
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, expandEnvDeep(v, warn, where)]));
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, expandEnvDeep(v, warn, where, warned)]));
   return value;
 }
 
@@ -81,29 +90,35 @@ export function validateAgentConfig({ cfg, configDir, steps, die }) {
 // --- Manifest plan: everything we touch, so restore can put it back.
 // Files are snapshotted as text; skill FOLDERS are never overwritten (a
 // pre-existing folder of the same name is kept with a warn — user-owned).
-function newPlan(worktree, warn) {
+function newPlan(worktree) {
   const created = [];
   const modified = [];
+  // The manifest is flushed on EVERY touch: a die()/throw between the first
+  // write and the end of materialize (the abort window) must still leave a
+  // manifest behind for the next run's self-heal — otherwise untracked files
+  // (including env-expanded MCP secrets) stay in the worktree forever.
+  const flush = () => writeFileSync(join(worktree, MANIFEST_FILE),
+    JSON.stringify({ created, modified }, null, 2) + "\n");
   const rememberFile = (rel) => {
     const abs = join(worktree, rel);
-    if (existsSync(abs)) {
-      if (!modified.some((m) => m.path === rel))
-        modified.push({ path: rel, original: readFileSync(abs, "utf8") });
-      return modified.find((m) => m.path === rel).original;
+    let m = modified.find((x) => x.path === rel);
+    if (m == null) {
+      // Not there (yet): original=null so restore REMOVES the file we are
+      // about to create (the mod.original == null branch in restoreAgentConfig).
+      m = { path: rel, original: existsSync(abs) ? readFileSync(abs, "utf8") : null };
+      modified.push(m);
     }
-    // Not there (yet): record original=null so restore REMOVES the file we are
-    // about to create (the mod.original == null branch in restoreAgentConfig).
-    if (!modified.some((m) => m.path === rel))
-      modified.push({ path: rel, original: null });
-    return null;
+    flush();
+    return m.original;
   };
   return {
-    created, modified,
+    created, modified, flush,
     // Write a TEXT file at rel (snapshotting the original first).
     write: (rel, text) => {
       rememberFile(rel);
       mkdirSync(dirname(join(worktree, rel)), { recursive: true });
       writeFileSync(join(worktree, rel), text);
+      flush();
     },
     // Track a DIRECTORY we are about to create wholesale, plus every ancestor
     // that does not exist YET (checked before the mkdir): restore removes the
@@ -111,6 +126,7 @@ function newPlan(worktree, warn) {
     trackDir: (rel) => {
       for (let cur = rel; cur && cur !== "." && !existsSync(join(worktree, cur)); cur = dirname(cur))
         if (!created.includes(cur)) created.push(cur);
+      flush();
     },
     rememberFile,
   };
@@ -131,18 +147,29 @@ function pathSkillText(def, configDir, die) {
 // --- Materialize: union of the group's refs per harness -> worktree files ---
 export function materializeAgentConfig({ worktree, members, cfg, configDir, die, warn }) {
   // Self-heal first: a manifest left by a crashed previous group must never be
-  // overwritten (its created/modified entries would be lost).
+  // overwritten (its created/modified entries would be lost). If the restore
+  // could not fully complete (manifest kept), die — materializing on top would
+  // snapshot orca-authored content as the user's "original" and bury the
+  // un-restored entries for good.
   if (existsSync(join(worktree, MANIFEST_FILE))) {
     warn("[agent-config] found a leftover manifest — restoring before materializing.");
     restoreAgentConfig({ worktree, warn });
+    if (existsSync(join(worktree, MANIFEST_FILE)))
+      die("[agent-config] the previous run's leftover manifest could not be fully restored (see warnings above) — resolve the worktree files manually or re-run after fixing, then start a new run.");
   }
 
   const skills = cfg.skills || {};
   const mcp = cfg.mcpServers || {};
   const mcpRefs = new Map();     // harness -> Set(serverName)
   const skillRefs = new Map();   // harness -> Set(skillName)
-  const owners = new Map();      // harness -> Set(stepId)   (for the union log)
+  const owners = new Map();      // harness -> Array<{ id, refs: Set }>  (for the union log)
   const add = (map, k, v) => { if (!map.has(k)) map.set(k, new Set()); map.get(k).add(v); };
+  const own = (h, id, ref) => {
+    if (!owners.has(h)) owners.set(h, []);
+    let e = owners.get(h).find((x) => x.id === id);
+    if (!e) { e = { id, refs: new Set() }; owners.get(h).push(e); }
+    e.refs.add(ref);
+  };
   let any = false;
 
   for (const s of members) {
@@ -160,19 +187,30 @@ export function materializeAgentConfig({ worktree, members, cfg, configDir, die,
         warn(`[agent-config] step "${s.id}": agent "${h}" does not support MCP servers via worktree — skipping mcp "${r}".`);
         continue;
       }
-      add(mcpRefs, h, r); add(owners, h, s.id);
+      add(mcpRefs, h, r); own(h, s.id, r);
     }
-    for (const r of s.skills || []) { add(skillRefs, h, r); add(owners, h, s.id); }
+    for (const r of s.skills || []) { add(skillRefs, h, r); own(h, s.id, r); }
   }
   if (!any) return;
 
-  // Union across parallel members sharing the worktree: one log line when it happens.
-  for (const [h, ids] of owners)
-    if (ids.size > 1) warn(`[agent-config] ${h}: merged skills/MCP refs from ${ids.size} parallel steps (${[...ids].join(", ")}).`);
+  // Union across parallel members sharing the worktree: one log line when it
+  // happens — and only when the merge is REAL (identical ref sets across steps
+  // is the normal fan-out, not an asymmetry worth explaining).
+  for (const [h, entries] of owners) {
+    if (entries.length < 2) continue;
+    const shapes = new Set(entries.map((e) => [...e.refs].sort().join("+")));
+    if (shapes.size === 1) continue;
+    warn(`[agent-config] ${h}: merged skills/MCP refs from ${entries.length} parallel steps (${entries.map((e) => e.id).join(", ")}).`);
+  }
 
-  const plan = newPlan(worktree, warn);
+  // Nothing deliverable for any harness (e.g. a lone codex member whose MCP
+  // refs were all skipped): skip the plan entirely — no empty-manifest churn.
+  if (!mcpRefs.size && !skillRefs.size) return;
+
+  const plan = newPlan(worktree);
 
   // MCP JSON files, one per harness that has refs.
+  const warned = new Set();   // env-warn dedupe shared across servers
   for (const [h, names] of mcpRefs) {
     const a = ADAPTERS[h];
     const orig = plan.rememberFile(a.mcpFile);
@@ -182,7 +220,7 @@ export function materializeAgentConfig({ worktree, members, cfg, configDir, die,
     }
     doc[a.mcpKey] = { ...(doc[a.mcpKey] || {}) };
     for (const name of names)
-      doc[a.mcpKey][name] = expandEnvDeep(mcp[name], warn, `mcp server "${name}"`);
+      doc[a.mcpKey][name] = expandEnvDeep(mcp[name], warn, `mcp server "${name}"`, warned);
     plan.write(a.mcpFile, JSON.stringify(doc, null, 2) + "\n");
     warn(`[agent-config] ${h}: ${names.size} mcp server(s) -> ${a.mcpFile}`);
   }
@@ -203,7 +241,12 @@ export function materializeAgentConfig({ worktree, members, cfg, configDir, die,
         plan.trackDir(rel);
         mkdirSync(join(worktree, rel), { recursive: true });
         if (def.path != null) {
-          cpSync(resolve(configDir, def.path), join(worktree, rel), { recursive: true });
+          const src = resolve(configDir, def.path);
+          // A single FILE becomes <skillDir>/<name>/SKILL.md (cpSync(file, dir)
+          // throws ERR_FS_CP_NON_DIR_TO_DIR); a directory is copied verbatim.
+          if (statSync(src).isFile())
+            writeFileSync(join(worktree, rel, "SKILL.md"), readFileSync(src, "utf8"));
+          else cpSync(src, join(worktree, rel), { recursive: true });
         } else {
           writeFileSync(join(worktree, rel, "SKILL.md"), inlineSkillMd(name, def));
         }
@@ -225,19 +268,15 @@ export function materializeAgentConfig({ worktree, members, cfg, configDir, die,
     const orig = plan.rememberFile(file);
     const prev = orig == null ? "" : orig;
     // Idempotent: strip any previous managed section before appending.
-    const stripped = prev.replace(sectionRx(), "").replace(/\n*$/, "\n");
+    const stripped = prev.replace(SECTION_RX, "").replace(/\n*$/, "\n");
     const items = [...defs.entries()].map(([name, def]) =>
       `### ${name}\n\n${def.path != null ? pathSkillText(def, configDir, die) : def.prompt}\n`).join("\n");
     plan.write(file, `${stripped}\n${SECTION_BEGIN}\n\n## Skills (managed by orca-flow)\n\n${items}\n${SECTION_END}\n`);
   }
 
-  writeFileSync(join(worktree, MANIFEST_FILE),
-    JSON.stringify({ created: plan.created, modified: plan.modified }, null, 2) + "\n");
-}
-
-function sectionRx() {
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\n?${esc(SECTION_BEGIN)}[\\s\\S]*?${esc(SECTION_END)}\\n?`);
+  // Every plan op already flushed; one explicit final flush keeps the manifest
+  // invariant obvious at the exit point.
+  plan.flush();
 }
 
 // --- Restore: created -> delete, modified -> original back, manifest -> gone.

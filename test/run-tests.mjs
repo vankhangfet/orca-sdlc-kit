@@ -362,6 +362,43 @@ scenario("S1 claude materialize (mcp.json + SKILL.md + env expand, clean restore
   ok("S1 manifest removed after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
 });
 
+scenario("S1b unrestorable leftover manifest dies before materializing", async () => {
+  const r = await runFlow({ name: "s1b", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [
+      { file: "stuck/.keep", text: "occupies the path so restore hits a non-empty dir\n" },
+      { file: ".orca-agent-config.json",
+        text: JSON.stringify({ created: [], modified: [{ path: "stuck", original: "not a dir owner\n" }] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S1b not hung", !r.hung);
+  eq("S1b exit code", r.code, 1);
+  ok("S1b die message", /leftover manifest could not be fully restored/.test(r.out + r.err));
+  ok("S1b manifest kept", existsSync(join(r.wt, ".orca-agent-config.json")));
+});
+
+scenario("S1c invalid pre-existing mcp.json dies WITH a manifest (abort window healable)", async () => {
+  const r = await runFlow({ name: "s1c", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [{ file: ".mcp.json", text: "this is not json" }], budgetMs: 90000 });
+  ok("S1c not hung", !r.hung);
+  eq("S1c exit code", r.code, 1);
+  ok("S1c die message", /\.mcp\.json already exists in the worktree and is not valid JSON/.test(r.out + r.err));
+  ok("S1c manifest flushed for self-heal", existsSync(join(r.wt, ".orca-agent-config.json")));
+  eq("S1c original file untouched", readFileSync(join(r.wt, ".mcp.json"), "utf8"), "this is not json");
+});
+
+scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => {
+  const r = await runFlow({ name: "s6", config: "../test/configs/agent-skills-path.config.json",
+    scenario: "agent-config-snap.cjs", budgetMs: 90000 });
+  ok("S6 not hung", !r.hung);
+  eq("S6 exit code", r.code, 0);
+  const tree = snapOf(r, "Dev")?.[".orca/agent-config-tree"] ?? [];
+  eq("S6 dir copied with extras", tree.filter((f) => f.startsWith(".claude/skills/team")).sort(),
+    [".claude/skills/team/SKILL.md", ".claude/skills/team/helper.txt"]);
+  ok("S6 single .md wrapped as SKILL.md", tree.includes(".claude/skills/solo/SKILL.md"));
+  ok("S6 worktree clean after run", !existsSync(join(r.wt, ".claude")));
+});
+
 // ---------------------------------------------------------------------------
 // E12 — readiness gate, decline: a declared read with NO artifact on disk must
 // stop the run BEFORE dispatching the consumer (stdin EOF = decline).

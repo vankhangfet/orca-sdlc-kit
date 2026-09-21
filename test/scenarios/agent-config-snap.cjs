@@ -23,6 +23,14 @@ module.exports = {
         fs.readFileSync(join(wt, ".claude", "skills", "review-checklist", "SKILL.md"), "utf8"); } catch {}
       try { snap[".cursor/rules/commit-style.mdc"] =
         fs.readFileSync(join(wt, ".cursor", "rules", "commit-style.mdc"), "utf8"); } catch {}
+      const walk = (d) => {
+        try {
+          return fs.readdirSync(join(wt, ...d.split("/")), { withFileTypes: true })
+            .flatMap((e) => e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]);
+        } catch { return []; }
+      };
+      snap[".orca/agent-config-tree"] = [".claude/skills", ".cursor/rules"].flatMap(walk);
+      // Snapshot key = step title from the spec's first line ("# <title>") — the same convention flow.mjs uses to build task specs (ensureTask).
       c.state.extra.cfgSnap ||= {};
       c.state.extra.cfgSnap[(String(c.flags.spec ?? "").match(/^# (.+)$/m) || [])[1] ?? String(c.flags.run)] = snap;
       const id = "task-" + c.id();
