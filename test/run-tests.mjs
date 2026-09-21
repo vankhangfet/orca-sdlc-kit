@@ -415,6 +415,37 @@ scenario("S2b startup self-heal fires before the runtime check", async () => {
   ok("S2b self-heal log", /restored worktree files left behind/.test(r.out + r.err));
 });
 
+scenario("S3 pre-existing files merge, then restore verbatim", async () => {
+  const seededMcp = '{"mcpServers":{"keepme":{"command":"keep"}}}\n';
+  const seededAgents = "Original agent instructions.\n";
+  const r = await runFlow({ name: "s3", config: "../test/configs/agent-skills-merge.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [
+      { file: ".mcp.json", text: seededMcp },
+      { file: "AGENTS.md", text: seededAgents },
+      { file: ".claude/skills/review-checklist/README.md", text: "user-owned skill\n" },
+    ], budgetMs: 90000 });
+  ok("S3 not hung", !r.hung);
+  eq("S3 exit code", r.code, 0);
+  // During the claude step: keepme preserved + github merged in.
+  const cl = snapOf(r, "Cl");
+  const during = cl?.[".mcp.json"] ? JSON.parse(cl[".mcp.json"]) : {};
+  eq("S3 merge keeps user server", Object.keys(during.mcpServers ?? {}).sort(), ["github", "keepme"]);
+  // User-owned skill folder kept as-is, ours skipped with a warn.
+  ok("S3 user skill folder kept", existsSync(join(r.wt, ".claude", "skills", "review-checklist", "README.md")));
+  ok("S3 user skill content intact", readFileSync(join(r.wt, ".claude", "skills", "review-checklist", "README.md"), "utf8") === "user-owned skill\n");
+  ok("S3 collision warn", /already exists in the worktree — keeping yours/.test(r.out + r.err));
+  // During the codex step: AGENTS.md = original + marked section; group-1 files already restored.
+  const cx = snapOf(r, "Cx");
+  const agents = cx?.["AGENTS.md"] ?? "";
+  ok("S3 AGENTS.md keeps original", agents.startsWith("Original agent instructions."));
+  ok("S3 AGENTS.md has markers", agents.includes("<!-- orca-agent-config BEGIN -->") && agents.includes("review-checklist"));
+  ok("S3 group-1 mcp.json restored before group 2", cx?.[".mcp.json"] === seededMcp);
+  // After the run: everything back to the seeded originals.
+  eq("S3 .mcp.json restored verbatim", readFileSync(join(r.wt, ".mcp.json"), "utf8"), seededMcp);
+  eq("S3 AGENTS.md restored verbatim", readFileSync(join(r.wt, "AGENTS.md"), "utf8"), seededAgents);
+});
+
 scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => {
   const r = await runFlow({ name: "s6", config: "../test/configs/agent-skills-path.config.json",
     scenario: "agent-config-snap.cjs", budgetMs: 90000 });

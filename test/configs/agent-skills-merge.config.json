@@ -1,0 +1,13 @@
+{
+  "defaults": { "timeoutMs": 2000, "hardTimeoutMs": 25000, "startRetryDelayMs": 200 },
+  "skills": {
+    "review-checklist": { "description": "Checklist for code review", "prompt": "Review in order." }
+  },
+  "mcpServers": {
+    "github": { "command": "npx", "args": ["-y", "@mcp/github"] }
+  },
+  "pipeline": [
+    { "id": "cl", "title": "Cl", "agent": "claude", "spec": "Write {out}.", "writes": "C.md", "mcp": ["github"], "skills": ["review-checklist"] },
+    { "id": "cx", "title": "Cx", "agent": "codex", "spec": "Write {out}.", "writes": "X.md", "skills": ["review-checklist"] }
+  ]
+}
