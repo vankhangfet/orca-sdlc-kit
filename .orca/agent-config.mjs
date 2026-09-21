@@ -111,11 +111,25 @@ function newPlan(worktree) {
     flush();
     return m.original;
   };
+  // Shared ancestor-walk: record `rel` plus every ancestor that does not exist
+  // YET (checked before any mkdir) so restore removes the whole chain;
+  // pre-existing user-owned ancestors are never touched. Used by BOTH trackDir
+  // and write — write's mkdirSync would otherwise silently create UNTRACKED
+  // parent dirs (e.g. .cursor/ for .cursor/rules/<name>.mdc), leaving empty
+  // shells that survive restore.
+  const recordNewDirs = (rel) => {
+    for (let cur = rel; cur && cur !== "." && !existsSync(join(worktree, cur)); cur = dirname(cur))
+      if (!created.includes(cur)) created.push(cur);
+    flush();
+  };
   return {
     created, modified, flush,
-    // Write a TEXT file at rel (snapshotting the original first).
+    // Write a TEXT file at rel (snapshotting the original first). Parent dirs
+    // the mkdir would create are recorded BEFORE it happens, so restore takes
+    // them down with the file.
     write: (rel, text) => {
       rememberFile(rel);
+      recordNewDirs(dirname(rel));
       mkdirSync(dirname(join(worktree, rel)), { recursive: true });
       writeFileSync(join(worktree, rel), text);
       flush();
@@ -123,11 +137,7 @@ function newPlan(worktree) {
     // Track a DIRECTORY we are about to create wholesale, plus every ancestor
     // that does not exist YET (checked before the mkdir): restore removes the
     // whole chain; pre-existing user-owned ancestors are never touched.
-    trackDir: (rel) => {
-      for (let cur = rel; cur && cur !== "." && !existsSync(join(worktree, cur)); cur = dirname(cur))
-        if (!created.includes(cur)) created.push(cur);
-      flush();
-    },
+    trackDir: (rel) => recordNewDirs(rel),
     rememberFile,
   };
 }

@@ -471,6 +471,35 @@ scenario("S4 parallel union + codex skills via AGENTS.md + mcp skip warn", async
   ok("S4 no manifest after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
 });
 
+scenario("S5 cursor/gemini/opencode adapters", async () => {
+  const r = await runFlow({ name: "s5", config: "../test/configs/agent-skills-harnesses.config.json",
+    scenario: "agent-config-snap.cjs", budgetMs: 90000 });
+  ok("S5 not hung", !r.hung);
+  eq("S5 exit code", r.code, 0);
+  // cursor: .cursor/mcp.json + .cursor/rules/<name>.mdc
+  const cur = snapOf(r, "Cur");
+  ok("S5 cursor mcp file", cur?.[".cursor/mcp.json"]?.includes('"github"') === true);
+  ok("S5 cursor rule file", /^---\ndescription: How to write commits\n---\n\nUse conventional commits\./.test(cur?.[".cursor/rules/commit-style.mdc"] ?? ""));
+  // gemini: .gemini/settings.json (mcpServers key) + GEMINI.md section
+  const gem = snapOf(r, "Gem");
+  const gs = gem?.[".gemini/settings.json"] ? JSON.parse(gem[".gemini/settings.json"]) : {};
+  eq("S5 gemini mcp key", Object.keys(gs), ["mcpServers"]);
+  ok("S5 gemini server present", gs.mcpServers?.github?.command === "npx");
+  ok("S5 gemini section", (gem?.["GEMINI.md"] ?? "").includes("### commit-style"));
+  // opencode: opencode.json (mcp key) + AGENTS.md section
+  const opn = snapOf(r, "Opn");
+  const oo = opn?.["opencode.json"] ? JSON.parse(opn["opencode.json"]) : {};
+  eq("S5 opencode mcp key", Object.keys(oo), ["mcp"]);
+  ok("S5 opencode server present", oo.mcp?.github?.command === "npx");
+  ok("S5 opencode section", (opn?.["AGENTS.md"] ?? "").includes("### commit-style"));
+  // Each step only sees ITS files (prior steps restored).
+  ok("S5 cursor files restored before gemini", gem?.[".cursor/mcp.json"] === null);
+  ok("S5 gemini files restored before opencode", opn?.[".gemini/settings.json"] === null);
+  // Clean at the end.
+  for (const f of [".cursor", ".gemini", "opencode.json", "GEMINI.md", "AGENTS.md"])
+    ok(`S5 ${f} gone after run`, !existsSync(join(r.wt, f)));
+});
+
 scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => {
   const r = await runFlow({ name: "s6", config: "../test/configs/agent-skills-path.config.json",
     scenario: "agent-config-snap.cjs", budgetMs: 90000 });
