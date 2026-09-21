@@ -400,6 +400,21 @@ scenario("S2 stale manifest self-heals at startup", async () => {
   ok("S2 self-heal log", /leftover manifest|restored worktree files/.test(r.out + r.err));
 });
 
+scenario("S2b startup self-heal fires before the runtime check", async () => {
+  const r = await runFlow({ name: "s2b", config: "../test/configs/nudge-post.config.json",
+    scenario: "runtime-down.cjs",
+    seedWorktree: [
+      { file: ".mcp.json", text: '{"mcpServers":{"stale":{}}}\n' },
+      { file: ".orca-agent-config.json", text: JSON.stringify({ created: [".mcp.json"], modified: [] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S2b not hung", !r.hung);
+  eq("S2b exit code", r.code, 1);
+  ok("S2b died at the runtime check", /Orca runtime not ready/.test(r.out + r.err));
+  ok("S2b stale .mcp.json removed anyway", !existsSync(join(r.wt, ".mcp.json")));
+  ok("S2b manifest removed anyway", !existsSync(join(r.wt, ".orca-agent-config.json")));
+  ok("S2b self-heal log", /restored worktree files left behind/.test(r.out + r.err));
+});
+
 scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => {
   const r = await runFlow({ name: "s6", config: "../test/configs/agent-skills-path.config.json",
     scenario: "agent-config-snap.cjs", budgetMs: 90000 });
