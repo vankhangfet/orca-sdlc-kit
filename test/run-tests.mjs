@@ -885,6 +885,14 @@ scenario("F9 --from must name an enabled step", async () => {
   ok("F9 message", /is not among the enabled steps/.test(r.out + r.err));
 });
 
+scenario("F14 dry-run shows per-step retry budget", async () => {
+  const r = await runFlow({ name: "f14", config: "../test/configs/retry-per-step.config.json", args: ["--dry-run"], objective: "suite smoke", budgetMs: 30000 });
+  ok("F14 not hung", !r.hung);
+  eq("F14 exit code", r.code, 0);
+  ok("F14 step budget flag rendered", /\{onFail->coder x3\}/.test(r.out));
+  ok("F14 bare flag not left behind", !/\{onFail->coder\}/.test(r.out));
+});
+
 // ---------------------------------------------------------------------------
 // I — installer (bin/init.mjs, the npx entry). I1 runs it for real in an empty
 // temp "user project" — the exact repro of the v2.0.0 ENOENT (the whitelist

@@ -313,7 +313,8 @@ for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id
 
 // Retry budgets: non-negative integers wherever declared — per step or at the
 // top level. Validated at load so a typo cannot silently change a fix loop's
-// budget (a string "20" or a fraction would compare wrongly and mis-exhaust).
+// budget (a non-numeric string disables the exhaust check entirely; a
+// fraction dies mid-budget with a fractional attempt count).
 {
   if (cfg.maxRetries != null && (!Number.isInteger(cfg.maxRetries) || cfg.maxRetries < 0))
     die(`config: maxRetries must be a non-negative integer (got ${JSON.stringify(cfg.maxRetries)}).`);
@@ -1722,7 +1723,8 @@ function printPlan() {
     const reads = effectiveReads(s);
     const model = effectiveModel(s);
     const flags = [];
-    if (s.onFailGoto && enabledIds.has(s.onFailGoto)) flags.push(`onFail->${s.onFailGoto}`);
+    if (s.onFailGoto && enabledIds.has(s.onFailGoto))
+      flags.push(`onFail->${s.onFailGoto}${s.maxRetries != null ? ` x${s.maxRetries}` : ""}`);
     if (s.gate && !AUTO_RUN) flags.push("gate");
     if (s.interactive && !AUTO_RUN) flags.push("interactive");
     if (s.parallelWith) flags.push(`parallel-with ${s.parallelWith}`);
