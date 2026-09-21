@@ -1642,6 +1642,8 @@ function printPlan() {
     if (s.interactive && !AUTO_RUN) flags.push("interactive");
     if (s.parallelWith) flags.push(`parallel-with ${s.parallelWith}`);
     else if (isParallel.has(s.id)) flags.push("parallel-group");
+    if ((s.skills || []).length) flags.push(`skills=${s.skills.join(",")}`);
+    if ((s.mcp || []).length) flags.push(`mcp=${s.mcp.join(",")}`);
     console.log(
       `  ${i + 1}. ${s.title.padEnd(26)} agent=${agentOf(s).padEnd(9)}` +
       `${model ? ` model=${model}` : ""} ` +
@@ -2005,6 +2007,11 @@ function settleMember(m, outcome, done) {
 // cap; a hard-capped member settles as still-running and is dropped from
 // the wait set — the pipeline then stops (main loop) with a resume hint.
 function runGroup(members) {
+  // Skills + MCP config files live in the worktree for the whole group (union
+  // across parallel members). NOTE: die() exits the process without running
+  // this finally — that is exactly what the manifest + startup self-heal cover.
+  materializeAgentConfig({ worktree: WT_DIR || ".", members, cfg, configDir: HERE, die, warn });
+  try {
   for (const s of members) statusBegin(s.id);
   const M = members.map(launchMember);
   while (true) {
@@ -2115,6 +2122,9 @@ function runGroup(members) {
   }
   writeStatus();
   return M;
+  } finally {
+    restoreAgentConfig({ worktree: WT_DIR || ".", warn });
+  }
 }
 
 // Gate after a step (manual mode only — autoRun ignores gates entirely).

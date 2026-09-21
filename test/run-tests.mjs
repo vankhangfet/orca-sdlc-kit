@@ -82,6 +82,8 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   for (const a of seedArtifacts) writeFileSync(join(wt, ".orca", "artifacts", a.file), a.text ?? "seeded by harness\n");
   // Worktree-ROOT fixtures (agent-config files, stale manifests, user-owned
   // AGENTS.md/.mcp.json) — unlike seedArtifacts, which target .orca/artifacts.
+  // No text fallback on purpose: worktree fixtures are typed (JSON/markdown) —
+  // a silent default would corrupt them.
   for (const w of seedWorktree) {
     const p = join(wt, w.file);
     mkdirSync(dirname(p), { recursive: true });
@@ -91,7 +93,7 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
   env.ORCA_CLI_COMMAND = NODE;
-  // Per-scenario env (NOT ORCA_*-prefixed — those were stripped above on purpose).
+  // Per-scenario env (NOT ORCA_*-prefixed — those were stripped above on purpose; harness-owned keys assigned below still win).
   if (extraEnv) Object.assign(env, extraEnv);
   // Backslashes inside NODE_OPTIONS quotes are eaten by Node's POSIX-style
   // tokenizer (C:\Working -> C:Working), so the preload must be forward-slashed.
@@ -326,6 +328,38 @@ scenario("E11 resume-from (--from keeps the read chain)", async () => {
   ok("E11 beta spec points at prior artifact", String(run.by("orchestration task-create")[0]?.flags.spec ?? "").includes(".orca/artifacts/A.md"));
   eq("E11 alpha skipped on resume", run.status?.steps.find((s) => s.id === "alpha")?.status, "skipped");
   eq("E11 beta succeeded", run.status?.steps.find((s) => s.id === "beta")?.status, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// S — agent skills + MCP materialization. The snapshot scenario records the
+// worktree's config surface at task-create time (post-materialize, pre-restore).
+// ---------------------------------------------------------------------------
+const snapOf = (r, title) => {
+  try { return JSON.parse(readFileSync(join(r.dir, "state.json"), "utf8")).extra.cfgSnap?.[title] ?? null; }
+  catch { return null; }
+};
+
+scenario("S1 claude materialize (mcp.json + SKILL.md + env expand, clean restore)", async () => {
+  const r = await runFlow({ name: "s1", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs", env: { TEST_GH_TOKEN: "tok-123" }, budgetMs: 90000 });
+  ok("S1 not hung", !r.hung);
+  eq("S1 exit code", r.code, 0);
+  const snap = snapOf(r, "Solo");
+  ok("S1 snapshot captured", snap != null);
+  const mcp = snap?.[".mcp.json"] ? JSON.parse(snap[".mcp.json"]) : null;
+  eq("S1 mcp servers", Object.keys(mcp?.mcpServers ?? {}).sort(), ["docs", "github"]);
+  eq("S1 stdio server", mcp?.mcpServers?.github?.command, "npx");
+  eq("S1 env expanded", mcp?.mcpServers?.github?.env?.GITHUB_TOKEN, "tok-123");
+  ok("S1 unset env -> empty string + warn", (mcp?.mcpServers?.docs?.headers?.Authorization === "Bearer ") &&
+    /TEST_MCP_TOKEN.*not set/.test(r.out + r.err));
+  eq("S1 skill folder", snap?.[".claude/skills"], ["review-checklist"]);
+  ok("S1 SKILL.md frontmatter", /^---\nname: review-checklist\ndescription: Checklist for code review\n---\n\nReview in order/.test(snap?.[".claude/skills/review-checklist/SKILL.md"] ?? ""));
+  ok("S1 manifest present during run", snap?.[".orca-agent-config.json"] != null);
+  ok("S1 materialize log", /\[agent-config\] claude: 1 skill/.test(r.out + r.err));
+  // After the run: worktree restored to its pre-run state.
+  ok("S1 .mcp.json removed after run", !existsSync(join(r.wt, ".mcp.json")));
+  ok("S1 skills dir removed after run", !existsSync(join(r.wt, ".claude")));
+  ok("S1 manifest removed after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
 });
 
 // ---------------------------------------------------------------------------

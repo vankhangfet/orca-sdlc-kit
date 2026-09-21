@@ -59,6 +59,8 @@ export function validateAgentConfig({ cfg, configDir, steps, die }) {
     const hasPath = def?.path != null, hasPrompt = def?.prompt != null;
     if (hasPath && hasPrompt) die(`skill "${name}": "path" and "prompt" are mutually exclusive.`);
     if (!hasPath && !hasPrompt) die(`skill "${name}": must have either "path" or "prompt".`);
+    if (hasPath && (typeof def.path !== "string" || def.path === ""))
+      die(`skill "${name}": "path" must be a non-empty string.`);
     if (hasPrompt && def.description == null) die(`skill "${name}": inline skill requires "description".`);
     if (hasPath && !existsSync(resolve(configDir, def.path)))
       die(`skill "${name}": path "${def.path}" not found (resolved: ${resolve(configDir, def.path)}).`);
@@ -76,5 +78,191 @@ export function validateAgentConfig({ cfg, configDir, steps, die }) {
   }
 }
 
-export function materializeAgentConfig() {}
-export function restoreAgentConfig() { return false; }
+// --- Manifest plan: everything we touch, so restore can put it back.
+// Files are snapshotted as text; skill FOLDERS are never overwritten (a
+// pre-existing folder of the same name is kept with a warn — user-owned).
+function newPlan(worktree, warn) {
+  const created = [];
+  const modified = [];
+  const rememberFile = (rel) => {
+    const abs = join(worktree, rel);
+    if (existsSync(abs)) {
+      if (!modified.some((m) => m.path === rel))
+        modified.push({ path: rel, original: readFileSync(abs, "utf8") });
+      return modified.find((m) => m.path === rel).original;
+    }
+    // Not there (yet): record original=null so restore REMOVES the file we are
+    // about to create (the mod.original == null branch in restoreAgentConfig).
+    if (!modified.some((m) => m.path === rel))
+      modified.push({ path: rel, original: null });
+    return null;
+  };
+  return {
+    created, modified,
+    // Write a TEXT file at rel (snapshotting the original first).
+    write: (rel, text) => {
+      rememberFile(rel);
+      mkdirSync(dirname(join(worktree, rel)), { recursive: true });
+      writeFileSync(join(worktree, rel), text);
+    },
+    // Track a DIRECTORY we are about to create wholesale, plus every ancestor
+    // that does not exist YET (checked before the mkdir): restore removes the
+    // whole chain; pre-existing user-owned ancestors are never touched.
+    trackDir: (rel) => {
+      for (let cur = rel; cur && cur !== "." && !existsSync(join(worktree, cur)); cur = dirname(cur))
+        if (!created.includes(cur)) created.push(cur);
+    },
+    rememberFile,
+  };
+}
+
+// --- Skill body resolution -------------------------------------------------
+// Inline: generated SKILL.md. Path: dir copied verbatim (skillDir adapters) or
+// its SKILL.md/file text inlined (section/rule adapters).
+function inlineSkillMd(name, def) {
+  return `---\nname: ${name}\ndescription: ${def.description}\n---\n\n${def.prompt}\n`;
+}
+function pathSkillText(def, configDir, die) {
+  const src = resolve(configDir, def.path);
+  const file = statSync(src).isFile() ? src : join(src, "SKILL.md");
+  try { return readFileSync(file, "utf8"); } catch (e) { die(`skill source unreadable (${file}): ${e.message}`); }
+}
+
+// --- Materialize: union of the group's refs per harness -> worktree files ---
+export function materializeAgentConfig({ worktree, members, cfg, configDir, die, warn }) {
+  // Self-heal first: a manifest left by a crashed previous group must never be
+  // overwritten (its created/modified entries would be lost).
+  if (existsSync(join(worktree, MANIFEST_FILE))) {
+    warn("[agent-config] found a leftover manifest — restoring before materializing.");
+    restoreAgentConfig({ worktree, warn });
+  }
+
+  const skills = cfg.skills || {};
+  const mcp = cfg.mcpServers || {};
+  const mcpRefs = new Map();     // harness -> Set(serverName)
+  const skillRefs = new Map();   // harness -> Set(skillName)
+  const owners = new Map();      // harness -> Set(stepId)   (for the union log)
+  const add = (map, k, v) => { if (!map.has(k)) map.set(k, new Set()); map.get(k).add(v); };
+  let any = false;
+
+  for (const s of members) {
+    if (!(s.skills || []).length && !(s.mcp || []).length) continue;
+    any = true;
+    const h = harnessOf(s.agent);
+    const a = ADAPTERS[h];
+    if (!a) {
+      warn(`[agent-config] step "${s.id}": agent "${h}" has no skills/MCP adapter — skipping ` +
+        `skills=[${(s.skills || []).join(",") || "-"}] mcp=[${(s.mcp || []).join(",") || "-"}].`);
+      continue;
+    }
+    for (const r of s.mcp || []) {
+      if (!a.mcpFile) {
+        warn(`[agent-config] step "${s.id}": agent "${h}" does not support MCP servers via worktree — skipping mcp "${r}".`);
+        continue;
+      }
+      add(mcpRefs, h, r); add(owners, h, s.id);
+    }
+    for (const r of s.skills || []) { add(skillRefs, h, r); add(owners, h, s.id); }
+  }
+  if (!any) return;
+
+  // Union across parallel members sharing the worktree: one log line when it happens.
+  for (const [h, ids] of owners)
+    if (ids.size > 1) warn(`[agent-config] ${h}: merged skills/MCP refs from ${ids.size} parallel steps (${[...ids].join(", ")}).`);
+
+  const plan = newPlan(worktree, warn);
+
+  // MCP JSON files, one per harness that has refs.
+  for (const [h, names] of mcpRefs) {
+    const a = ADAPTERS[h];
+    const orig = plan.rememberFile(a.mcpFile);
+    let doc = {};
+    if (orig != null) {
+      try { doc = JSON.parse(orig); } catch (e) { die(`${a.mcpFile} already exists in the worktree and is not valid JSON: ${e.message}`); }
+    }
+    doc[a.mcpKey] = { ...(doc[a.mcpKey] || {}) };
+    for (const name of names)
+      doc[a.mcpKey][name] = expandEnvDeep(mcp[name], warn, `mcp server "${name}"`);
+    plan.write(a.mcpFile, JSON.stringify(doc, null, 2) + "\n");
+    warn(`[agent-config] ${h}: ${names.size} mcp server(s) -> ${a.mcpFile}`);
+  }
+
+  // Section-channel skills, merged PER FILE (codex + opencode share AGENTS.md).
+  const sectionSkills = new Map();   // file -> Map(name -> def)
+  for (const [h, names] of skillRefs) {
+    const a = ADAPTERS[h];
+    let wrote = 0;
+    for (const name of names) {
+      const def = skills[name];
+      if (a.skillDir) {
+        const rel = `${a.skillDir}/${name}`;
+        if (existsSync(join(worktree, rel))) {
+          warn(`[agent-config] ${rel} already exists in the worktree — keeping yours, skipping skill "${name}".`);
+          continue;
+        }
+        plan.trackDir(rel);
+        mkdirSync(join(worktree, rel), { recursive: true });
+        if (def.path != null) {
+          cpSync(resolve(configDir, def.path), join(worktree, rel), { recursive: true });
+        } else {
+          writeFileSync(join(worktree, rel, "SKILL.md"), inlineSkillMd(name, def));
+        }
+        wrote++;
+      } else if (a.ruleDir) {
+        const body = def.path != null ? pathSkillText(def, configDir, die) : def.prompt;
+        const desc = def.path != null ? name : def.description;
+        plan.write(`${a.ruleDir}/${name}.mdc`, `---\ndescription: ${desc}\n---\n\n${body}\n`);
+        wrote++;
+      } else if (a.skillSection) {
+        if (!sectionSkills.has(a.skillSection)) sectionSkills.set(a.skillSection, new Map());
+        sectionSkills.get(a.skillSection).set(name, def);
+        wrote++;
+      }
+    }
+    if (wrote) warn(`[agent-config] ${h}: ${wrote} skill(s) -> ${a.skillDir || a.ruleDir || a.skillSection}`);
+  }
+  for (const [file, defs] of sectionSkills) {
+    const orig = plan.rememberFile(file);
+    const prev = orig == null ? "" : orig;
+    // Idempotent: strip any previous managed section before appending.
+    const stripped = prev.replace(sectionRx(), "").replace(/\n*$/, "\n");
+    const items = [...defs.entries()].map(([name, def]) =>
+      `### ${name}\n\n${def.path != null ? pathSkillText(def, configDir, die) : def.prompt}\n`).join("\n");
+    plan.write(file, `${stripped}\n${SECTION_BEGIN}\n\n## Skills (managed by orca-flow)\n\n${items}\n${SECTION_END}\n`);
+  }
+
+  writeFileSync(join(worktree, MANIFEST_FILE),
+    JSON.stringify({ created: plan.created, modified: plan.modified }, null, 2) + "\n");
+}
+
+function sectionRx() {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\n?${esc(SECTION_BEGIN)}[\\s\\S]*?${esc(SECTION_END)}\\n?`);
+}
+
+// --- Restore: created -> delete, modified -> original back, manifest -> gone.
+// Best-effort per entry (AV file locks on Windows): on partial failure the
+// manifest is KEPT so the next run's self-heal can retry.
+export function restoreAgentConfig({ worktree, warn }) {
+  const mp = join(worktree, MANIFEST_FILE);
+  if (!existsSync(mp)) return false;
+  let m;
+  try { m = JSON.parse(readFileSync(mp, "utf8")); } catch (e) {
+    warn(`[agent-config] manifest unreadable (${e.message}) — leaving worktree files alone.`);
+    return false;
+  }
+  let failed = false;
+  for (const rel of m.created || []) {
+    try { rmSync(join(worktree, rel), { recursive: true, force: true }); }
+    catch (e) { failed = true; warn(`[agent-config] could not remove ${rel}: ${e.message}`); }
+  }
+  for (const mod of m.modified || []) {
+    try {
+      if (mod.original == null) rmSync(join(worktree, mod.path), { recursive: true, force: true });
+      else { mkdirSync(dirname(join(worktree, mod.path)), { recursive: true }); writeFileSync(join(worktree, mod.path), mod.original); }
+    } catch (e) { failed = true; warn(`[agent-config] could not restore ${mod.path}: ${e.message}`); }
+  }
+  if (failed) { warn("[agent-config] restore incomplete — manifest kept for the next run's self-heal."); return true; }
+  try { rmSync(mp, { force: true }); } catch (e) { warn(`[agent-config] could not remove manifest: ${e.message}`); }
+  return true;
+}
