@@ -957,7 +957,7 @@ scenario("I1 installer (empty project: every whitelisted file lands)", async () 
   ok("I1 not hung", !r.hung);
   eq("I1 exit code", r.code, 0);
   ok("I1 no copy failure", !/copy failed/.test(r.out + r.err), (r.out + r.err).trim());
-  for (const f of ["flow.mjs", "flow.config.json", "fixbug.config.json", "cr.config.json", "CONFIGURATION.md", "README.md", "notify.json",
+  for (const f of ["flow.mjs", "agent-config.mjs", "flow.config.json", "fixbug.config.json", "cr.config.json", "CONFIGURATION.md", "README.md", "notify.json",
     "workflow-template/README.md", "workflow-template/sdlc.config.json", "workflow-template/fixbug.config.json", "workflow-template/cr.config.json"])
     ok(`I1 installed .orca/${f}`, existsSync(join(r.dir, ".orca", f)));
   ok("I1 installed orca.yaml", existsSync(join(r.dir, "orca.yaml")));
