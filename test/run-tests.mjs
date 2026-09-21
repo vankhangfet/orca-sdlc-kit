@@ -447,6 +447,30 @@ scenario("S3 pre-existing files merge, then restore verbatim", async () => {
   eq("S3 AGENTS.md restored verbatim", readFileSync(join(r.wt, "AGENTS.md"), "utf8"), seededAgents);
 });
 
+scenario("S4 parallel union + codex skills via AGENTS.md + mcp skip warn", async () => {
+  const r = await runFlow({ name: "s4", config: "../test/configs/agent-skills-multi.config.json",
+    scenario: "agent-config-snap.cjs", budgetMs: 90000 });
+  ok("S4 not hung", !r.hung);
+  eq("S4 exit code", r.code, 0);
+  // Union: at the FIRST task-create both parallel members' refs are already materialized.
+  const left = snapOf(r, "Left");
+  const mcp = left?.[".mcp.json"] ? JSON.parse(left[".mcp.json"]) : {};
+  eq("S4 union mcp servers", Object.keys(mcp.mcpServers ?? {}).sort(), ["docs", "github"]);
+  eq("S4 union skill folders", (left?.[".claude/skills"] ?? []).sort(), ["commit-style", "review-checklist"]);
+  ok("S4 union log", /merged skills\/MCP refs from 2 parallel steps/.test(r.out + r.err));
+  // The codex join step: skills via marked AGENTS.md section; its mcp ref skipped with a warn.
+  // (Named jn so the path `join` below stays reachable.)
+  const jn = snapOf(r, "Join");
+  const agents = jn?.["AGENTS.md"] ?? "";
+  ok("S4 codex skills section", agents.includes("### commit-style") && agents.includes("Use conventional commits."));
+  ok("S4 codex mcp skip warn", /agent "codex" does not support MCP servers via worktree — skipping mcp "github"/.test(r.out + r.err));
+  // Parallel group restored before the join step runs.
+  ok("S4 group-1 files restored before join", jn?.[".mcp.json"] === null && (jn?.[".claude/skills"] === null));
+  // Clean at the end.
+  ok("S4 AGENTS.md gone after run", !existsSync(join(r.wt, "AGENTS.md")));
+  ok("S4 no manifest after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
+});
+
 scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => {
   const r = await runFlow({ name: "s6", config: "../test/configs/agent-skills-path.config.json",
     scenario: "agent-config-snap.cjs", budgetMs: 90000 });
