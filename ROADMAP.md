@@ -71,6 +71,7 @@ terminal closes.
 | **Cross-worktree dashboard** | One index page scanning known worktrees' artifacts dirs; read-only summary cards linking to each worktree's own page — a team wallboard, still no server |
 | **Checklist write-back** | Editing `TASKS.md` from the page requires a local listener — breaks the no-server default. Likely ships as a lighter alternative (click a task → ready-made snippet to paste). Open design decision |
 | **Warm agent pool** | Reuse one warmed terminal across consecutive steps that use the same agent, instead of create + quiet-detect per step; never reused mid-dispatch |
+| **Designer run-command flags** | The Workflow Designer's run-command bar builds `"<objective>"` + `--config` only; add a flags row (`--from`, `--only`, `--agent x=y`, `--grill-me`) so the copy-paste command covers resume/override paths too |
 
 ## Sequencing rationale
 
