@@ -24,6 +24,8 @@ const die = (m) => { console.error("[orca-sdlc-kit] ERROR:", m); process.exit(1)
 // Whitelist — mirrors package.json "files". KEEP THE TWO LISTS IN SYNC.
 const FILES = [
   ".orca/flow.mjs",
+  ".orca/designer.mjs",
+  ".orca/designer.html",
   ".orca/flow.config.json",
   ".orca/fixbug.config.json",
   ".orca/cr.config.json",

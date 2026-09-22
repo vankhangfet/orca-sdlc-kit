@@ -46,6 +46,7 @@ Full history: [Roadmap](#roadmap) · [Releases](https://github.com/vankhangfet/o
   - [2. Configure your pipeline](#2-configure-your-pipeline)
   - [3. Change the harness](#3-change-the-harness)
 - [Cheat sheet](#cheat-sheet)
+- [Workflow Designer — build pipelines in the browser](#workflow-designer--build-pipelines-in-the-browser)
 - [The pipelines](#the-pipelines)
 - [Watch it run — the live status page](#watch-it-run--the-live-status-page)
 - [When something goes wrong](#when-something-goes-wrong)
@@ -162,6 +163,8 @@ Two knobs cover the rest:
 - **`autoRun` (default `true`) — how much it asks you.** `true`: walk away — agents never ask, they decide and record assumptions in the artifact for later audit; gates are ignored and Claude agents run with permission bypass (full tool access, one-time per-machine acceptance). `false`: agents may ask in their terminal; `"gate": true` steps pause for your approval; `"interactive": true` steps (the shipped Architecture step) interview you, one question at a time.
 - **Worktree (default: auto-detected) — where it runs.** Pin only when launching from outside the target: `--worktree name:lab2` for one run, `ORCA_FLOW_WORKTREE` for your machine. A wrong pin fails immediately with the list of valid worktrees — never mid-run.
 
+Prefer clicking over JSON? The [Workflow Designer](#workflow-designer--build-pipelines-in-the-browser) edits these files visually.
+
 ### 3. Change the harness
 
 Any step, any agent — one field:
@@ -199,6 +202,30 @@ node .orca/flow.mjs --worktree name:lab "Objective" # only when launching from o
 Manual mode (gates + interviews): set `"autoRun": false` in the config, then run normally.
 
 **Resuming runs.** At startup the flow lists the worktree's previous runs and offers to resume one — picking a run restores its artifacts and continues at its first unfinished step; `0`/Enter starts fresh. Pass `--new` to skip the prompt.
+
+## Workflow Designer — build pipelines in the browser
+
+Hand-editing JSON is the power-user path. For everyone else (and for spinning up
+a brand-new project), the kit ships a small local UI:
+
+```bash
+node .orca/designer.mjs          # opens http://127.0.0.1:7887/?t=<one-time token>
+```
+
+- **Visual pipeline editor** — step cards in run order (drag to reorder),
+  a full form per step (agent, `reads`, `writes`, `spec`, timeouts, `parallelWith`,
+  `onFailGoto`…), advisory validation badges, and a config-defaults tab.
+- **Creates AND edits** — every `*.config.json` in `.orca/` and
+  `.orca/workflow-template/`; `//` comment keys in existing files survive edits.
+- **Dry-run button** — runs `flow.mjs --dry-run` against the file on disk and
+  shows the plan (or the exact validation error) in place.
+- **Run command bar** — shows the exact `node .orca/flow.mjs ...` command for
+  the workflow you're editing; click to copy. Real runs stay in your terminal.
+- **New project tab** — scaffold a fresh workspace: copies the kit into any
+  folder, drops in your first workflow config, prints the commands to run.
+
+Notes: binds `127.0.0.1` only, guarded by a per-launch token; zero dependencies;
+`flow.mjs` itself never serves anything. Flags: `--port <n>`, `--no-open`.
 
 ## The pipelines
 

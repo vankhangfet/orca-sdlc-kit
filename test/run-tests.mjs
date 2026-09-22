@@ -14,14 +14,15 @@
 // Run: node test/run-tests.mjs [--only <substring>]
 // (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
-import { createServer } from "node:http";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync, existsSync, rmdirSync } from "node:fs";
+import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
+const ROOT = resolve(HERE, "..");
 const FLOW = join(REPO, ".orca", "flow.mjs");
 const NODE = process.execPath;
 const PRELOAD = join(HERE, "orca-preload.cjs");
@@ -919,7 +920,7 @@ scenario("I1 installer (empty project: every whitelisted file lands)", async () 
   ok("I1 not hung", !r.hung);
   eq("I1 exit code", r.code, 0);
   ok("I1 no copy failure", !/copy failed/.test(r.out + r.err), (r.out + r.err).trim());
-  for (const f of ["flow.mjs", "flow.config.json", "fixbug.config.json", "cr.config.json", "CONFIGURATION.md", "README.md", "notify.json",
+  for (const f of ["flow.mjs", "designer.mjs", "designer.html", "flow.config.json", "fixbug.config.json", "cr.config.json", "CONFIGURATION.md", "README.md", "notify.json",
     "workflow-template/README.md", "workflow-template/sdlc.config.json", "workflow-template/fixbug.config.json", "workflow-template/cr.config.json"])
     ok(`I1 installed .orca/${f}`, existsSync(join(r.dir, ".orca", f)));
   ok("I1 installed orca.yaml", existsSync(join(r.dir, "orca.yaml")));
@@ -933,6 +934,199 @@ scenario("I2 FILES whitelist mirrors package.json files", async () => {
   const whitelist = src.slice(src.indexOf("const FILES = ["), src.indexOf("];", src.indexOf("const FILES = [")))
     .match(/"[^"]+"/g)?.map((s) => s.slice(1, -1)).sort() ?? [];
   eq("I2 whitelist matches package.json files", whitelist, files);
+});
+
+// ---------------------------------------------------------------------------
+// Designer — local UI server for creating/editing workflow configs (D*).
+// Each scenario boots the real designer.mjs (--port 0 = ephemeral) and talks
+// to its JSON API with fetch; the token is parsed from its stdout line.
+// ---------------------------------------------------------------------------
+async function startDesigner() {
+  // Hermetic: dry-run children resolve the orca CLI via ORCA_CLI_COMMAND —
+  // node.exe stands in (version probe succeeds, worktree probe fails soft).
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
+  env.ORCA_CLI_COMMAND = NODE;
+  const child = spawn(NODE, [join(REPO, ".orca", "designer.mjs"), "--port", "0", "--no-open"],
+    { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  const ready = new Promise((rOK, rNO) => {
+    const t = setTimeout(() => rNO(new Error("designer did not start")), 10000);
+    child.stdout.on("data", (d) => {
+      out += d;
+      const m = out.match(/listening (http:\/\/\S+)/);
+      if (m) { clearTimeout(t); rOK(m[1]); }
+    });
+    child.stderr.on("data", (d) => (out += d));
+    child.on("exit", (c) => { clearTimeout(t); rNO(new Error(`designer exited early (${c}): ${out}`)); });
+  });
+  const url = await ready.catch((e) => { child.kill(); throw e; }); // never leak a live child
+  const [base, token] = url.split("/?t=");
+  return { base, token, stop: () => child.kill() };
+}
+function hdr(d) { return { "x-designer-token": d.token }; }
+
+scenario("D1 designer state lists configs + serves page", async () => {
+  const d = await startDesigner();
+  try {
+    const page = await fetch(`${d.base}/?t=${d.token}`);
+    eq("D1 page status", page.status, 200);
+    ok("D1 page is html", /text\/html/.test(page.headers.get("content-type") || ""));
+    ok("D1 page title", (await page.text()).includes("Orca Workflow Designer"));
+    const r = await fetch(`${d.base}/api/state`, { headers: hdr(d) });
+    eq("D1 state status", r.status, 200);
+    const j = await r.json();
+    const paths = j.configs.map((c) => c.path);
+    for (const p of ["flow.config.json", "fixbug.config.json", "cr.config.json",
+      "workflow-template/sdlc.config.json", "workflow-template/fixbug.config.json",
+      "workflow-template/cr.config.json"])
+      ok(`D1 lists ${p}`, paths.includes(p));
+    eq("D1 flow not template", j.configs.find((c) => c.path === "flow.config.json").template, false);
+    eq("D1 template flagged", j.configs.find((c) => c.path === "workflow-template/cr.config.json").template, true);
+  } finally { d.stop(); }
+});
+
+scenario("D4 designer token required", async () => {
+  const d = await startDesigner();
+  try {
+    eq("D4 no token -> 403", (await fetch(`${d.base}/api/state`)).status, 403);
+    eq("D4 bad token -> 403", (await fetch(`${d.base}/api/state`, { headers: { "x-designer-token": "nope" } })).status, 403);
+    eq("D4 page without token -> 403", (await fetch(d.base + "/")).status, 403);
+  } finally { d.stop(); }
+});
+
+scenario("D4b designer host header guard", async () => {
+  const d = await startDesigner();
+  try {
+    const u = new URL(d.base);
+    const code = await new Promise((rOK, rNO) => {
+      const req = request({ hostname: u.hostname, port: u.port, method: "GET", path: "/api/state",
+        headers: { host: "evil.example", "x-designer-token": d.token } },
+        (res) => { res.resume(); rOK(res.statusCode); });
+      req.on("error", rNO);
+      req.end();
+    });
+    eq("D4b evil Host with valid token -> 403", code, 403);
+  } finally { d.stop(); }
+});
+
+scenario("D2 designer save round-trip preserves // keys", async () => {
+  const d = await startDesigner();
+  const probe = "designer-test.config.json";
+  try {
+    const g = await (await fetch(`${d.base}/api/config?path=flow.config.json`, { headers: hdr(d) })).json();
+    eq("D2 read ok", g.config != null && Array.isArray(g.config.pipeline), true);
+    ok("D2 has // key", typeof g.config["//"] === "string");
+    // Exactly like the UI: mutate the parsed raw object in place, post it whole.
+    g.config.maxRetries = 5;
+    g.config.pipeline[0].title = "Edited by test";
+    const sv = await fetch(`${d.base}/api/save`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: probe, config: g.config }) });
+    eq("D2 save status", sv.status, 200);
+    const onDisk = JSON.parse(readFileSync(join(REPO, ".orca", probe), "utf8"));
+    eq("D2 maxRetries saved", onDisk.maxRetries, 5);
+    eq("D2 title saved", onDisk.pipeline[0].title, "Edited by test");
+    ok("D2 // survived the round-trip", typeof onDisk["//"] === "string");
+    eq("D2 // identical after round-trip", onDisk["//"], g.config["//"]);
+  } finally { d.stop(); rmSync(join(REPO, ".orca", probe), { force: true }); }
+});
+
+scenario("D3 designer path traversal + bad body refused", async () => {
+  const d = await startDesigner();
+  try {
+    const post = (body) => fetch(`${d.base}/api/save`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" }, body });
+    eq("D3 escape ../ refused", (await post(JSON.stringify({ path: "../evil.config.json", config: { pipeline: [] } }))).status, 400);
+    eq("D3 zig-zag escape refused", (await post(JSON.stringify({ path: "workflow-template/../../evil.config.json", config: { pipeline: [] } }))).status, 400);
+    eq("D3 non-config suffix refused", (await post(JSON.stringify({ path: "package.json", config: { pipeline: [] } }))).status, 400);
+    eq("D3 non-array pipeline refused", (await post(JSON.stringify({ path: "x.config.json", config: { pipeline: "no" } }))).status, 400);
+    eq("D3 broken JSON body refused", (await post("{not json")).status, 400);
+    eq("D3 config read traversal refused", (await fetch(`${d.base}/api/config?path=${encodeURIComponent("../../package.json")}`, { headers: hdr(d) })).status, 400);
+    eq("D3 config read missing -> 404", (await fetch(`${d.base}/api/config?path=nope.config.json`, { headers: hdr(d) })).status, 404);
+  } finally { d.stop(); }
+});
+
+scenario("D5 designer dry-run validates a good config", async () => {
+  const d = await startDesigner();
+  try {
+    const r = await fetch(`${d.base}/api/dry-run`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: "flow.config.json" }) });
+    eq("D5 status", r.status, 200);
+    const j = await r.json();
+    eq("D5 exit code", j.code, 0);
+    ok("D5 not timed out", !j.timedOut);
+    ok("D5 prints config line", /Config: flow\.config\.json/.test(j.output));
+    ok("D5 prints pipeline", /Pipeline to run \(in order\):/.test(j.output));
+    ok("D5 says no agents called", /Dry-run — no agents called\./.test(j.output));
+  } finally { d.stop(); }
+});
+
+scenario("D6 designer dry-run surfaces flow.mjs validation errors", async () => {
+  const d = await startDesigner();
+  const probe = "designer-test-bad.config.json";
+  try {
+    const broken = { artifactsDir: ".orca/artifacts", maxRetries: 2, autoRun: true, defaults: { timeoutMs: 600000 },
+      pipeline: [
+        { id: "a", title: "A", enabled: true, agent: "claude", writes: "", reads: [], spec: "do A" },
+        { id: "b", title: "B", enabled: true, agent: "claude", writes: "B.md", reads: ["a"], spec: "do B" },
+      ] };
+    const sv = await fetch(`${d.base}/api/save`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: probe, config: broken }) });
+    eq("D6 probe saved", sv.status, 200);
+    const r = await fetch(`${d.base}/api/dry-run`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ path: probe }) });
+    eq("D6 status", r.status, 200);
+    const j = await r.json();
+    eq("D6 exit code", j.code, 1);
+    ok("D6 surfaces the reads error", /step "b" reads "a" which has no "writes"/.test(j.output));
+  } finally { d.stop(); rmSync(join(REPO, ".orca", probe), { force: true }); }
+});
+
+scenario("D7 designer scaffolds a fresh project workspace", async () => {
+  // Seed junk the copy-filter must exclude (dir rule + *.log/*.tmp rules).
+  mkdirSync(join(REPO, ".orca", "artifacts"), { recursive: true });
+  writeFileSync(join(REPO, ".orca", "artifacts", "designer-probe.log"), "junk\n");
+  writeFileSync(join(REPO, ".orca", "designer-filter-test.tmp"), "junk\n");
+  const d = await startDesigner();
+  const target = mkdtempSync(join(tmpdir(), "orca-designer-"));
+  dirsOfCurrentScenario.push(target);
+  try {
+    const pv = await (await fetch(`${d.base}/api/scaffold/preview?dir=${encodeURIComponent(target)}`, { headers: hdr(d) })).json();
+    eq("D7 preview exists+empty", [pv.exists, pv.empty, pv.hasOrca], [true, true, false]);
+    const r = await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: target, template: "workflow-template/fixbug.config.json", configName: "myproj" }) });
+    eq("D7 scaffold status", r.status, 200);
+    const j = await r.json();
+    eq("D7 config name", j.config, "myproj.config.json");
+    for (const f of [".orca/flow.mjs", ".orca/designer.mjs", ".orca/designer.html",
+      ".orca/myproj.config.json", ".orca/workflow-template/README.md", "orca.yaml"])
+      ok(`D7 created ${f}`, existsSync(join(target, ...f.split("/"))));
+    ok("D7 artifacts/ NOT copied", !existsSync(join(target, ".orca", "artifacts")));
+    ok("D7 seeded junk log NOT copied", !existsSync(join(target, ".orca", "artifacts", "designer-probe.log")));
+    ok("D7 junk .tmp NOT copied", !existsSync(join(target, ".orca", "designer-filter-test.tmp")));
+    eq("D7 scaffold into same dir refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: target, template: "flow.config.json", configName: "again" }) })).status, 400);
+    eq("D7 scaffold into repo root refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: REPO, template: "flow.config.json", configName: "nope" }) })).status, 400);
+    eq("D7 case-mangled kit dir refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: join(ROOT, ".ORCA"), template: "flow.config.json", configName: "nope2" }) })).status, 400);
+    eq("D7 bad configName refused", (await fetch(`${d.base}/api/scaffold`, { method: "POST",
+      headers: { ...hdr(d), "content-type": "application/json" },
+      body: JSON.stringify({ dir: target, template: "flow.config.json", configName: "bad name!" }) })).status, 400);
+  } finally {
+    d.stop();
+    rmSync(join(REPO, ".orca", "artifacts", "designer-probe.log"), { force: true });
+    try { rmdirSync(join(REPO, ".orca", "artifacts")); } catch {}
+    rmSync(join(REPO, ".orca", "designer-filter-test.tmp"), { force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

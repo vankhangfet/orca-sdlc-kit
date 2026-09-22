@@ -4,6 +4,10 @@ All pipeline behavior lives in **`.orca/flow.config.json`**. `flow.mjs` just rea
 this file and executes it — you never edit the script. This document describes every
 config field, with examples for common situations.
 
+> You don't have to write this JSON by hand: `node .orca/designer.mjs` opens a
+> local visual editor for these files (create, edit, dry-run, scaffold new
+> projects). Comment (`"//"`) keys in existing files are preserved on edit.
+
 ---
 
 ## 1. Top-level structure
