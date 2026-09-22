@@ -1,0 +1,6 @@
+{
+  "skills": { "broken": { "prompt": "p" } },
+  "pipeline": [
+    { "id": "a", "title": "A", "agent": "claude", "spec": "Write {out}.", "writes": "A.md", "skills": ["broken"] }
+  ]
+}

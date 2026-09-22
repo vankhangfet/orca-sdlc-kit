@@ -75,17 +75,28 @@ let hungInCurrentScenario = false;
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
 // NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
-async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000, notify = null, reuseDir = null }) {
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], seedWorktree = [], env: extraEnv = null, stdinText = null, budgetMs = 90000, notify = null, reuseDir = null }) {
   const dir = reuseDir ?? mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
   if (!dirsOfCurrentScenario.includes(dir)) dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
   mkdirSync(join(wt, ".orca", "artifacts"), { recursive: true });
   mkdirSync(home, { recursive: true });
   for (const a of seedArtifacts) writeFileSync(join(wt, ".orca", "artifacts", a.file), a.text ?? "seeded by harness\n");
+  // Worktree-ROOT fixtures (agent-config files, stale manifests, user-owned
+  // AGENTS.md/.mcp.json) — unlike seedArtifacts, which target .orca/artifacts.
+  // No text fallback on purpose: worktree fixtures are typed (JSON/markdown) —
+  // a silent default would corrupt them.
+  for (const w of seedWorktree) {
+    const p = join(wt, w.file);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, w.text);
+  }
   if (notify) writeFileSync(join(dir, "notify.json"), JSON.stringify(notify, null, 2));
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith("ORCA_")) delete env[k];
   env.ORCA_CLI_COMMAND = NODE;
+  // Per-scenario env (NOT ORCA_*-prefixed — those were stripped above on purpose; harness-owned keys assigned below still win).
+  if (extraEnv) Object.assign(env, extraEnv);
   // Backslashes inside NODE_OPTIONS quotes are eaten by Node's POSIX-style
   // tokenizer (C:\Working -> C:Working), so the preload must be forward-slashed.
   env.NODE_OPTIONS = `--require "${PRELOAD.split("\\").join("/")}"`;
@@ -367,6 +378,221 @@ scenario("E11 resume-from (--from keeps the read chain)", async () => {
   ok("E11 beta spec points at prior artifact", String(run.by("orchestration task-create")[0]?.flags.spec ?? "").includes(".orca/artifacts/A.md"));
   eq("E11 alpha skipped on resume", run.status?.steps.find((s) => s.id === "alpha")?.status, "skipped");
   eq("E11 beta succeeded", run.status?.steps.find((s) => s.id === "beta")?.status, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// S — agent skills + MCP materialization. The snapshot scenario records the
+// worktree's config surface at task-create time (post-materialize, pre-restore).
+// ---------------------------------------------------------------------------
+const snapOf = (r, title) => {
+  try { return JSON.parse(readFileSync(join(r.dir, "state.json"), "utf8")).extra.cfgSnap?.[title] ?? null; }
+  catch { return null; }
+};
+
+scenario("S1 claude materialize (mcp.json + SKILL.md + env expand, clean restore)", async () => {
+  const r = await runFlow({ name: "s1", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs", env: { TEST_GH_TOKEN: "tok-123" }, budgetMs: 90000 });
+  ok("S1 not hung", !r.hung);
+  eq("S1 exit code", r.code, 0);
+  const snap = snapOf(r, "Solo");
+  ok("S1 snapshot captured", snap != null);
+  const mcp = snap?.[".mcp.json"] ? JSON.parse(snap[".mcp.json"]) : null;
+  eq("S1 mcp servers", Object.keys(mcp?.mcpServers ?? {}).sort(), ["docs", "github"]);
+  eq("S1 stdio server", mcp?.mcpServers?.github?.command, "npx");
+  eq("S1 env expanded", mcp?.mcpServers?.github?.env?.GITHUB_TOKEN, "tok-123");
+  ok("S1 unset env -> empty string + warn", (mcp?.mcpServers?.docs?.headers?.Authorization === "Bearer ") &&
+    /TEST_MCP_TOKEN.*not set/.test(r.out + r.err));
+  eq("S1 skill folder", snap?.[".claude/skills"], ["review-checklist"]);
+  ok("S1 SKILL.md frontmatter", /^---\nname: review-checklist\ndescription: Checklist for code review\n---\n\nReview in order/.test(snap?.[".claude/skills/review-checklist/SKILL.md"] ?? ""));
+  ok("S1 manifest present during run", snap?.[".orca-agent-config.json"] != null);
+  ok("S1 materialize log", /\[agent-config\] claude: 1 skill/.test(r.out + r.err));
+  // After the run: worktree restored to its pre-run state.
+  ok("S1 .mcp.json removed after run", !existsSync(join(r.wt, ".mcp.json")));
+  ok("S1 skills dir removed after run", !existsSync(join(r.wt, ".claude")));
+  ok("S1 manifest removed after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
+});
+
+scenario("S1b unrestorable leftover manifest dies before materializing", async () => {
+  const r = await runFlow({ name: "s1b", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [
+      { file: "stuck/.keep", text: "occupies the path so restore hits a non-empty dir\n" },
+      { file: ".orca-agent-config.json",
+        text: JSON.stringify({ created: [], modified: [{ path: "stuck", original: "not a dir owner\n" }] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S1b not hung", !r.hung);
+  eq("S1b exit code", r.code, 1);
+  ok("S1b die message", /leftover manifest could not be fully restored/.test(r.out + r.err));
+  ok("S1b manifest kept", existsSync(join(r.wt, ".orca-agent-config.json")));
+});
+
+scenario("S1c invalid pre-existing mcp.json dies WITH a manifest (abort window healable)", async () => {
+  const r = await runFlow({ name: "s1c", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [{ file: ".mcp.json", text: "this is not json" }], budgetMs: 90000 });
+  ok("S1c not hung", !r.hung);
+  eq("S1c exit code", r.code, 1);
+  ok("S1c die message", /\.mcp\.json already exists in the worktree and is not valid JSON/.test(r.out + r.err));
+  ok("S1c manifest flushed for self-heal", existsSync(join(r.wt, ".orca-agent-config.json")));
+  eq("S1c original file untouched", readFileSync(join(r.wt, ".mcp.json"), "utf8"), "this is not json");
+});
+
+scenario("S2 stale manifest self-heals at startup", async () => {
+  const r = await runFlow({ name: "s2", config: "../test/configs/nudge-post.config.json",
+    seedWorktree: [
+      { file: ".mcp.json", text: '{"mcpServers":{"stale":{}}}\n' },
+      { file: ".orca-agent-config.json", text: JSON.stringify({ created: [".mcp.json"], modified: [] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S2 not hung", !r.hung);
+  eq("S2 exit code", r.code, 0);
+  ok("S2 stale .mcp.json removed", !existsSync(join(r.wt, ".mcp.json")));
+  ok("S2 manifest removed", !existsSync(join(r.wt, ".orca-agent-config.json")));
+  ok("S2 self-heal log", /leftover manifest|restored worktree files/.test(r.out + r.err));
+});
+
+scenario("S2b startup self-heal fires before the runtime check", async () => {
+  const r = await runFlow({ name: "s2b", config: "../test/configs/nudge-post.config.json",
+    scenario: "runtime-down.cjs",
+    seedWorktree: [
+      { file: ".mcp.json", text: '{"mcpServers":{"stale":{}}}\n' },
+      { file: ".orca-agent-config.json", text: JSON.stringify({ created: [".mcp.json"], modified: [] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S2b not hung", !r.hung);
+  eq("S2b exit code", r.code, 1);
+  ok("S2b died at the runtime check", /Orca runtime not ready/.test(r.out + r.err));
+  ok("S2b stale .mcp.json removed anyway", !existsSync(join(r.wt, ".mcp.json")));
+  ok("S2b manifest removed anyway", !existsSync(join(r.wt, ".orca-agent-config.json")));
+  ok("S2b self-heal log", /restored worktree files left behind/.test(r.out + r.err));
+});
+
+scenario("S3 pre-existing files merge, then restore verbatim", async () => {
+  const seededMcp = '{"mcpServers":{"keepme":{"command":"keep"}}}\n';
+  const seededAgents = "Original agent instructions.\n";
+  const r = await runFlow({ name: "s3", config: "../test/configs/agent-skills-merge.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [
+      { file: ".mcp.json", text: seededMcp },
+      { file: "AGENTS.md", text: seededAgents },
+      { file: ".claude/skills/review-checklist/README.md", text: "user-owned skill\n" },
+    ], budgetMs: 90000 });
+  ok("S3 not hung", !r.hung);
+  eq("S3 exit code", r.code, 0);
+  // During the claude step: keepme preserved + github merged in.
+  const cl = snapOf(r, "Cl");
+  const during = cl?.[".mcp.json"] ? JSON.parse(cl[".mcp.json"]) : {};
+  eq("S3 merge keeps user server", Object.keys(during.mcpServers ?? {}).sort(), ["github", "keepme"]);
+  // User-owned skill folder kept as-is, ours skipped with a warn.
+  ok("S3 user skill folder kept", existsSync(join(r.wt, ".claude", "skills", "review-checklist", "README.md")));
+  ok("S3 user skill content intact", readFileSync(join(r.wt, ".claude", "skills", "review-checklist", "README.md"), "utf8") === "user-owned skill\n");
+  ok("S3 collision warn", /already exists in the worktree — keeping yours/.test(r.out + r.err));
+  eq("S3 no SKILL.md injected into user folder", cl?.[".claude/skills/review-checklist/SKILL.md"] ?? null, null);
+  // During the codex step: AGENTS.md = original + marked section; group-1 files already restored.
+  const cx = snapOf(r, "Cx");
+  const agents = cx?.["AGENTS.md"] ?? "";
+  ok("S3 AGENTS.md keeps original", agents.startsWith("Original agent instructions."));
+  ok("S3 AGENTS.md has markers", agents.includes("<!-- orca-agent-config BEGIN -->") && agents.includes("review-checklist"));
+  ok("S3 group-1 mcp.json restored before group 2", cx?.[".mcp.json"] === seededMcp);
+  // After the run: everything back to the seeded originals.
+  eq("S3 .mcp.json restored verbatim", readFileSync(join(r.wt, ".mcp.json"), "utf8"), seededMcp);
+  eq("S3 AGENTS.md restored verbatim", readFileSync(join(r.wt, "AGENTS.md"), "utf8"), seededAgents);
+});
+
+scenario("S4 parallel union + codex skills via AGENTS.md + mcp skip warn", async () => {
+  const r = await runFlow({ name: "s4", config: "../test/configs/agent-skills-multi.config.json",
+    scenario: "agent-config-snap.cjs", budgetMs: 90000 });
+  ok("S4 not hung", !r.hung);
+  eq("S4 exit code", r.code, 0);
+  // Union: at the FIRST task-create both parallel members' refs are already materialized.
+  const left = snapOf(r, "Left");
+  const mcp = left?.[".mcp.json"] ? JSON.parse(left[".mcp.json"]) : {};
+  eq("S4 union mcp servers", Object.keys(mcp.mcpServers ?? {}).sort(), ["docs", "github"]);
+  eq("S4 union skill folders", (left?.[".claude/skills"] ?? []).sort(), ["commit-style", "review-checklist"]);
+  ok("S4 union log", /merged skills\/MCP refs from 2 parallel steps/.test(r.out + r.err));
+  // The codex join step: skills via marked AGENTS.md section; its mcp ref skipped with a warn.
+  // (Named jn so the path `join` below stays reachable.)
+  const jn = snapOf(r, "Join");
+  const agents = jn?.["AGENTS.md"] ?? "";
+  ok("S4 codex skills section", /### commit-style\n\nUse conventional commits\./.test(agents));
+  ok("S4 codex mcp skip warn", /agent "codex" does not support MCP servers via worktree — skipping mcp "github"/.test(r.out + r.err));
+  // Parallel group restored before the join step runs.
+  ok("S4 group-1 files restored before join", jn?.[".mcp.json"] === null && (jn?.[".claude/skills"] === null));
+  ok("S4 no leftover-manifest rescue (finally restored, not self-heal)", !/found a leftover manifest/.test(r.out + r.err));
+  // Clean at the end.
+  ok("S4 AGENTS.md gone after run", !existsSync(join(r.wt, "AGENTS.md")));
+  ok("S4 no manifest after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
+});
+
+scenario("S4b --agent override switches the materialized harness", async () => {
+  const r = await runFlow({ name: "s4b", config: "../test/configs/agent-skills-multi.config.json",
+    scenario: "agent-config-snap.cjs", args: ["--agent", "join=claude"], budgetMs: 90000 });
+  ok("S4b not hung", !r.hung);
+  eq("S4b exit code", r.code, 0);
+  const jn = snapOf(r, "Join");
+  const mcp = jn?.[".mcp.json"] ? JSON.parse(jn[".mcp.json"]) : {};
+  eq("S4b override gets claude mcp file", Object.keys(mcp.mcpServers ?? {}), ["github"]);
+  eq("S4b override gets claude skill dir", jn?.[".claude/skills"] ?? [], ["commit-style"]);
+  ok("S4b no codex AGENTS.md section", jn?.["AGENTS.md"] === null);
+  ok("S4b no skip warn for overridden agent", !/agent "codex" does not support/.test(r.out + r.err));
+});
+
+scenario("S5 cursor/gemini/opencode adapters", async () => {
+  const r = await runFlow({ name: "s5", config: "../test/configs/agent-skills-harnesses.config.json",
+    scenario: "agent-config-snap.cjs", budgetMs: 90000 });
+  ok("S5 not hung", !r.hung);
+  eq("S5 exit code", r.code, 0);
+  // cursor: .cursor/mcp.json + .cursor/rules/<name>.mdc
+  const cur = snapOf(r, "Cur");
+  const cm = cur?.[".cursor/mcp.json"] ? JSON.parse(cur[".cursor/mcp.json"]) : {};
+  eq("S5 cursor mcp key", Object.keys(cm), ["mcpServers"]);
+  ok("S5 cursor server present", cm.mcpServers?.github?.command === "npx");
+  ok("S5 cursor rule file", /^---\ndescription: How to write commits\n---\n\nUse conventional commits\./.test(cur?.[".cursor/rules/commit-style.mdc"] ?? ""));
+  // gemini: .gemini/settings.json (mcpServers key) + GEMINI.md section
+  const gem = snapOf(r, "Gem");
+  const gs = gem?.[".gemini/settings.json"] ? JSON.parse(gem[".gemini/settings.json"]) : {};
+  eq("S5 gemini mcp key", Object.keys(gs), ["mcpServers"]);
+  ok("S5 gemini server present", gs.mcpServers?.github?.command === "npx");
+  ok("S5 gemini section", (gem?.["GEMINI.md"] ?? "").includes("### commit-style"));
+  // opencode: opencode.json (mcp key) + AGENTS.md section
+  const opn = snapOf(r, "Opn");
+  const oo = opn?.["opencode.json"] ? JSON.parse(opn["opencode.json"]) : {};
+  eq("S5 opencode mcp key", Object.keys(oo), ["mcp"]);
+  ok("S5 opencode server present", oo.mcp?.github?.command === "npx");
+  ok("S5 opencode section", (opn?.["AGENTS.md"] ?? "").includes("### commit-style"));
+  // Each step only sees ITS files (prior steps restored).
+  ok("S5 cursor files restored before gemini", gem?.[".cursor/mcp.json"] === null);
+  ok("S5 cursor rules dir gone before gemini", gem?.[".cursor/rules"] === null);
+  ok("S5 gemini files restored before opencode", opn?.[".gemini/settings.json"] === null);
+  // Clean at the end.
+  for (const f of [".cursor", ".gemini", "opencode.json", "GEMINI.md", "AGENTS.md"])
+    ok(`S5 ${f} gone after run`, !existsSync(join(r.wt, f)));
+});
+
+scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => {
+  const r = await runFlow({ name: "s6", config: "../test/configs/agent-skills-path.config.json",
+    scenario: "agent-config-snap.cjs", budgetMs: 90000 });
+  ok("S6 not hung", !r.hung);
+  eq("S6 exit code", r.code, 0);
+  const tree = snapOf(r, "Dev")?.[".orca/agent-config-tree"] ?? [];
+  eq("S6 dir copied with extras", tree.filter((f) => f.startsWith(".claude/skills/team")).sort(),
+    [".claude/skills/team/SKILL.md", ".claude/skills/team/helper.txt"]);
+  ok("S6 single .md wrapped as SKILL.md", tree.includes(".claude/skills/solo/SKILL.md"));
+  ok("S6 worktree clean after run", !existsSync(join(r.wt, ".claude")));
+});
+
+scenario("S7 hostile manifest paths contained to the worktree", async () => {
+  const r = await runFlow({ name: "s7", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [
+      { file: "victim-bait.txt", text: "inside worktree — must survive\n" },
+      { file: ".orca-agent-config.json",
+        text: JSON.stringify({ created: ["../escaped"], modified: [{ path: "../escaped/implanted.txt", original: "pwned\n" }] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S7 not hung", !r.hung);
+  ok("S7 dies (unguarded state)", r.code === 1);
+  ok("S7 containment warn", /escapes the worktree/.test(r.out + r.err));
+  ok("S7 in-worktree bait untouched", readFileSync(join(r.wt, "victim-bait.txt"), "utf8") === "inside worktree — must survive\n");
+  ok("S7 nothing written outside the worktree", !existsSync(join(r.dir, "escaped")));
+  ok("S7 hostile manifest kept for manual resolution", existsSync(join(r.wt, ".orca-agent-config.json")));
 });
 
 // ---------------------------------------------------------------------------
@@ -848,6 +1074,18 @@ const BAD_CONFIGS = [
   ["F12b zero nudgeTimeoutMs", "bad-nudge-zero-timeout.json", /nudgeTimeoutMs must be a positive integer/],
   ["F13 negative step maxRetries", "bad-retry-per-step.json", /step "reviewer": maxRetries must be a non-negative integer \(got -1\)/],
   ["F13b fractional global maxRetries", "bad-retry-global.json", /config: maxRetries must be a non-negative integer \(got 1.5\)/],
+  // Agent-config validation (F20-F26 — renamed from the feature branch's F13-F19:
+  // main's v2.3.1 took F13/F13b for the retry-budget rules).
+  ["F20 unknown skill ref", "bad-skill-unknown-ref.json", /references unknown skill "ghost"/],
+  ["F21 unknown mcp ref", "bad-mcp-unknown-ref.json", /references unknown mcp server "ghost"/],
+  ["F22 skill with both path and prompt", "bad-skill-both.json", /skill "broken": "path" and "prompt" are mutually exclusive/],
+  ["F23 mcp with neither command nor url", "bad-mcp-none.json", /mcp server "broken": must have either "command" or "url"/],
+  ["F24 skill path not found", "bad-skill-path-missing.json", /skill "broken": path "skills\/nope-does-not-exist" not found/],
+  ["F20b skill with neither path nor prompt", "bad-skill-none.json", /skill "broken": must have either "path" or "prompt"/],
+  ["F20c inline skill missing description", "bad-skill-no-desc.json", /skill "broken": inline skill requires "description"/],
+  ["F23b mcp with both command and url", "bad-mcp-both.json", /mcp server "broken": "command" and "url" are mutually exclusive/],
+  ["F25 skill name with path separators", "bad-skill-name.json", /names must not contain path separators/],
+  ["F26 step skills not an array", "bad-skills-type.json", /"skills" must be an array of registry names/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {
@@ -920,7 +1158,7 @@ scenario("I1 installer (empty project: every whitelisted file lands)", async () 
   ok("I1 not hung", !r.hung);
   eq("I1 exit code", r.code, 0);
   ok("I1 no copy failure", !/copy failed/.test(r.out + r.err), (r.out + r.err).trim());
-  for (const f of ["flow.mjs", "designer.mjs", "designer.html", "flow.config.json", "fixbug.config.json", "cr.config.json", "CONFIGURATION.md", "README.md", "notify.json",
+  for (const f of ["flow.mjs", "agent-config.mjs", "designer.mjs", "designer.html", "flow.config.json", "fixbug.config.json", "cr.config.json", "CONFIGURATION.md", "README.md", "notify.json",
     "workflow-template/README.md", "workflow-template/sdlc.config.json", "workflow-template/fixbug.config.json", "workflow-template/cr.config.json"])
     ok(`I1 installed .orca/${f}`, existsSync(join(r.dir, ".orca", f)));
   ok("I1 installed orca.yaml", existsSync(join(r.dir, "orca.yaml")));

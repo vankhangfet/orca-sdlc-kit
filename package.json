@@ -15,6 +15,7 @@
   },
   "files": [
     ".orca/flow.mjs",
+    ".orca/agent-config.mjs",
     ".orca/designer.mjs",
     ".orca/designer.html",
     ".orca/flow.config.json",

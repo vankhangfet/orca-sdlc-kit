@@ -55,6 +55,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import readline from "node:readline";
+import { validateAgentConfig, materializeAgentConfig, restoreAgentConfig } from "./agent-config.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Live-page accumulator: null until the status section assigns it (before any
@@ -322,6 +323,10 @@ for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id
     if (s.maxRetries != null && (!Number.isInteger(s.maxRetries) || s.maxRetries < 0))
       die(`step "${s.id}": maxRetries must be a non-negative integer (got ${JSON.stringify(s.maxRetries)}).`);
 }
+
+// Skills + MCP registries: schema and refs validated at load so a typo dies
+// in --dry-run instead of mid-pipeline. Materialization happens per group.
+validateAgentConfig({ cfg, configDir: HERE, steps, die });
 
 // A step's reads. Steps in this run always count. Steps NOT part of this run
 // (dropped by --from/--only, or disabled) still count when their artifact file
@@ -1729,6 +1734,8 @@ function printPlan() {
     if (s.interactive && !AUTO_RUN) flags.push("interactive");
     if (s.parallelWith) flags.push(`parallel-with ${s.parallelWith}`);
     else if (isParallel.has(s.id)) flags.push("parallel-group");
+    if ((s.skills || []).length) flags.push(`skills=${s.skills.join(",")}`);
+    if ((s.mcp || []).length) flags.push(`mcp=${s.mcp.join(",")}`);
     console.log(
       `  ${i + 1}. ${s.title.padEnd(26)} agent=${agentOf(s).padEnd(9)}` +
       `${model ? ` model=${model}` : ""} ` +
@@ -1793,6 +1800,10 @@ resolveWorktree();          // hard-fail here if still unresolved
 const WT_DIR = resolveWorktreePath();
 mkdirSync(join(WT_DIR || ".", ART_DIR), { recursive: true });
 if (!HISTORY_ARCHIVE_DONE) archiveCurrentRun();
+// Crash recovery: a previous run killed between materialize and restore leaves
+// the manifest behind — put the worktree back before anything else runs.
+if (restoreAgentConfig({ worktree: WT_DIR || ".", warn }))
+  log("[agent-config] restored worktree files left behind by a previous run.");
 if (!orca(["status"]).ok) die("Orca runtime not ready (orca status failed).");
 
 log(`Creating Run: ${objective}`);
@@ -2088,6 +2099,11 @@ function settleMember(m, outcome, done) {
 // cap; a hard-capped member settles as still-running and is dropped from
 // the wait set — the pipeline then stops (main loop) with a resume hint.
 function runGroup(members) {
+  // Skills + MCP config files live in the worktree for the whole group (union
+  // across parallel members). NOTE: die() exits the process without running
+  // this finally — that is exactly what the manifest + startup self-heal cover.
+  materializeAgentConfig({ worktree: WT_DIR || ".", members: members.map((s) => ({ ...s, agent: agentOf(s) })), cfg, configDir: HERE, die, warn });
+  try {
   for (const s of members) statusBegin(s.id);
   const M = members.map(launchMember);
   while (true) {
@@ -2198,6 +2214,9 @@ function runGroup(members) {
   }
   writeStatus();
   return M;
+  } finally {
+    restoreAgentConfig({ worktree: WT_DIR || ".", warn });
+  }
 }
 
 // Gate after a step (manual mode only — autoRun ignores gates entirely).

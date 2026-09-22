@@ -1,0 +1,16 @@
+{
+  "defaults": { "timeoutMs": 2000, "hardTimeoutMs": 25000, "startRetryDelayMs": 200 },
+  "skills": {
+    "commit-style": { "description": "How to write commits", "prompt": "Use conventional commits." },
+    "review-checklist": { "description": "Checklist for code review", "prompt": "Review in order." }
+  },
+  "mcpServers": {
+    "github": { "command": "npx", "args": ["-y", "@mcp/github"] },
+    "docs": { "url": "https://mcp.example.com/sse" }
+  },
+  "pipeline": [
+    { "id": "left", "title": "Left", "agent": "claude", "spec": "Write {out}.", "writes": "L.md", "mcp": ["github"], "skills": ["commit-style"] },
+    { "id": "right", "title": "Right", "agent": "claude", "spec": "Write {out}.", "writes": "R.md", "parallelWith": "left", "mcp": ["docs"], "skills": ["review-checklist"] },
+    { "id": "join", "title": "Join", "agent": "codex", "spec": "Write {out} from {reads}.", "writes": "J.md", "reads": ["left", "right"], "skills": ["commit-style"], "mcp": ["github"] }
+  ]
+}

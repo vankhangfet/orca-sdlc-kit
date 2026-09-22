@@ -137,7 +137,9 @@ longer need. Snapshot (copy) failures warn and never block a run.
   "model": "default",            // (optional) "default"/missing = agent's own model; else passed as --model
   "effort": "",                  // (optional) cold-start fallback only; requires model
   "timeoutMs": 1800000,           // (optional) override max-silence for this step
-  "hardTimeoutMs": 7200000        // (optional) absolute cap for this step (default 4x timeoutMs)
+  "hardTimeoutMs": 7200000,      // (optional) absolute cap for this step (default 4x timeoutMs)
+  "skills": ["commit-style"],     // (optional) skill registry names this step may use
+  "mcp": ["github"]               // (optional) mcpServers registry names this step connects to
 }
 ```
 
@@ -270,6 +272,59 @@ way. The orchestrator recognizes the known dialog texts on a frozen agent screen
 it once per step and shows a "parked" note on the status page — it never answers the
 prompt itself (the note survives into the final status when the hard cap stops the run).
 Accept the folder-trust dialog once per repo before unattended runs.
+
+---
+
+## Skills & MCP servers
+
+Give a step's agent extra capabilities without hard-coding them in the spec:
+
+```jsonc
+{
+  "skills": {
+    "commit-style": { "path": "skills/commit-style" },                  // OR inline:
+    "review-checklist": { "description": "...", "prompt": "..." }
+  },
+  "mcpServers": {
+    "github": { "command": "npx", "args": ["-y", "@mcp/github"],
+                "env": { "GITHUB_TOKEN": "${env:GITHUB_TOKEN}" } },     // stdio
+    "docs":   { "url": "https://mcp.example.com/sse",
+                "headers": { "Authorization": "Bearer ${env:MCP_TOKEN}" } }  // remote
+  },
+  "pipeline": [
+    { "id": "coding", "agent": "claude", "skills": ["commit-style"], "mcp": ["github"], "...": "..." }
+  ]
+}
+```
+
+**How it reaches the agent.** Before each run-order group launches, the flow
+writes harness-standard files into the WORKTREE (and removes them afterwards —
+a crashed run is cleaned up by the next one):
+
+| agent    | MCP                                | skills                                  |
+|----------|------------------------------------|-----------------------------------------|
+| claude   | `.mcp.json`                        | `.claude/skills/<name>/SKILL.md`        |
+| cursor   | `.cursor/mcp.json`                 | `.cursor/rules/<name>.mdc`              |
+| gemini   | `.gemini/settings.json` (merged)   | `GEMINI.md` (marked section)            |
+| opencode | `opencode.json` (merged, `mcp` key)| `AGENTS.md` (marked section)            |
+| codex    | not supported (warn + skip)        | `AGENTS.md` (marked section)            |
+
+Rules:
+
+- A skill entry has either `path` (relative to `.orca/`, a SKILL.md folder or a
+  single `.md`) or inline `description` + `prompt` — never both.
+- An mcp server has either `command` (stdio) or `url` (remote) — never both.
+- `${env:NAME}` inside mcp `command`/`args`/`env`/`url`/`headers` is expanded
+  when the file is written; an unset variable warns and becomes `""`.
+- Parallel steps share the worktree, so their refs are UNIONED into one file.
+- Files that already exist in the worktree are merged (JSON) or appended to
+  (markdown, between `<!-- orca-agent-config BEGIN/END -->` markers) and restored
+  verbatim afterwards. A pre-existing `.claude/skills/<name>/` folder is kept,
+  never overwritten.
+- Unknown agents (anything not in the table) get a warn and no files — the run
+  is never killed for it.
+- Refs are validated for the steps in THIS run (`--only`/`--from`/disabled
+  steps are checked whenever they actually run).
 
 ---
 
