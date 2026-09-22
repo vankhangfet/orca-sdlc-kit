@@ -22,5 +22,7 @@ Installed via `npx github:vankhangfet/orca-sdlc-kit`? You already have all of th
 | `CONFIGURATION.md` | Field-by-field reference for all three config files. |
 | `artifacts/` | Runtime output — every step's Markdown artifact lands here (gitignored). |
 
+- **Per-agent skills & MCP servers** — declare a `skills` / `mcpServers` registry in any pipeline config, reference them from steps, and each agent harness gets its standard config files in the worktree (`.mcp.json`, `.claude/skills/`, `AGENTS.md` sections, ...) — restored after every step group. See "Skills & MCP servers" in `CONFIGURATION.md`.
+
 For the full picture — concepts, quick start, automation modes, worktree
 handling, cheat sheet, troubleshooting — read the repo root **README.md**.

@@ -1,0 +1,6 @@
+{
+  "mcpServers": { "github": { "command": "npx", "args": ["-y", "@mcp/github"] } },
+  "pipeline": [
+    { "id": "a", "title": "A", "agent": "claude", "spec": "Write {out}.", "writes": "A.md", "mcp": ["ghost"] }
+  ]
+}

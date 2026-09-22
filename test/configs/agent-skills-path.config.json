@@ -1,0 +1,10 @@
+{
+  "defaults": { "timeoutMs": 2000, "hardTimeoutMs": 25000, "startRetryDelayMs": 200 },
+  "skills": {
+    "team": { "path": "../test/configs/skills/team-skill" },
+    "solo": { "path": "../test/configs/skills/single-skill.md" }
+  },
+  "pipeline": [
+    { "id": "dev", "title": "Dev", "agent": "claude", "spec": "Write {out}.", "writes": "D.md", "skills": ["team", "solo"] }
+  ]
+}

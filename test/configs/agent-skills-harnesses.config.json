@@ -1,0 +1,14 @@
+{
+  "defaults": { "timeoutMs": 2000, "hardTimeoutMs": 25000, "startRetryDelayMs": 200 },
+  "skills": {
+    "commit-style": { "description": "How to write commits", "prompt": "Use conventional commits." }
+  },
+  "mcpServers": {
+    "github": { "command": "npx", "args": ["-y", "@mcp/github"] }
+  },
+  "pipeline": [
+    { "id": "cur", "title": "Cur", "agent": "cursor", "spec": "Write {out}.", "writes": "U.md", "mcp": ["github"], "skills": ["commit-style"] },
+    { "id": "gem", "title": "Gem", "agent": "gemini", "spec": "Write {out}.", "writes": "M.md", "mcp": ["github"], "skills": ["commit-style"] },
+    { "id": "opn", "title": "Opn", "agent": "opencode", "spec": "Write {out}.", "writes": "O.md", "mcp": ["github"], "skills": ["commit-style"] }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "defaults": { "timeoutMs": 2000, "hardTimeoutMs": 25000, "startRetryDelayMs": 200 },
+  "skills": {
+    "//": "team skills",
+    "review-checklist": { "description": "Checklist for code review", "prompt": "Review in order: correctness, tests, docs." }
+  },
+  "mcpServers": {
+    "//": "external servers",
+    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "env": { "GITHUB_TOKEN": "${env:TEST_GH_TOKEN}" } },
+    "docs": { "url": "https://mcp.example.com/sse", "headers": { "Authorization": "Bearer ${env:TEST_MCP_TOKEN}" } }
+  },
+  "pipeline": [
+    { "id": "solo", "title": "Solo", "agent": "claude", "spec": "Write {out}.", "writes": "S.md", "skills": ["review-checklist"], "mcp": ["github", "docs"] }
+  ]
+}
