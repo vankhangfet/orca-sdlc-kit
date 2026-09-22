@@ -28,9 +28,9 @@ and the run-end summary land in Telegram, Slack, MS Teams or WhatsApp](img/banne
 
 ## What's new
 
+- **Per-step retry budgets** *(v2.3.1)* — a step that loops back via `onFailGoto` can declare its own `"maxRetries"` (say 20 for a loop-heavy Planning step) while every other fix loop keeps the pipeline-wide default: one long loop no longer inflates every edge's budget. Values are validated at load (negative/fractional die before any agent starts) and `--dry-run` shows a declared budget as `onFail-><id> xN`.
 - **Parallel reviews** *(v2.3.0)* — code review and security review now run at the same time on the same coding output; testing waits for both, and either review failing sends the coder back, after which both reviews run again on the fix.
 - **Run history & one-key resume** *(v2.2.0)* — every new run snapshots the previous run's results into `.orca/artifacts/runs/`, so nothing is ever overwritten and any two runs can be compared side by side. At startup the kit lists previous runs and lets you continue one exactly where it stopped — press `0`/Enter for a fresh run, pass `--new` to skip the question. Scripts and CI are never blocked.
-- **Nudge — auto-retry for missing outputs** *(v2.1.0)* — an agent that finished (or stalled) without writing its file gets a short reminder in its own terminal, reusing the live session instead of a costly re-run. Ships off; enable with `nudgeRetries` > 0. A terminal waiting on a human-only dialog is never touched.
 
 Full history: [Roadmap](#roadmap) · [Releases](https://github.com/vankhangfet/orca-sdlc-kit/releases).
 
