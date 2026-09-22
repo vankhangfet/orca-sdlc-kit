@@ -24,7 +24,7 @@ and the run-end summary land in Telegram, Slack, MS Teams or WhatsApp](img/banne
 
 **Three workflows ship ready to run** — full SDLC for a new build (`flow.config.json`), a bug-fix loop (`fixbug.config.json`), and a change-request flow for maintenance on an existing system (`cr.config.json`). [See them](#the-pipelines). **Deliver-the-code variants** of all three live in `.orca/workflow-template/` — same pipelines plus a final Rebase & Push step. They are ready-made examples, not the ceiling: any workflow you can describe as steps in JSON runs the same way. [Use cases](#use-cases).
 
-**Customize everything in `.orca/flow.config.json`** — add or reorder steps, swap any step's agent, pick models per step, set retries and timeouts, run steps in parallel: plain JSON, zero code. [See how](#2-configure-your-pipeline).
+**Customize everything in `.orca/flow.config.json`** — add or reorder steps, swap any step's agent, pick models per step, set retries and timeouts, run steps in parallel: plain JSON, zero code. [See how](#2-configure-your-pipeline). Or skip the JSON: the **[Workflow Designer](#workflow-designer--build-pipelines-in-the-browser)** builds whole workflows visually in the browser.
 
 ## What's new
 
@@ -164,7 +164,7 @@ Two knobs cover the rest:
 - **`autoRun` (default `true`) — how much it asks you.** `true`: walk away — agents never ask, they decide and record assumptions in the artifact for later audit; gates are ignored and Claude agents run with permission bypass (full tool access, one-time per-machine acceptance). `false`: agents may ask in their terminal; `"gate": true` steps pause for your approval; `"interactive": true` steps (the shipped Architecture step) interview you, one question at a time.
 - **Worktree (default: auto-detected) — where it runs.** Pin only when launching from outside the target: `--worktree name:lab2` for one run, `ORCA_FLOW_WORKTREE` for your machine. A wrong pin fails immediately with the list of valid worktrees — never mid-run.
 
-Prefer clicking over JSON? The [Workflow Designer](#workflow-designer--build-pipelines-in-the-browser) edits these files visually.
+Prefer clicking over JSON? The [Workflow Designer](#workflow-designer--build-pipelines-in-the-browser) creates and edits these files visually — new workflows included.
 
 ### 3. Change the harness
 
@@ -206,42 +206,25 @@ Manual mode (gates + interviews): set `"autoRun": false` in the config, then run
 
 ## Workflow Designer — build pipelines in the browser
 
-Hand-editing JSON is the power-user path. For everyone else (and for spinning up
-a brand-new project), the kit ships a small local UI:
+Skip the JSON entirely: **create a workflow from scratch** — blank, from any shipped template, or by duplicating the current one — and edit every existing config, all in a local web UI:
 
 ```bash
 node .orca/designer.mjs          # opens http://127.0.0.1:7887/?t=<one-time token>
 ```
 
-![The Workflow Designer in the browser: the Pipeline tab lists every step as a
-numbered card in run order — agent chips (claude, codex), reads arrows,
-‖ parallel markers, ↺ loop-back badges — and the form on the right edits the
-selected step: id, title, agent, model, writes, timeouts, onFailGoto,
-parallelWith, enabled/gate/interactive flags, the spec prompt with {out} /
-{reads} placeholders, and reads checkboxes; the header carries the objective
-field, Save / Dry-run buttons and the exact node .orca/flow.mjs run command
-for the workflow being edited](img/Flow-design.png)
+![The Workflow Designer: step cards in run order on the left — agent chips,
+reads arrows, ∥ parallel markers, ↺ loop-back badges — the selected step's
+full form on the right (agent, writes, spec, reads, timeouts…), and the exact
+run command ready to copy in the bar above](img/Flow-design.png)
 
-*The whole pipeline configurable through the web UI — the Planning step selected, its agent, artifact, reads and prompt open in the form on the right; the header previews the exact run command for the workflow being edited.*
+*Creating a workflow entirely in the browser — the Planning step selected, its agent, artifact, reads and prompt open in the form on the right.*
 
-- **Visual pipeline editor** — step cards in run order (drag to reorder),
-  a full form per step (agent, `reads`, `writes`, `spec`, timeouts, `parallelWith`,
-  `onFailGoto`…), advisory validation badges, and a config-defaults tab.
-- **Creates AND edits** — every `*.config.json` in `.orca/` and
-  `.orca/workflow-template/`; `//` comment keys in existing files survive edits.
-- **Dry-run button** — runs `flow.mjs --dry-run` against the file on disk and
-  shows the plan (or the exact validation error) in place.
-- **Run command bar** — shows the exact `node .orca/flow.mjs ...` command for
-  the workflow you're editing; click to copy. Real runs stay in your terminal.
-- **New project tab** — scaffold a fresh workspace: copies the kit into any
-  folder, drops in your first workflow config, prints the commands to run.
-- **Guided + fast** — a dismissible 3-step guide (Pipeline → Configure
-  defaults → New project) orients first-time users; keyboard shortcuts
-  `S` save · `R` dry-run · `D` density · `?` legend; a Comfortable/Compact
-  density toggle auto-tightens for 8+ step pipelines.
+- **Every step, full control** — drag cards to reorder; each form covers agent, model, `writes`, `spec`, `reads`, timeouts, `parallelWith`, `onFailGoto`, flags — with advisory validation badges mirroring `flow.mjs` checks; a defaults tab sets retries, model and timeouts pipeline-wide.
+- **Verify, then run** — Dry-run shows the plan (or the exact validation error) in place; the run-command bar builds the exact `node .orca/flow.mjs ...` command to copy — real runs stay in your terminal.
+- **Start a new project too** — the New project tab copies the kit into any folder with your first workflow config inside.
+- **Guided + fast** — dismissible 3-step guide; shortcuts `S` save · `R` dry-run · `D` density · `?` legend; Comfortable/Compact spacing auto-tightens for long pipelines.
 
-Notes: binds `127.0.0.1` only, guarded by a per-launch token; zero dependencies;
-`flow.mjs` itself never serves anything. Flags: `--port <n>`, `--no-open`.
+Notes: localhost-only, guarded by a per-launch token; zero dependencies; `flow.mjs` itself never serves anything; `//` comments survive every save. Flags: `--port <n>`, `--no-open`.
 
 ## The pipelines
 
