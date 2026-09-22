@@ -36,7 +36,7 @@
   .chip.agent { color:var(--green); }
   button.addstep { border-style:dashed; color:var(--dim); }
   #stepForm { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
-  #stepForm .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+  #stepForm .grid, #dGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
   label.f { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--dim); }
   label.f > span b { color:var(--text); font-weight:400; }
   label.f input, label.f select, label.f textarea { background:var(--bg); }
@@ -189,6 +189,7 @@ async function loadState() {
   sel.appendChild(o);
   if (S.path && S.configs.some((c) => c.path === S.path)) sel.value = S.path;
   else if (!S.cfg) sel.value = "__new__";
+  fillTemplateSelect();
 }
 async function loadConfig(path) {
   try {
@@ -553,6 +554,7 @@ async function scaffoldPreview() {
   } catch (e) { toast(e.message, true); }
 }
 async function scaffoldCreate() {
+  $("sc-result").innerHTML = "";
   const body = { dir: $("sc-dir").value.trim(), template: $("sc-template").value, configName: $("sc-name").value.trim() };
   if (!body.dir || !body.configName) return toast("target folder and workflow name are required", true);
   try {
@@ -566,7 +568,7 @@ $("sc-preview").addEventListener("click", scaffoldPreview);
 $("sc-create").addEventListener("click", scaffoldCreate);
 bindDefaults();
 
-loadState().then(fillTemplateSelect).catch((e) => toast(e.message, true));
+loadState().catch((e) => toast(e.message, true));
 </script>
 </body>
 </html>
