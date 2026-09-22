@@ -4,83 +4,422 @@
 <meta charset="utf-8">
 <title>Orca Workflow Designer</title>
 <style>
-  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --dim:#8b949e; --accent:#58a6ff; --green:#3fb950; --red:#f85149; --yellow:#d29922; }
+  :root {
+    /* neutrals — deep slate canvas, not pure black */
+    --bg:        #0b0e14;
+    --panel:     #10151e;
+    --panel-2:   #141b26;
+    --inset:     #0a0d13;
+    --border:    #232b38;
+    --border-2:  #2e3949;
+    --text:      #e8edf4;
+    --dim:       #8a95a6;
+    --faint:     #5b6675;
+    /* single accent + semantic status */
+    --accent:    #4c8dff;
+    --accent-ink:#1f6feb;
+    --green:     #3fb950;
+    --red:       #f0524a;
+    --yellow:    #d6a41f;
+    /* type + geometry scale */
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --r-sm: 6px; --r-md: 8px; --r-lg: 12px;
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
+    --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,sans-serif; }
-  button, select, input, textarea { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:4px 8px; }
-  button { cursor:pointer; } button:hover { border-color:var(--accent); }
-  button.primary { background:#1f6feb; border-color:#1f6feb; }
-  .hidden { display:none !important; }
-  header { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); z-index:5; flex-wrap:wrap; }
-  .brand { font-weight:700; margin-right:6px; } .brand span { color:var(--accent); font-weight:400; }
-  .badge { background:#614d1f; color:var(--yellow); border-radius:10px; padding:1px 8px; font-size:12px; }
-  .runcmd { margin-left:auto; display:flex; gap:6px; align-items:center; }
-  .runcmd input { width:380px; color:var(--dim); font-family:ui-monospace,Consolas,monospace; font-size:12px; }
-  nav.tabs { display:flex; gap:4px; padding:8px 12px 0; }
-  nav.tabs button { border-bottom:2px solid transparent; border-radius:6px 6px 0 0; background:transparent; }
-  nav.tabs button.active { border-bottom-color:var(--accent); color:var(--accent); }
-  section.tab { display:none; padding:12px; }
-  section.tab.active { display:block; }
-  #tab-pipeline.active { display:grid; grid-template-columns:400px 1fr; gap:12px; align-items:start; }
-  #canvas { display:flex; flex-direction:column; gap:6px; }
-  .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; }
-  .card:hover { border-color:var(--accent); } .card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
-  .card.off { opacity:.45; }
-  .cardrow { display:flex; gap:8px; align-items:center; }
-  .dot { background:#21262d; border-radius:50%; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:12px; flex:none; }
-  .cid { font-family:ui-monospace,Consolas,monospace; color:var(--accent); }
-  .ctitle { color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .errbadge { margin-left:auto; color:var(--red); font-size:12px; flex:none; }
-  .chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
-  .chip { background:#21262d; border-radius:10px; padding:0 8px; font-size:11px; color:var(--dim); }
-  .chip.agent { color:var(--green); }
-  button.addstep { border-style:dashed; color:var(--dim); }
-  #stepForm { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
-  #stepForm .grid, #dGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
-  label.f { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--dim); }
-  label.f > span b { color:var(--text); font-weight:400; }
-  label.f input, label.f select, label.f textarea { background:var(--bg); }
-  label.f textarea { resize:vertical; min-height:140px; font-family:ui-monospace,Consolas,monospace; font-size:12px; }
-  .full { grid-column:1/-1; }
-  .readcb { display:inline-flex; gap:6px; align-items:center; margin:2px 10px 2px 0; font-size:12px; color:var(--text); }
-  .dim { color:var(--dim); font-size:12px; }
-  .empty { color:var(--dim); padding:24px; text-align:center; border:1px dashed var(--border); border-radius:8px; }
-  .formfoot { display:flex; gap:8px; margin-top:12px; }
-  .formfoot .right { margin-left:auto; }
-  #toasts { position:fixed; bottom:12px; right:12px; display:flex; flex-direction:column; gap:6px; z-index:20; }
-  .toast { background:var(--panel); border:1px solid var(--green); border-radius:8px; padding:8px 12px; }
-  .toast.bad { border-color:var(--red); }
-  dialog { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:8px; max-width:80vw; width:720px; }
-  dialog::backdrop { background:rgba(0,0,0,.6); }
-  dialog pre { max-height:60vh; overflow:auto; background:var(--bg); padding:10px; border-radius:6px; font-size:12px; white-space:pre-wrap; }
-  details.menu { position:relative; }
-  details.menu .menuitems { position:absolute; top:100%; left:0; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:6px; display:flex; flex-direction:column; gap:4px; min-width:230px; z-index:10; }
-  details.menu .menuitems button { text-align:left; background:transparent; border:none; }
-  details.menu .menuitems button:hover { color:var(--accent); }
-  .vwarn { grid-column:1/-1; color:var(--red); font-size:12px; white-space:pre-wrap; }
-  #sc-result pre { background:var(--bg); padding:10px; border-radius:6px; }
+  html, body { height: 100%; }
+
+  /* --- density: compact variant tightens the token scale ------------------ */
+  html[data-density="compact"] {
+    --sp-1: 3px; --sp-2: 6px; --sp-3: 9px; --sp-4: 12px; --sp-5: 18px;
+    --r-sm: 5px; --r-md: 7px; --r-lg: 10px;
+  }
+  html[data-density="compact"] body { font-size: 13px; }
+  html[data-density="compact"] button,
+  html[data-density="compact"] select,
+  html[data-density="compact"] input,
+  html[data-density="compact"] textarea { padding: 4px 8px; }
+  html[data-density="compact"] .card { padding: 7px 10px; }
+  html[data-density="compact"] .dot { width: 21px; height: 21px; }
+  html[data-density="compact"] label.f textarea { min-height: 120px; }
+  html[data-density="compact"] .empty { padding: 28px 20px; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.5 var(--sans);
+    letter-spacing: .1px;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+  /* --- form controls ------------------------------------------------------ */
+  button, select, input, textarea {
+    font: inherit; color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 6px 10px;
+    transition: border-color .12s ease, background .12s ease, box-shadow .12s ease;
+  }
+  input::placeholder, textarea::placeholder { color: var(--faint); }
+  button { cursor: pointer; font-weight: 500; }
+  button:hover { border-color: var(--border-2); background: var(--panel); }
+  button:active { transform: translateY(1px); }
+  select:hover, input:hover:not([readonly]), textarea:hover { border-color: var(--border-2); }
+  :is(button, select, input, textarea):focus-visible {
+    outline: none; border-color: var(--accent); box-shadow: var(--focus);
+  }
+  button.primary {
+    background: var(--accent-ink); border-color: transparent; color: #fff; font-weight: 600;
+  }
+  button.primary:hover { background: color-mix(in srgb, var(--accent-ink) 85%, #fff); }
+  .hidden { display: none !important; }
+
+  /* --- header / toolbar ---------------------------------------------------- */
+  header {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--sp-2) var(--sp-4);
+    align-items: center;
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 5;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .brand {
+    font-weight: 700; letter-spacing: -.2px; display: inline-flex; align-items: baseline; gap: 7px;
+  }
+  .brand::before {
+    content: ""; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+    align-self: center;
+  }
+  .brand span { color: var(--dim); font-weight: 400; }
+  .toolbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+  .tb-group { display: flex; align-items: center; gap: var(--sp-1); }
+  .tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px var(--sp-1); }
+  #cfgSelect { min-width: 200px; max-width: 280px; font-weight: 500; }
+  .badge {
+    background: color-mix(in srgb, var(--yellow) 16%, transparent);
+    color: var(--yellow);
+    border: 1px solid color-mix(in srgb, var(--yellow) 35%, transparent);
+    border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  /* keycap badge — a printed-key hint used inline in labels + legend */
+  kbd.kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    font-family: var(--mono); font-size: 11px; font-weight: 600; line-height: 1;
+    color: var(--dim); background: var(--inset);
+    border: 1px solid var(--border-2); border-bottom-width: 2px;
+    border-radius: 5px; font-variant-numeric: tabular-nums;
+  }
+  /* subtle square icon button in the toolbar (shortcuts legend trigger) */
+  .tb-icon {
+    width: 32px; height: 32px; padding: 0; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--dim); font-size: 14px; font-weight: 600;
+  }
+  .tb-icon:hover { color: var(--text); }
+  /* shortcuts legend inside the shared dialog */
+  .legend { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-2) var(--sp-4); align-items: center; font-family: var(--sans); white-space: normal; }
+  .legend dt { justify-self: start; }
+  .legend dd { margin: 0; color: var(--dim); font-size: 13px; }
+  .legend .kbd { margin-right: 3px; }
+
+  /* --- workflow guide: recommended step sequence across the tabs ---------- */
+  .guide {
+    display: flex; align-items: stretch; gap: var(--sp-3);
+    margin: var(--sp-4) 0 0; padding: var(--sp-3) var(--sp-4);
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--border); border-radius: var(--r-lg);
+    position: relative;
+  }
+  .guide-intro {
+    flex: none; align-self: center; max-width: 168px;
+    padding-right: var(--sp-4); border-right: 1px solid var(--border);
+  }
+  .guide-intro b { display: block; font-size: 13px; color: var(--text); letter-spacing: .01em; }
+  .guide-intro small { display: block; margin-top: 2px; font-size: 11px; color: var(--dim); line-height: 1.4; }
+  .guide-steps { display: flex; align-items: stretch; gap: var(--sp-2); flex: 1; min-width: 0; }
+  .guide-step {
+    flex: 1; min-width: 0; text-align: left; cursor: pointer;
+    display: flex; align-items: flex-start; gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--inset); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    font: inherit; transition: border-color .12s, background .12s;
+  }
+  .guide-step:hover { border-color: var(--border-2); background: var(--panel); }
+  .guide-step:focus-visible { outline: none; box-shadow: var(--focus); }
+  .guide-step .n {
+    flex: none; width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--bg); background: var(--accent);
+  }
+  .guide-step .tx { min-width: 0; }
+  .guide-step .tx b { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); }
+  .guide-step .tx small { display: block; margin-top: 1px; font-size: 11px; color: var(--dim); line-height: 1.35; }
+  .guide-arrow { align-self: center; flex: none; color: var(--faint); font-size: 14px; }
+  .guide-close {
+    position: absolute; top: 6px; right: 8px;
+    width: 22px; height: 22px; padding: 0; border: 0; background: none;
+    color: var(--faint); font-size: 15px; line-height: 1; cursor: pointer; border-radius: 5px;
+  }
+  .guide-close:hover { color: var(--text); background: var(--inset); }
+  .guide.is-hidden { display: none; }
+  .guide-reopen {
+    margin: var(--sp-3) 0 0; padding: 4px 10px;
+    font-size: 12px; color: var(--dim);
+    background: none; border: 1px dashed var(--border-2); border-radius: 999px; cursor: pointer;
+  }
+  .guide-reopen:hover { color: var(--text); border-color: var(--accent); }
+  .guide-reopen.is-hidden { display: none; }
+  html[data-density="compact"] .guide-intro small,
+  html[data-density="compact"] .guide-step .tx small { display: none; }
+  @media (max-width: 900px) {
+    .guide { flex-direction: column; }
+    .guide-intro { max-width: none; border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 var(--sp-3); }
+    .guide-arrow { display: none; }
+    .guide-steps { flex-direction: column; }
+  }
+
+  /* segmented density toggle — sits at the far right of the toolbar */
+  .density-toggle {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: var(--inset); border: 1px solid var(--border);
+    border-radius: var(--r-sm); padding: 2px;
+  }
+  .density-toggle button {
+    border: none; background: transparent; color: var(--dim);
+    padding: 4px 10px; border-radius: 4px; font-size: 11.5px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  .density-toggle button:hover { color: var(--text); background: transparent; }
+  .density-toggle button[aria-pressed="true"] {
+    background: var(--panel-2); color: var(--text);
+    box-shadow: inset 0 0 0 1px var(--border-2);
+  }
+  /* run-command bar — its own labelled zone spanning under the toolbar */
+  .runcmd {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(160px, 260px) 1fr auto;
+    gap: var(--sp-2); align-items: center;
+    background: var(--inset);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  }
+  .runcmd .runcmd-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint);
+  }
+  .runcmd #objective { background: var(--panel-2); }
+  .runcmd #cmdText {
+    color: var(--accent); font-family: var(--mono); font-size: 12.5px;
+    background: transparent; border-color: transparent; cursor: text;
+    font-variant-ligatures: none;
+  }
+  .runcmd #btnCopyCmd { flex: none; width: 34px; padding: 6px 0; text-align: center; }
+
+  /* --- tabs ---------------------------------------------------------------- */
+  nav.tabs {
+    display: flex; gap: 2px;
+    padding: var(--sp-3) var(--sp-4) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  nav.tabs button {
+    border: 1px solid transparent; border-bottom: 2px solid transparent;
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    background: transparent; color: var(--dim); font-weight: 500;
+    padding: 8px 14px; margin-bottom: -1px;
+  }
+  nav.tabs button:hover { color: var(--text); background: var(--panel); }
+  nav.tabs button.active {
+    border-bottom-color: var(--accent); color: var(--text);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+
+  /* --- tab bodies ---------------------------------------------------------- */
+  section.tab { display: none; padding: var(--sp-4); }
+  section.tab.active { display: block; }
+  #tab-pipeline.active {
+    display: grid; grid-template-columns: 420px 1fr; gap: var(--sp-4); align-items: start;
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  }
+
+  /* --- pipeline canvas ----------------------------------------------------- */
+  #canvas { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md);
+    padding: 10px 12px; cursor: pointer; position: relative;
+    transition: border-color .12s ease, background .12s ease, transform .08s ease;
+  }
+  .card:hover { border-color: var(--border-2); background: var(--panel-2); }
+  .card.sel {
+    border-color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .card.off { opacity: .5; }
+  .card.off .dot { text-decoration: line-through; }
+  .cardrow { display: flex; gap: var(--sp-2); align-items: center; }
+  .dot {
+    background: var(--inset); border: 1px solid var(--border-2); color: var(--dim);
+    border-radius: var(--r-sm); width: 24px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-family: var(--mono); font-variant-numeric: tabular-nums; flex: none;
+  }
+  .card.sel .dot { background: var(--accent-ink); border-color: transparent; color: #fff; }
+  .cid { font-family: var(--mono); color: var(--text); font-weight: 600; font-size: 13px; }
+  .ctitle { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .errbadge {
+    margin-left: auto; color: var(--red); font-size: 11.5px; font-weight: 600; flex: none;
+    background: color-mix(in srgb, var(--red) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+    border-radius: 999px; padding: 1px 8px; cursor: help;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: 8px; }
+  .chip {
+    background: var(--inset); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 9px; font-size: 11px; color: var(--dim);
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+  }
+  .chip.agent {
+    color: var(--green); border-color: color-mix(in srgb, var(--green) 30%, transparent);
+    background: color-mix(in srgb, var(--green) 12%, transparent); font-weight: 600;
+  }
+  .chip.writes {
+    color: var(--accent); border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600;
+  }
+  button.addstep {
+    border-style: dashed; border-color: var(--border-2); color: var(--dim);
+    background: transparent; padding: 10px; font-weight: 500;
+  }
+  button.addstep:hover { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+  /* --- step form + defaults grid ------------------------------------------ */
+  #stepForm {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+    padding: var(--sp-4);
+  }
+  #stepForm .grid, #dGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); }
+  label.f { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--dim); }
+  label.f > span { font-weight: 500; letter-spacing: .01em; }
+  label.f > span b { color: var(--text); font-weight: 600; }
+  label.f input, label.f select, label.f textarea { background: var(--inset); }
+  label.f input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  label.f textarea { resize: vertical; min-height: 150px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
+  .full { grid-column: 1 / -1; }
+  .readcb {
+    display: inline-flex; gap: 7px; align-items: center; margin: 2px 12px 2px 0;
+    font-size: 12.5px; color: var(--text); cursor: pointer;
+  }
+  .readcb input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .dim { color: var(--dim); font-size: 12.5px; line-height: 1.6; }
+  .empty {
+    color: var(--dim); padding: 40px 24px; text-align: center;
+    border: 1px dashed var(--border-2); border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--panel) 50%, transparent);
+  }
+  .formfoot {
+    display: flex; gap: var(--sp-2); margin-top: var(--sp-4);
+    padding-top: var(--sp-4); border-top: 1px solid var(--border); align-items: center;
+  }
+  .formfoot .right { margin-left: auto; }
+
+  /* --- toasts -------------------------------------------------------------- */
+  #toasts { position: fixed; bottom: var(--sp-4); right: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); z-index: 20; }
+  .toast {
+    background: var(--panel); border: 1px solid var(--border);
+    border-left: 3px solid var(--green); border-radius: var(--r-md);
+    padding: 10px 14px; box-shadow: var(--shadow); max-width: 360px; font-size: 13px;
+    animation: toast-in .18s ease;
+  }
+  .toast.bad { border-left-color: var(--red); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* --- dialog -------------------------------------------------------------- */
+  dialog {
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border-2); border-radius: var(--r-lg);
+    max-width: 80vw; width: 720px; box-shadow: var(--shadow); padding: var(--sp-5);
+  }
+  dialog::backdrop { background: rgba(3, 5, 9, .66); backdrop-filter: blur(2px); }
+  dialog pre {
+    max-height: 60vh; overflow: auto; background: var(--inset);
+    padding: var(--sp-3); border-radius: var(--r-md); font-size: 12.5px;
+    white-space: pre-wrap; font-family: var(--mono); line-height: 1.55; border: 1px solid var(--border);
+  }
+
+  /* --- dropdown menu ------------------------------------------------------- */
+  details.menu { position: relative; }
+  details.menu > summary::-webkit-details-marker { display: none; }
+  details.menu .menuitems {
+    position: absolute; top: calc(100% + 4px); left: 0;
+    background: var(--panel-2); border: 1px solid var(--border-2); border-radius: var(--r-md);
+    padding: var(--sp-1); display: flex; flex-direction: column; gap: 2px; min-width: 240px;
+    z-index: 10; box-shadow: var(--shadow);
+  }
+  details.menu .menuitems button {
+    text-align: left; background: transparent; border: none; border-radius: var(--r-sm); padding: 7px 10px; color: var(--text);
+  }
+  details.menu .menuitems button:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+  .vwarn { grid-column: 1 / -1; color: var(--red); font-size: 12px; white-space: pre-wrap; }
+  #sc-result pre {
+    background: var(--inset); padding: var(--sp-3); border-radius: var(--r-md);
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.55; border: 1px solid var(--border); white-space: pre-wrap;
+  }
 </style>
 </head>
 <body>
 <header>
   <span class="brand">orca <span>workflow designer</span></span>
-  <select id="cfgSelect" title="open a config"></select>
-  <details class="menu" id="newMenu">
-    <summary style="cursor:pointer;list-style:none;padding:4px 8px;border:1px solid var(--border);border-radius:6px;">New ▾</summary>
-    <div class="menuitems">
-      <button id="newBlank">Blank workflow…</button>
-      <button id="newTplSdlc">From template: sdlc</button>
-      <button id="newTplFixbug">From template: fixbug</button>
-      <button id="newTplCr">From template: cr</button>
-      <button id="newTplDeliver">From template: sdlc + git-deliver</button>
-      <button id="newDup">Duplicate current…</button>
+  <div class="toolbar">
+    <div class="tb-group">
+      <select id="cfgSelect" title="open a config"></select>
+      <details class="menu" id="newMenu">
+        <summary style="cursor:pointer;list-style:none;padding:7px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-weight:500;">New ▾</summary>
+        <div class="menuitems">
+          <button id="newBlank">Blank workflow…</button>
+          <button id="newTplSdlc">From template: sdlc</button>
+          <button id="newTplFixbug">From template: fixbug</button>
+          <button id="newTplCr">From template: cr</button>
+          <button id="newTplDeliver">From template: sdlc + git-deliver</button>
+          <button id="newDup">Duplicate current…</button>
+        </div>
+      </details>
     </div>
-  </details>
-  <button id="btnSave" class="primary">Save</button>
-  <button id="btnDryRun">Dry-run</button>
-  <span id="dirtyBadge" class="badge hidden">unsaved</span>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
+      <button id="btnSave" class="primary">Save</button>
+      <button id="btnDryRun">Dry-run</button>
+    </div>
+    <span id="dirtyBadge" class="badge hidden">unsaved</span>
+    <button id="btnShortcuts" class="tb-icon" type="button" title="Keyboard shortcuts (press ?)" aria-label="Keyboard shortcuts" style="margin-left:auto;">?</button>
+    <div class="density-toggle" role="group" aria-label="Layout density (press D to toggle)" title="Press D to toggle density">
+      <button id="densComfortable" type="button" aria-pressed="true" title="Comfortable spacing — press D to toggle">Comfortable</button>
+      <button id="densCompact" type="button" aria-pressed="false" title="Compact spacing — press D to toggle">Compact</button>
+      <kbd class="kbd" aria-hidden="true" title="Press D to toggle" style="margin:0 2px 0 4px;">D</kbd>
+    </div>
+  </div>
   <div class="runcmd">
-    <input id="objective" title="objective for the run command" placeholder="objective...">
+    <span class="runcmd-label">Run</span>
+    <input id="objective" title="objective for the run command" placeholder="objective…">
     <input id="cmdText" readonly>
     <button id="btnCopyCmd" title="copy the run command">⧉</button>
   </div>
@@ -88,9 +427,34 @@
 
 <nav class="tabs">
   <button data-tab="pipeline" class="active">Pipeline</button>
-  <button data-tab="defaults">Config defaults</button>
+  <button data-tab="defaults">Configure defaults</button>
   <button data-tab="scaffold">New project</button>
 </nav>
+
+<div class="guide" id="guide" role="region" aria-label="Workflow guide">
+  <div class="guide-intro">
+    <b>How it works</b>
+    <small>Follow these 3 steps to build and run a workflow.</small>
+  </div>
+  <div class="guide-steps">
+    <button class="guide-step" type="button" data-goto="pipeline">
+      <span class="n">1</span>
+      <span class="tx"><b>Pipeline</b><small>Add & reorder steps, assign an agent, and pick the artifact each step writes.</small></span>
+    </button>
+    <span class="guide-arrow" aria-hidden="true">→</span>
+    <button class="guide-step" type="button" data-goto="defaults">
+      <span class="n">2</span>
+      <span class="tx"><b>Configure defaults</b><small>Set shared defaults (artifact folder, retries, timeout, model…).</small></span>
+    </button>
+    <span class="guide-arrow" aria-hidden="true">→</span>
+    <button class="guide-step" type="button" data-goto="scaffold">
+      <span class="n">3</span>
+      <span class="tx"><b>New project</b><small>Create a new workspace, copy the kit, and generate the first config file.</small></span>
+    </button>
+  </div>
+  <button class="guide-close" id="guideClose" type="button" aria-label="Hide guide" title="Hide guide">×</button>
+</div>
+<button class="guide-reopen is-hidden" id="guideReopen" type="button">Show workflow guide</button>
 
 <section id="tab-pipeline" class="tab active">
   <div id="canvas"></div>
@@ -98,7 +462,8 @@
 </section>
 
 <section id="tab-defaults" class="tab">
-  <div id="defaultsForm" style="max-width:560px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;">
+  <div id="defaultsForm" class="panel" style="max-width:640px;padding:var(--sp-4);">
+    <div class="dim" style="margin-bottom:var(--sp-4);">Config-wide defaults applied to every step unless a step overrides them.</div>
     <div class="grid" id="dGrid">
       <label class="f"><span>artifactsDir</span><input id="d-artifactsDir"></label>
       <label class="f"><span>maxRetries</span><input id="d-maxRetries" type="number"></label>
@@ -119,12 +484,12 @@
 </section>
 
 <section id="tab-scaffold" class="tab">
-  <div style="max-width:560px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;">
-    <p class="dim">Create a fresh project workspace: copies the whole kit into the target folder and drops in your first workflow config.</p>
+  <div class="panel" style="max-width:640px;padding:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-3);">
+    <p class="dim" style="margin:0;">Create a fresh project workspace: copies the whole kit into the target folder and drops in your first workflow config.</p>
     <label class="f"><span>target folder (absolute or relative to this project)</span><input id="sc-dir" placeholder="C:\projects\my-app"></label>
     <label class="f"><span>first workflow from</span><select id="sc-template"></select></label>
     <label class="f"><span>workflow name (file: &lt;name&gt;.config.json)</span><input id="sc-name" placeholder="myproj"></label>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-1);">
       <button id="sc-preview">Preview folder</button>
       <button id="sc-create" class="primary">Create project</button>
     </div>
@@ -135,9 +500,9 @@
 
 <div id="toasts"></div>
 <dialog id="modal">
-  <h3 id="modalTitle" style="margin:4px 0 10px;"></h3>
+  <h3 id="modalTitle" style="margin:0 0 var(--sp-3);font-size:15px;font-weight:600;font-family:var(--mono);"></h3>
   <pre id="modalText"></pre>
-  <div style="text-align:right;margin-top:8px;"><button id="modalClose">Close</button></div>
+  <div style="text-align:right;margin-top:var(--sp-3);"><button id="modalClose">Close</button></div>
 </dialog>
 
 <script>
@@ -359,6 +724,7 @@ function renderCanvas() {
       </div>
       <div class="chips">
         <span class="chip agent">${esc(s.agent || "?")}</span>
+        ${s.writes ? `<span class="chip writes" title="writes artifact ${esc(s.writes)}">writes → ${esc(s.writes)}</span>` : ""}
         ${s.parallelWith ? `<span class="chip">∥ ${esc(s.parallelWith)}</span>` : ""}
         ${s.gate ? '<span class="chip">gate</span>' : ""}
         ${s.interactive ? '<span class="chip">interactive</span>' : ""}
@@ -388,6 +754,7 @@ function renderCanvas() {
     S.sel = S.cfg.pipeline.length - 1; markDirty(); renderCanvas(); renderForm();
   });
   host.appendChild(add);
+  if (typeof autoDensity === "function") autoDensity();
 }
 
 // --- step detail form -------------------------------------------------------
@@ -529,6 +896,23 @@ document.querySelectorAll("nav.tabs button").forEach((b) =>
     b.classList.add("active");
     $("tab-" + b.dataset.tab).classList.add("active");
   }));
+
+// --- workflow guide: step chips switch tabs; guide is dismissible ----------
+function gotoTab(name) {
+  const btn = document.querySelector('nav.tabs button[data-tab="' + name + '"]');
+  if (btn) btn.click();
+}
+document.querySelectorAll(".guide-step").forEach((step) =>
+  step.addEventListener("click", () => gotoTab(step.dataset.goto)));
+function setGuideHidden(hidden) {
+  $("guide").classList.toggle("is-hidden", hidden);
+  $("guideReopen").classList.toggle("is-hidden", !hidden);
+  try { localStorage.setItem("orca:guide:hidden", hidden ? "1" : "0"); } catch (_) {}
+}
+$("guideClose").addEventListener("click", () => setGuideHidden(true));
+$("guideReopen").addEventListener("click", () => setGuideHidden(false));
+try { if (localStorage.getItem("orca:guide:hidden") === "1") setGuideHidden(true); } catch (_) {}
+
 window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
 // A missed drop (header/form/tabs) must not navigate the page away.
 document.addEventListener("dragover", (e) => e.preventDefault());
@@ -567,6 +951,78 @@ async function scaffoldCreate() {
 $("sc-preview").addEventListener("click", scaffoldPreview);
 $("sc-create").addEventListener("click", scaffoldCreate);
 bindDefaults();
+
+// --- layout density (persisted, auto-adaptive, `d` shortcut) ----------------
+// AUTO_STEPS: pipelines longer than this default to Compact until the user
+// makes an explicit choice (click a toggle or press `d`), which is remembered.
+const DENSITY_AUTO_STEPS = 8;
+function densityIsExplicit() {
+  try { return localStorage.getItem("orca:density:explicit") === "1"; } catch { return false; }
+}
+// mode: "comfortable" | "compact". explicit=true records a deliberate user choice.
+function applyDensity(mode, explicit) {
+  const compact = mode === "compact";
+  document.documentElement.setAttribute("data-density", compact ? "compact" : "comfortable");
+  $("densCompact").setAttribute("aria-pressed", String(compact));
+  $("densComfortable").setAttribute("aria-pressed", String(!compact));
+  try {
+    localStorage.setItem("orca:density", compact ? "compact" : "comfortable");
+    if (explicit) localStorage.setItem("orca:density:explicit", "1");
+  } catch {}
+}
+function currentDensity() {
+  return document.documentElement.getAttribute("data-density") === "compact" ? "compact" : "comfortable";
+}
+function toggleDensity() {
+  applyDensity(currentDensity() === "compact" ? "comfortable" : "compact", true);
+}
+// Called after each pipeline render. Only adapts when the user has NOT chosen.
+function autoDensity() {
+  if (densityIsExplicit()) return;
+  const n = (S.cfg && S.cfg.pipeline) ? S.cfg.pipeline.length : 0;
+  applyDensity(n > DENSITY_AUTO_STEPS ? "compact" : "comfortable", false);
+}
+$("densComfortable").addEventListener("click", () => applyDensity("comfortable", true));
+$("densCompact").addEventListener("click", () => applyDensity("compact", true));
+
+// --- keyboard shortcuts + discoverable legend -------------------------------
+// Reuses the shared #modal dialog. Rows are [key, description]; keep in sync
+// with the handler below so the legend never drifts from real behavior.
+const SHORTCUTS = [
+  ["S", "Save the current workflow"],
+  ["R", "Dry-run (saves first if needed)"],
+  ["D", "Toggle Comfortable / Compact density"],
+  ["?", "Show this shortcuts list"],
+];
+function showShortcuts() {
+  $("modalTitle").textContent = "Keyboard shortcuts";
+  $("modalText").innerHTML =
+    '<dl class="legend">' +
+    SHORTCUTS.map(([k, d]) => `<dt><kbd class="kbd">${esc(k)}</kbd></dt><dd>${esc(d)}</dd>`).join("") +
+    "</dl>" +
+    '<div class="dim" style="margin-top:var(--sp-3);">Shortcuts are ignored while typing in a field.</div>';
+  $("modal").showModal();
+}
+$("btnShortcuts").addEventListener("click", showShortcuts);
+// Global hotkeys: skip when typing in a field, or when a modifier is held.
+// While the dialog is open only allow it to be dismissed via its own Close/Esc.
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if ($("modal").open) return;
+  const k = e.key;
+  if (k === "d" || k === "D") { e.preventDefault(); toggleDensity(); }
+  else if (k === "s" || k === "S") { e.preventDefault(); save(); }
+  else if (k === "r" || k === "R") { e.preventDefault(); dryRun(); }
+  else if (k === "?") { e.preventDefault(); showShortcuts(); }
+});
+// Restore explicit choice if any; otherwise start comfortable (autoDensity
+// re-evaluates once a config with a pipeline is loaded).
+applyDensity(
+  (densityIsExplicit() ? (() => { try { return localStorage.getItem("orca:density"); } catch { return null; } })() : "comfortable") || "comfortable",
+  false
+);
 
 loadState().catch((e) => toast(e.message, true));
 </script>

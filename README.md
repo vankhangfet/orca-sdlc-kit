@@ -235,6 +235,10 @@ for the workflow being edited](img/Flow-design.png)
   the workflow you're editing; click to copy. Real runs stay in your terminal.
 - **New project tab** — scaffold a fresh workspace: copies the kit into any
   folder, drops in your first workflow config, prints the commands to run.
+- **Guided + fast** — a dismissible 3-step guide (Pipeline → Configure
+  defaults → New project) orients first-time users; keyboard shortcuts
+  `S` save · `R` dry-run · `D` density · `?` legend; a Comfortable/Compact
+  density toggle auto-tightens for 8+ step pipelines.
 
 Notes: binds `127.0.0.1` only, guarded by a per-launch token; zero dependencies;
 `flow.mjs` itself never serves anything. Flags: `--port <n>`, `--no-open`.
