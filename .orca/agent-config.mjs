@@ -12,7 +12,12 @@
 // and restored afterwards; a crash leaves the manifest behind and the next run
 // self-heals. `die`/`warn` are injected by flow.mjs so this module stays pure.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, cpSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
+
+// Trust boundary: every manifest/plan path must stay inside the worktree — a
+// hostile or corrupted manifest must never delete/write outside it.
+const insideWorktree = (worktree, rel) =>
+  resolve(worktree, rel).startsWith(resolve(worktree) + sep);
 
 export const MANIFEST_FILE = ".orca-agent-config.json";
 const SECTION_BEGIN = "<!-- orca-agent-config BEGIN -->";
@@ -65,6 +70,9 @@ export function validateAgentConfig({ cfg, configDir, steps, die }) {
   const skills = cfg.skills || {};
   const mcp = cfg.mcpServers || {};
   for (const [name, def] of Object.entries(skills)) {
+    if (name.startsWith("//")) continue;
+    if (name.includes("/") || name.includes("\\"))
+      die(`skill "${name}": names must not contain path separators.`);
     const hasPath = def?.path != null, hasPrompt = def?.prompt != null;
     if (hasPath && hasPrompt) die(`skill "${name}": "path" and "prompt" are mutually exclusive.`);
     if (!hasPath && !hasPrompt) die(`skill "${name}": must have either "path" or "prompt".`);
@@ -75,11 +83,14 @@ export function validateAgentConfig({ cfg, configDir, steps, die }) {
       die(`skill "${name}": path "${def.path}" not found (resolved: ${resolve(configDir, def.path)}).`);
   }
   for (const [name, def] of Object.entries(mcp)) {
+    if (name.startsWith("//")) continue;
     const hasCmd = def?.command != null, hasUrl = def?.url != null;
     if (hasCmd && hasUrl) die(`mcp server "${name}": "command" and "url" are mutually exclusive.`);
     if (!hasCmd && !hasUrl) die(`mcp server "${name}": must have either "command" or "url".`);
   }
   for (const s of steps) {
+    if (s.skills != null && !Array.isArray(s.skills)) die(`step "${s.id}": "skills" must be an array of registry names.`);
+    if (s.mcp != null && !Array.isArray(s.mcp)) die(`step "${s.id}": "mcp" must be an array of registry names.`);
     for (const ref of s.skills || [])
       if (!(ref in skills)) die(`step "${s.id}" references unknown skill "${ref}".`);
     for (const ref of s.mcp || [])
@@ -90,7 +101,7 @@ export function validateAgentConfig({ cfg, configDir, steps, die }) {
 // --- Manifest plan: everything we touch, so restore can put it back.
 // Files are snapshotted as text; skill FOLDERS are never overwritten (a
 // pre-existing folder of the same name is kept with a warn — user-owned).
-function newPlan(worktree) {
+function newPlan(worktree, die) {
   const created = [];
   const modified = [];
   // The manifest is flushed on EVERY touch: a die()/throw between the first
@@ -118,6 +129,10 @@ function newPlan(worktree) {
   // parent dirs (e.g. .cursor/ for .cursor/rules/<name>.mdc), leaving empty
   // shells that survive restore.
   const recordNewDirs = (rel) => {
+    // "." is the worktree root itself (dirname of every root-level file) —
+    // inside by definition; insideWorktree's prefix test cannot express that.
+    if (rel && rel !== "." && !insideWorktree(worktree, rel))
+      die(`[agent-config] refusing to touch a path outside the worktree: "${rel}".`);
     for (let cur = rel; cur && cur !== "." && !existsSync(join(worktree, cur)); cur = dirname(cur))
       if (!created.includes(cur)) created.push(cur);
     flush();
@@ -128,6 +143,8 @@ function newPlan(worktree) {
     // the mkdir would create are recorded BEFORE it happens, so restore takes
     // them down with the file.
     write: (rel, text) => {
+      if (!insideWorktree(worktree, rel))
+        die(`[agent-config] refusing to touch a path outside the worktree: "${rel}".`);
       rememberFile(rel);
       recordNewDirs(dirname(rel));
       mkdirSync(dirname(join(worktree, rel)), { recursive: true });
@@ -217,7 +234,7 @@ export function materializeAgentConfig({ worktree, members, cfg, configDir, die,
   // refs were all skipped): skip the plan entirely — no empty-manifest churn.
   if (!mcpRefs.size && !skillRefs.size) return;
 
-  const plan = newPlan(worktree);
+  const plan = newPlan(worktree, die);
 
   // MCP JSON files, one per harness that has refs.
   const warned = new Set();   // env-warn dedupe shared across servers
@@ -302,10 +319,20 @@ export function restoreAgentConfig({ worktree, warn }) {
   }
   let failed = false;
   for (const rel of m.created || []) {
+    if (!insideWorktree(worktree, rel)) {
+      warn(`[agent-config] manifest entry "${rel}" escapes the worktree — ignoring (manifest kept).`);
+      failed = true;
+      continue;
+    }
     try { rmSync(join(worktree, rel), { recursive: true, force: true }); }
     catch (e) { failed = true; warn(`[agent-config] could not remove ${rel}: ${e.message}`); }
   }
   for (const mod of m.modified || []) {
+    if (!insideWorktree(worktree, mod.path)) {
+      warn(`[agent-config] manifest entry "${mod.path}" escapes the worktree — ignoring (manifest kept).`);
+      failed = true;
+      continue;
+    }
     try {
       if (mod.original == null) rmSync(join(worktree, mod.path), { recursive: true, force: true });
       else { mkdirSync(dirname(join(worktree, mod.path)), { recursive: true }); writeFileSync(join(worktree, mod.path), mod.original); }

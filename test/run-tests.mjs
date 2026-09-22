@@ -472,6 +472,19 @@ scenario("S4 parallel union + codex skills via AGENTS.md + mcp skip warn", async
   ok("S4 no manifest after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
 });
 
+scenario("S4b --agent override switches the materialized harness", async () => {
+  const r = await runFlow({ name: "s4b", config: "../test/configs/agent-skills-multi.config.json",
+    scenario: "agent-config-snap.cjs", args: ["--agent", "join=claude"], budgetMs: 90000 });
+  ok("S4b not hung", !r.hung);
+  eq("S4b exit code", r.code, 0);
+  const jn = snapOf(r, "Join");
+  const mcp = jn?.[".mcp.json"] ? JSON.parse(jn[".mcp.json"]) : {};
+  eq("S4b override gets claude mcp file", Object.keys(mcp.mcpServers ?? {}), ["github"]);
+  eq("S4b override gets claude skill dir", jn?.[".claude/skills"] ?? [], ["commit-style"]);
+  ok("S4b no codex AGENTS.md section", jn?.["AGENTS.md"] === null);
+  ok("S4b no skip warn for overridden agent", !/agent "codex" does not support/.test(r.out + r.err));
+});
+
 scenario("S5 cursor/gemini/opencode adapters", async () => {
   const r = await runFlow({ name: "s5", config: "../test/configs/agent-skills-harnesses.config.json",
     scenario: "agent-config-snap.cjs", budgetMs: 90000 });
@@ -514,6 +527,22 @@ scenario("S6 path skills: dir copied verbatim, single .md wrapped", async () => 
     [".claude/skills/team/SKILL.md", ".claude/skills/team/helper.txt"]);
   ok("S6 single .md wrapped as SKILL.md", tree.includes(".claude/skills/solo/SKILL.md"));
   ok("S6 worktree clean after run", !existsSync(join(r.wt, ".claude")));
+});
+
+scenario("S7 hostile manifest paths contained to the worktree", async () => {
+  const r = await runFlow({ name: "s7", config: "../test/configs/agent-skills.config.json",
+    scenario: "agent-config-snap.cjs",
+    seedWorktree: [
+      { file: "victim-bait.txt", text: "inside worktree — must survive\n" },
+      { file: ".orca-agent-config.json",
+        text: JSON.stringify({ created: ["../escaped"], modified: [{ path: "../escaped/implanted.txt", original: "pwned\n" }] }) + "\n" },
+    ], budgetMs: 90000 });
+  ok("S7 not hung", !r.hung);
+  ok("S7 dies (unguarded state)", r.code === 1);
+  ok("S7 containment warn", /escapes the worktree/.test(r.out + r.err));
+  ok("S7 in-worktree bait untouched", readFileSync(join(r.wt, "victim-bait.txt"), "utf8") === "inside worktree — must survive\n");
+  ok("S7 nothing written outside the worktree", !existsSync(join(r.dir, "escaped")));
+  ok("S7 hostile manifest kept for manual resolution", existsSync(join(r.wt, ".orca-agent-config.json")));
 });
 
 // ---------------------------------------------------------------------------
@@ -895,6 +924,8 @@ const BAD_CONFIGS = [
   ["F13b skill with neither path nor prompt", "bad-skill-none.json", /skill "broken": must have either "path" or "prompt"/],
   ["F13c inline skill missing description", "bad-skill-no-desc.json", /skill "broken": inline skill requires "description"/],
   ["F16b mcp with both command and url", "bad-mcp-both.json", /mcp server "broken": "command" and "url" are mutually exclusive/],
+  ["F18 skill name with path separators", "bad-skill-name.json", /names must not contain path separators/],
+  ["F19 step skills not an array", "bad-skills-type.json", /"skills" must be an array of registry names/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {

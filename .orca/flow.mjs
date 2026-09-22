@@ -2014,7 +2014,7 @@ function runGroup(members) {
   // Skills + MCP config files live in the worktree for the whole group (union
   // across parallel members). NOTE: die() exits the process without running
   // this finally — that is exactly what the manifest + startup self-heal cover.
-  materializeAgentConfig({ worktree: WT_DIR || ".", members, cfg, configDir: HERE, die, warn });
+  materializeAgentConfig({ worktree: WT_DIR || ".", members: members.map((s) => ({ ...s, agent: agentOf(s) })), cfg, configDir: HERE, die, warn });
   try {
   for (const s of members) statusBegin(s.id);
   const M = members.map(launchMember);
