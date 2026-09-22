@@ -48,6 +48,7 @@ terminal closes.
 
 | Feature | What changes technically | Where |
 |---|---|---|
+| **Workflow Designer** | ✅ Local UI (`designer.mjs` + `designer.html`, zero-dep, localhost + token) that visually creates/edits `*.config.json`, dry-runs them through `flow.mjs`, and scaffolds fresh project workspaces — pinned E2E by D1–D7 | designer (opt-in server) |
 | **Settings that always take effect** | ✅ `model` done — per-step `"model"` + `defaults.model` are honored on the primary dispatch path (`"default"` = the agent's own model, nothing passed; a model flag inside the `agent` string still wins; landed on `main` post-v1.5.1). Still open: `effort` on the primary path | config fields |
 | **Config validation before any agent starts** | ✅ Partially shipped (v2.0.0) — forward in-run `reads` and reads of writes-less steps die at load, in every mode (F10/F11). Still open: `reads` referencing unknown ids, `onFailGoto` pointing forward or into a cycle, unknown agent names, duplicate ids, `writes`/`progress` filename collisions | flow startup |
 | **Artifact viewer** | Each step row links to the Markdown file it produced; the page lazy-loads it via the same `file://` script-polling trick as `status.js`. Styled preformatted text — no Markdown engine | status page |
@@ -79,7 +80,7 @@ terminal closes.
 
 ## Not building (by design)
 
-- **A server or installer** — single copy-paste folder, Node only; any future local listener would be opt-in and off by default.
+- **A server in the engine** — `flow.mjs` still serves nothing. The one opt-in exception is the Workflow Designer (`node .orca/designer.mjs`, localhost + per-launch token) — off unless you run it yourself.
 - **Bundled integrations beyond plain webhooks** — chat notifications ship as best-effort webhook POSTs (`.orca/notify.json`); what stays out by design: email, OAuth/SDK platform apps, interactive cards. Plain text to endpoints you own is the whole surface.
 - **Checklist gating** — the task checklist stays a live view; the run never waits on checkbox state.
 - **A multi-file rewrite** — `flow.mjs` stays one script; one folder you copy is the product.

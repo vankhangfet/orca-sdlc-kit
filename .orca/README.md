@@ -12,6 +12,8 @@ Installed via `npx github:vankhangfet/orca-sdlc-kit`? You already have all of th
 | File | What it is |
 |------|------------|
 | `flow.mjs` | The orchestrator — reads the config, drives the agents. You never edit it. |
+| `designer.mjs` | Workflow Designer — local UI server (`node .orca/designer.mjs`); builds/edits the config files visually. Opt-in, localhost-only. |
+| `designer.html` | The designer's page (served by `designer.mjs` — open the printed URL). |
 | `flow.config.json` | The full SDLC pipeline. **This is the file you edit**: steps, agents, `autoRun`, gates, interactive steps, timeouts. |
 | `fixbug.config.json` | The bug-fix pipeline (run with `--config fixbug.config.json "<bug + reproduction steps>"`). |
 | `cr.config.json` | The change-request pipeline (run with `--config cr.config.json "<what changes and why>"`). |
