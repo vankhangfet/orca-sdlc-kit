@@ -28,6 +28,7 @@ and the run-end summary land in Telegram, Slack, MS Teams or WhatsApp](img/banne
 
 ## What's new
 
+- **Workflow Designer — configure the pipeline in the browser** *(v3.0.0)* — `node .orca/designer.mjs` opens a local, token-guarded web UI: step cards in run order (drag to reorder), a full form per step (agent, model, timeouts, `parallelWith`, `onFailGoto`, spec), advisory validation, a Dry-run button that shows the plan or the exact validation error in place, a run-command bar with the exact command to copy, and a new-project tab that scaffolds a fresh workspace with its first config — `//` comments in existing files survive every save. [See it](#workflow-designer--build-pipelines-in-the-browser).
 - **Per-step retry budgets** *(v2.3.1)* — a step that loops back via `onFailGoto` can declare its own `"maxRetries"` (say 20 for a loop-heavy Planning step) while every other fix loop keeps the pipeline-wide default: one long loop no longer inflates every edge's budget. Values are validated at load (negative/fractional die before any agent starts) and `--dry-run` shows a declared budget as `onFail-><id> xN`.
 - **Parallel reviews** *(v2.3.0)* — code review and security review now run at the same time on the same coding output; testing waits for both, and either review failing sends the coder back, after which both reviews run again on the fix.
 - **Run history & one-key resume** *(v2.2.0)* — every new run snapshots the previous run's results into `.orca/artifacts/runs/`, so nothing is ever overwritten and any two runs can be compared side by side. At startup the kit lists previous runs and lets you continue one exactly where it stopped — press `0`/Enter for a fresh run, pass `--new` to skip the question. Scripts and CI are never blocked.
@@ -213,6 +214,17 @@ a brand-new project), the kit ships a small local UI:
 node .orca/designer.mjs          # opens http://127.0.0.1:7887/?t=<one-time token>
 ```
 
+![The Workflow Designer in the browser: the Pipeline tab lists every step as a
+numbered card in run order — agent chips (claude, codex), reads arrows,
+‖ parallel markers, ↺ loop-back badges — and the form on the right edits the
+selected step: id, title, agent, model, writes, timeouts, onFailGoto,
+parallelWith, enabled/gate/interactive flags, the spec prompt with {out} /
+{reads} placeholders, and reads checkboxes; the header carries the objective
+field, Save / Dry-run buttons and the exact node .orca/flow.mjs run command
+for the workflow being edited](img/Flow-design.png)
+
+*The whole pipeline configurable through the web UI — the Planning step selected, its agent, artifact, reads and prompt open in the form on the right; the header previews the exact run command for the workflow being edited.*
+
 - **Visual pipeline editor** — step cards in run order (drag to reorder),
   a full form per step (agent, `reads`, `writes`, `spec`, timeouts, `parallelWith`,
   `onFailGoto`…), advisory validation badges, and a config-defaults tab.
@@ -224,6 +236,10 @@ node .orca/designer.mjs          # opens http://127.0.0.1:7887/?t=<one-time toke
   the workflow you're editing; click to copy. Real runs stay in your terminal.
 - **New project tab** — scaffold a fresh workspace: copies the kit into any
   folder, drops in your first workflow config, prints the commands to run.
+- **Guided + fast** — a dismissible 3-step guide (Pipeline → Configure
+  defaults → New project) orients first-time users; keyboard shortcuts
+  `S` save · `R` dry-run · `D` density · `?` legend; a Comfortable/Compact
+  density toggle auto-tightens for 8+ step pipelines.
 
 Notes: binds `127.0.0.1` only, guarded by a per-launch token; zero dependencies;
 `flow.mjs` itself never serves anything. Flags: `--port <n>`, `--no-open`.
