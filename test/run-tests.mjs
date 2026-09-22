@@ -462,10 +462,11 @@ scenario("S4 parallel union + codex skills via AGENTS.md + mcp skip warn", async
   // (Named jn so the path `join` below stays reachable.)
   const jn = snapOf(r, "Join");
   const agents = jn?.["AGENTS.md"] ?? "";
-  ok("S4 codex skills section", agents.includes("### commit-style") && agents.includes("Use conventional commits."));
+  ok("S4 codex skills section", /### commit-style\n\nUse conventional commits\./.test(agents));
   ok("S4 codex mcp skip warn", /agent "codex" does not support MCP servers via worktree — skipping mcp "github"/.test(r.out + r.err));
   // Parallel group restored before the join step runs.
   ok("S4 group-1 files restored before join", jn?.[".mcp.json"] === null && (jn?.[".claude/skills"] === null));
+  ok("S4 no leftover-manifest rescue (finally restored, not self-heal)", !/found a leftover manifest/.test(r.out + r.err));
   // Clean at the end.
   ok("S4 AGENTS.md gone after run", !existsSync(join(r.wt, "AGENTS.md")));
   ok("S4 no manifest after run", !existsSync(join(r.wt, ".orca-agent-config.json")));
