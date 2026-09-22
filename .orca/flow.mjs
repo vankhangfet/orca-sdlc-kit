@@ -36,6 +36,9 @@
 //   node .orca/flow.mjs --no-open-status "..."   // don't auto-open the browser
 //   node .orca/flow.mjs --status-preview         // fixture page, no run
 //
+// Start a NEW run, skipping the startup chooser's resume prompt:
+//   node .orca/flow.mjs --new "..."
+//
 // Step timeouts: `timeoutMs` = max worker SILENCE (no terminal output, no
 // heartbeat). Silence is NOT a failure verdict — a worker deep in one long
 // tool call can render a static screen for most of an hour (verified). A
@@ -47,7 +50,7 @@
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdirSync, existsSync, writeFileSync, readdirSync, statSync, appendFileSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync, writeFileSync, readdirSync, copyFileSync, statSync, appendFileSync, rmdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -57,6 +60,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Live-page accumulator: null until the status section assigns it (before any
 // run starts). `die` uses it to leave a final state on the status page.
 let STATUS = null;
+// Run-history latch: set when the startup chooser already archived/restored
+// the previous run's artifacts — the archive call site must then skip, or a
+// resumed run would snapshot the very state it just restored.
+let HISTORY_ARCHIVE_DONE = false;
 const log = (...a) => console.log("[orca-flow]", ...a);
 const warn = (...a) => console.warn("[orca-flow]", ...a);
 const die = (m) => {
@@ -85,7 +92,7 @@ const die = (m) => {
 
 // --- Parse argv: flags + objective ---
 const argv = process.argv.slice(2);
-const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined, worktree: null, noOpenStatus: false, statusPreview: false };
+const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined, worktree: null, noOpenStatus: false, statusPreview: false, newRun: false };
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -101,6 +108,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--worktree") opt.worktree = argv[++i];
   else if (a === "--no-open-status") opt.noOpenStatus = true;
   else if (a === "--status-preview") opt.statusPreview = true;
+  else if (a === "--new") opt.newRun = true;
   else if (a === "--agent") {
     const [step, ag] = argv[++i].split("=");
     if (step && ag) opt.agentOverrides[step] = ag;
@@ -126,7 +134,6 @@ if (opt.grillMe !== undefined) {
 }
 
 const ART_DIR = cfg.artifactsDir || ".orca/artifacts";
-const MAX_RETRIES = cfg.maxRetries ?? 2;
 // Fully automatic by default: every spec gets an AUTONOMY directive (never ask
 // the user, decide and record assumptions) and per-step "gate" flags are
 // ignored — the pipeline runs end-to-end unattended. Set "autoRun": false for
@@ -142,7 +149,52 @@ const READINESS_RETRIES = cfg.defaults?.readinessRetries ?? 3;
 const READINESS_MIN_BYTES = cfg.defaults?.readinessMinBytes ?? 200;
 const nudgeRetriesOf = (step) => step.nudgeRetries ?? cfg.defaults?.nudgeRetries ?? 0;
 const nudgeTimeoutOf = (step) => step.nudgeTimeoutMs ?? cfg.defaults?.nudgeTimeoutMs ?? 120000;
+const maxRetriesOf = (step) => step.maxRetries ?? cfg.maxRetries ?? 2;
 const outPath = (file) => `${ART_DIR}/${file}`;
+
+// --- Early bindings (TDZ): the Orca/worktree resolution + startup chooser
+// right below run BEFORE the pipeline is sliced, so every const/let they
+// touch at runtime must already be initialized HERE — earlier than the
+// function declarations that use them (those hoist). ---
+const IS_WIN = process.platform === "win32";
+let ORCA = null;
+// (pick/res were hoisted up from their old spot beside `let RUN_ID` below:
+//  their first consumers are the hoisted resolveWorktree()/resolveWorktreePath()
+//  invoked by the early worktree-resolution block right below this.)
+const pick = (o, keys) => { for (const k of keys) if (o && o[k] != null) return o[k]; };
+// This Orca build wraps payloads in result.{run,task,...}. Unwrap first.
+const res = (j) => (j && j.result) ? j.result : (j || {});
+const WT_PIN = opt.worktree || process.env.ORCA_FLOW_WORKTREE || cfg.defaults?.worktree || null;
+const wtSource = () => opt.worktree ? "--worktree flag"
+  : process.env.ORCA_FLOW_WORKTREE ? "ORCA_FLOW_WORKTREE env"
+  : cfg.defaults?.worktree ? "config defaults.worktree" : "auto-detect";
+let WT = null;
+let WT_WARNED = false;   // soft mode: report an unresolvable worktree only once
+// Filesystem path of the worktree (agents run THERE, so artifacts live there —
+// not necessarily next to this config). Null until resolvable.
+let WT_PATH = null;
+const wtFixHint = () =>
+  "Fix one of:\n" +
+  "  - run the flow from inside the target Orca worktree (auto-detect), or\n" +
+  "  - pass --worktree <selector> for this run, or\n" +
+  "  - set ORCA_FLOW_WORKTREE for this machine/shell, or\n" +
+  '  - set "defaults": { "worktree": "name:<displayName>" } in the config.';
+
+// Resolve the CLI + concrete worktree BEFORE slicing the pipeline: the startup
+// chooser lists/restores PREVIOUS runs from the worktree's artifacts dir, and
+// a chosen resume must set opt.from BEFORE the --from/--only slicing below
+// (read lists must also see artifacts already on disk from earlier runs).
+// Soft mode (dry-run) degrades to run-scope reads if the runtime is down.
+// --status-preview stays CLI-free: it renders its fixture and exits below,
+// before this block — exactly the pre-hoist ordering.
+if (!opt.statusPreview) {
+  ORCA = resolveOrca();
+  resolveWorktree(opt.dryRun);
+  resolveWorktreePath(opt.dryRun);
+  // Startup chooser (may restore a previous run and set opt.from BEFORE the
+  // pipeline is sliced — that is why Orca/worktree resolution runs up here).
+  await runChooser();
+}
 
 // --- Normalize pipeline: keep enabled steps, build id->step map ---
 const allSteps = (cfg.pipeline || []).filter((s) => s && s.id);
@@ -187,14 +239,14 @@ for (const s of steps) {
     die(`step "${s.id}": parallelWith chains are not allowed — "${id}" itself declares parallelWith.`);
   if (!AUTO_RUN && s.interactive)
     die(`step "${s.id}": interactive steps cannot join a parallel group in manual mode.`);
-  // Declared reads only — NOT effectiveReads(): this loop runs at MODULE LOAD,
-  // before the worktree/ORCA bindings further down exist, and effectiveReads()
-  // soft-resolves the worktree whenever a read points at a step outside this
-  // run (--from/--only/enabled:false) — that path dies in their temporal dead
-  // zone (#3). Verdict-identical regardless: the checks below only query ids
-  // that are IN this run (the target passed the enabledIds guard above; every
-  // member is in `steps`), and enabled ids survive effectiveReads' filter with
-  // no filesystem access.
+  // Declared reads only — NOT effectiveReads(). The worktree/ORCA bindings
+  // now live ABOVE this loop (early-bindings block), so the old temporal-
+  // dead-zone reason is gone; the split stays deliberate: these are pure
+  // config-shape checks over ids that are all IN this run (the target passed
+  // the enabledIds guard above; every member is in `steps`), for which
+  // effectiveReads() returns the declared set unchanged — going through it
+  // would only add its soft worktree resolve + filesystem probe, machinery
+  // that exists solely for out-of-run ids these checks never query.
   const reads = new Set((s.reads || []).filter((id) => byId[id]));
   if (reads.has(id))
     die(`step "${s.id}" reads "${id}" — dependent steps cannot run in parallel with what they read.`);
@@ -259,6 +311,18 @@ for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id
   for (const s of steps) nudgeFields(s, `step "${s.id}":`);
 }
 
+// Retry budgets: non-negative integers wherever declared — per step or at the
+// top level. Validated at load so a typo cannot silently change a fix loop's
+// budget (a non-numeric string disables the exhaust check entirely; a
+// fraction dies mid-budget with a fractional attempt count).
+{
+  if (cfg.maxRetries != null && (!Number.isInteger(cfg.maxRetries) || cfg.maxRetries < 0))
+    die(`config: maxRetries must be a non-negative integer (got ${JSON.stringify(cfg.maxRetries)}).`);
+  for (const s of steps)
+    if (s.maxRetries != null && (!Number.isInteger(s.maxRetries) || s.maxRetries < 0))
+      die(`step "${s.id}": maxRetries must be a non-negative integer (got ${JSON.stringify(s.maxRetries)}).`);
+}
+
 // A step's reads. Steps in this run always count. Steps NOT part of this run
 // (dropped by --from/--only, or disabled) still count when their artifact file
 // already exists in the worktree — that is the RESUME case: `--from coding`
@@ -298,7 +362,7 @@ function renderSpec(step) {
 }
 
 // --- Orca CLI (argv-safe, no shell to avoid mangling special characters) ---
-const IS_WIN = process.platform === "win32";
+// (IS_WIN / ORCA are declared in the early-bindings block near the top.)
 function resolveOrca() {
   const bases = process.env.ORCA_CLI_COMMAND
     ? [process.env.ORCA_CLI_COMMAND] : ["orca", "orca-dev", "orca-ide"];
@@ -310,7 +374,6 @@ function resolveOrca() {
   }
   die("Could not find the orca CLI. Set ORCA_CLI_COMMAND.");
 }
-let ORCA = null;
 function orca(args, { timeoutMs } = {}) {
   const full = args.includes("--json") ? args : [...args, "--json"];
   const r = spawnSync(ORCA, full, {
@@ -324,9 +387,6 @@ function orca(args, { timeoutMs } = {}) {
   if (!json && raw) { try { json = JSON.parse(raw); } catch {} }
   return { ok: r.status === 0, json, raw, stderr: (r.stderr || "").trim() };
 }
-const pick = (o, keys) => { for (const k of keys) if (o && o[k] != null) return o[k]; };
-// This Orca build wraps payloads in result.{run,task,...}. Unwrap first.
-const res = (j) => (j && j.result) ? j.result : (j || {});
 let RUN_ID = null;               // result.run.id from run-create; passed as --run everywhere
 const agentOf = (step) => opt.agentOverrides[step.id] || step.agent;
 // Effective model for a step: step.model overrides defaults.model. "default"
@@ -386,15 +446,9 @@ const WARMUP_TIMEOUT_MS = cfg.defaults?.warmupTimeoutMs ?? 240000;
 // selector_not_found mid-run). Pin only when launching from OUTSIDE the
 // target worktree. A pinned selector is validated BEFORE anything is created,
 // and on failure we list the available worktrees.
-const WT_PIN = opt.worktree || process.env.ORCA_FLOW_WORKTREE || cfg.defaults?.worktree || null;
-const wtSource = () => opt.worktree ? "--worktree flag"
-  : process.env.ORCA_FLOW_WORKTREE ? "ORCA_FLOW_WORKTREE env"
-  : cfg.defaults?.worktree ? "config defaults.worktree" : "auto-detect";
-let WT = null;
-let WT_WARNED = false;   // soft mode: report an unresolvable worktree only once
-// Filesystem path of the worktree (agents run THERE, so artifacts live there —
-// not necessarily next to this config). Null until resolvable.
-let WT_PATH = null;
+// (WT_PIN / wtSource / WT / WT_WARNED / WT_PATH are declared in the
+// early-bindings block near the top — the startup chooser resolves the
+// worktree before this point in module order.)
 // Human-readable worktree list for error messages. `worktree list` is GLOBAL
 // across repos, so prefer worktrees under the git root of the CWD; fall back
 // to all when none match.
@@ -413,12 +467,6 @@ function worktreeCandidates() {
   return (same.length ? same : ws).slice(0, 8)
     .map((w) => `  name:${w.name}  ->  ${w.path}`).join("\n");
 }
-const wtFixHint = () =>
-  "Fix one of:\n" +
-  "  - run the flow from inside the target Orca worktree (auto-detect), or\n" +
-  "  - pass --worktree <selector> for this run, or\n" +
-  "  - set ORCA_FLOW_WORKTREE for this machine/shell, or\n" +
-  '  - set "defaults": { "worktree": "name:<displayName>" } in the config.';
 function resolveWorktree(soft = false) {
   if (WT) return WT;
   if (WT_PIN) {
@@ -497,6 +545,43 @@ function writeStatus() {
     warn(`status page write failed (${e.message}); continuing without it.`);
   }
 }
+
+// --- Run history: each NEW run snapshots the previous run's flat artifacts
+// into <ART_DIR>/runs/<seq>-<timestamp>/ (COPY — flat files stay in place so
+// readiness/--from resume semantics are untouched). Failures warn and never
+// block a run. Subdirectories (runs/ itself) are skipped.
+function nextRunDirName() {
+  const runsRoot = join(WT_PATH || ".", ART_DIR, "runs");
+  let max = 0;
+  try { for (const e of readdirSync(runsRoot)) { const m = /^(\d{4,})-/.exec(e); if (m) max = Math.max(max, Number(m[1])); } } catch { }
+  const t = new Date(), p2 = (n) => String(n).padStart(2, "0");
+  const stamp = `${t.getFullYear()}${p2(t.getMonth() + 1)}${p2(t.getDate())}-${p2(t.getHours())}${p2(t.getMinutes())}${p2(t.getSeconds())}`;
+  return { runsRoot, name: String(max + 1).padStart(4, "0") + "-" + stamp };
+}
+function copyRunFiles(srcDir, destDir, label) {
+  let copied = 0;
+  try {
+    mkdirSync(destDir, { recursive: true });
+    for (const e of readdirSync(srcDir, { withFileTypes: true })) {
+      if (!e.isFile()) continue;
+      try { copyFileSync(join(srcDir, e.name), join(destDir, e.name)); copied++; }
+      catch (e2) { warn(`[history] could not copy ${e.name} ${label}: ${e2.message}`); }
+    }
+  } catch (e) { warn(`[history] ${label} failed: ${e.message}`); }
+  return copied;
+}
+function archiveCurrentRun() {
+  const artDir = join(WT_PATH || ".", ART_DIR);
+  let hasFiles = false;
+  try { hasFiles = readdirSync(artDir, { withFileTypes: true }).some((e) => e.isFile()); } catch { return; }
+  if (!hasFiles) return;                       // first run: nothing to snapshot
+  const { runsRoot, name } = nextRunDirName();
+  const dest = join(runsRoot, name);
+  const n = copyRunFiles(artDir, dest, "(archive)");
+  if (n > 0) log(`[history] archived previous run's artifacts -> ${ART_DIR}/runs/${name}/ (${n} files)`);
+  else { try { rmdirSync(dest); } catch { } }  // empty archive: free the seq
+}
+
 const statusOf = (id) => STATUS.steps.find((x) => x.id === id) || null;
 function statusSet(id, patch) { const st = statusOf(id); if (st) Object.assign(st, patch); }
 function statusBegin(id) {
@@ -1627,12 +1712,19 @@ function printPlan() {
   log(`Worktree: ${WT || WT_PIN || "(auto-detect, unresolved in dry-run)"}  (${wtSource()})`);
   log(`Auto-run: ${AUTO_RUN ? "on — agents run unattended, gates ignored" : "off — steps with 'gate' block for approval"}`);
   log(`Notifications: ${NOTIFY.on ? `on (${NOTIFY.cfg.provider}, events: ${[...NOTIFY.events].join(",")})` : "off"}`);
+  if (opt.dryRun) {
+    // Read-only listing: the chooser itself is bypassed in dry-run, but the
+    // user still gets to SEE what previous runs exist before a real launch.
+    const prev = listRuns();
+    if (prev.length) { log(""); printRunList(prev); }
+  }
   log("Pipeline to run (in order):");
   steps.forEach((s, i) => {
     const reads = effectiveReads(s);
     const model = effectiveModel(s);
     const flags = [];
-    if (s.onFailGoto && enabledIds.has(s.onFailGoto)) flags.push(`onFail->${s.onFailGoto}`);
+    if (s.onFailGoto && enabledIds.has(s.onFailGoto))
+      flags.push(`onFail->${s.onFailGoto}${s.maxRetries != null ? ` x${s.maxRetries}` : ""}`);
     if (s.gate && !AUTO_RUN) flags.push("gate");
     if (s.interactive && !AUTO_RUN) flags.push("interactive");
     if (s.parallelWith) flags.push(`parallel-with ${s.parallelWith}`);
@@ -1688,13 +1780,8 @@ if (opt.statusPreview) {
   process.exit(0);
 }
 
-// Resolve the CLI + concrete worktree BEFORE planning: read lists must see
-// artifacts already on disk from earlier runs (--from resume), and the
-// artifacts dir lives in the WORKTREE, not necessarily beside this config.
-// Soft mode (dry-run) degrades to run-scope reads if the runtime is down.
-ORCA = resolveOrca();
-resolveWorktree(opt.dryRun);
-resolveWorktreePath(opt.dryRun);
+// Orca/worktree resolution + the startup chooser already ran ABOVE, before
+// the pipeline was sliced (see the early-bindings block near the top).
 loadNotify();   // validate/announce before the plan prints (dry-run included)
 printPlan();
 if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
@@ -1705,6 +1792,7 @@ if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
 resolveWorktree();          // hard-fail here if still unresolved
 const WT_DIR = resolveWorktreePath();
 mkdirSync(join(WT_DIR || ".", ART_DIR), { recursive: true });
+if (!HISTORY_ARCHIVE_DONE) archiveCurrentRun();
 if (!orca(["status"]).ok) die("Orca runtime not ready (orca status failed).");
 
 log(`Creating Run: ${objective}`);
@@ -2195,6 +2283,72 @@ function promptReadiness(question) {
   });
 }
 
+// --- Startup chooser: list previous runs, let the user resume one or start
+// fresh. Mirrors promptReadiness's EOF contract: EOF/empty/0/invalid = new
+// run, so scripts and CI never block. --from/--only/--new bypass entirely.
+function parseStatusJs(file) {
+  try {
+    const m = readFileSync(file, "utf8").match(/window\.__STATUS=([\s\S]*?);window\.__ON_STATUS/);
+    return m ? JSON.parse(m[1]) : null;
+  } catch { return null; }
+}
+function listRuns() {
+  const artDir = join(WT_PATH || ".", ART_DIR);
+  const out = [];
+  const cur = parseStatusJs(join(artDir, "status.js"));
+  if (cur) out.push({ label: "(current)", dir: null, S: cur });
+  const archived = [];
+  try {
+    for (const e of readdirSync(join(artDir, "runs"), { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const S = parseStatusJs(join(artDir, "runs", e.name, "status.js"));
+      if (S) archived.push({ label: e.name, dir: join(artDir, "runs", e.name), S });
+    }
+  } catch { }
+  archived.sort((a, b) => b.label.localeCompare(a.label));
+  return [...out, ...archived].slice(0, 10);
+}
+function printRunList(entries) {
+  log("Previous runs in this worktree:");
+  entries.forEach((e, i) => {
+    const succ = (e.S.steps || []).filter((s) => s.status === "succeeded").length;
+    log(`  ${i + 1}) ${e.label} · "${String(e.S.meta?.objective ?? "").slice(0, 60)}" · ${succ}/${(e.S.steps || []).length} steps · ${String(e.S.overall ?? "?").toUpperCase()}`);
+  });
+}
+function promptChoice(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let settled = false;
+    const done = (v) => { if (settled) return; settled = true; try { rl.close(); } catch { } resolve(v); };
+    rl.on("close", () => done(""));
+    rl.question(question, (a) => done(String(a ?? "")));
+  });
+}
+async function runChooser() {
+  if (opt.dryRun || opt.statusPreview || opt.from || opt.only || opt.newRun) return;
+  const entries = listRuns();
+  if (!entries.length) return;
+  printRunList(entries);
+  const answer = await promptChoice("Choose: <n> = resume that run, 0/Enter = start a new run: ");
+  const t = answer.trim();
+  const idx = /^\d+$/.test(t) ? Number(t) : NaN;
+  const chosen = Number.isInteger(idx) && idx >= 1 && idx <= entries.length ? entries[idx - 1] : null;
+  if (!chosen) return;   // new run — the main call site archives
+  const order = (cfg.pipeline || []).filter((s) => s && s.id && s.enabled !== false).map((s) => s.id);
+  const stOf = (id) => (chosen.S.steps || []).find((s) => s.id === id);
+  const firstPending = order.find((id) => stOf(id)?.status !== "succeeded");
+  if (!firstPending) { log(`[history] run ${chosen.label} already completed — starting a new run instead.`); return; }
+  if (chosen.dir) {
+    archiveCurrentRun();   // protect the newest flat state before overwriting it
+    const n = copyRunFiles(chosen.dir, join(WT_PATH || ".", ART_DIR), "(restore)");
+    log(`[history] restored run ${chosen.label} (${n} files) — resuming from "${firstPending}".`);
+  } else {
+    log(`[history] resuming the current run from "${firstPending}".`);
+  }
+  opt.from = firstPending;
+  HISTORY_ARCHIVE_DONE = true;   // both resume branches must NOT archive again at the call site
+}
+
 async function readinessGate(members) {
   const missing = [];
   for (const s of members) for (const x of readinessOf(s)) missing.push({ ...x, consumer: s });
@@ -2297,12 +2451,13 @@ while (gi < groups.length) {
 
     const gotoId = r.step.onFailGoto;
     if (gotoId && enabledIds.has(gotoId)) {
+      const budget = maxRetriesOf(r.step);   // per-step override, else the global cap
       const key = `${r.step.id}->${gotoId}`;
       retriesUsed[key] = (retriesUsed[key] || 0) + 1;
-      if (retriesUsed[key] > MAX_RETRIES) {
-        die(`"${r.step.title}" failed and exhausted ${MAX_RETRIES} retries. See ${outPath(r.step.writes)}.`);
+      if (retriesUsed[key] > budget) {
+        die(`"${r.step.title}" failed and exhausted ${budget} retries. See ${outPath(r.step.writes)}.`);
       }
-      log(`[fail] ${r.step.title} FAILED${r.note ? ` (${r.note})` : ""} -> back to "${byId[gotoId].title}" (attempt ${retriesUsed[key]}/${MAX_RETRIES})`);
+      log(`[fail] ${r.step.title} FAILED${r.note ? ` (${r.note})` : ""} -> back to "${byId[gotoId].title}" (attempt ${retriesUsed[key]}/${budget})`);
       // Reopen the fix target for another attempt. task-update has no --spec
       // on this build, so we drop a fix note into the result the target's
       // next run reads (its spec + the failing report tell it what to fix).

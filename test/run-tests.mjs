@@ -14,7 +14,7 @@
 // Run: node test/run-tests.mjs [--only <substring>]
 // (--only is a case-sensitive substring on scenario names: "--only F" also matches E7's "onFailGoto".)
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, rmdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, readdirSync, existsSync, rmdirSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,7 @@ if (/\s/.test(PRELOAD)) {
 }
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
+if (process.argv.includes("--only") && !only) { console.error("FAIL - --only requires a non-empty substring"); process.exit(1); }
 let failed = 0; let total = 0;
 const ok = (name, cond, extra) => {
   total++;
@@ -74,9 +75,9 @@ let hungInCurrentScenario = false;
 // (flow.mjs joins them with its own directory) — never absolute.
 // default budget: well above the configs' hard caps so a slow machine cannot produce a false HUNG
 // NOTE: call sites pass the property key "scenario:" — a mismatch silently falls back to default.cjs (the green-path trap this param's name once caused).
-async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000, notify = null }) {
-  const dir = mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
-  dirsOfCurrentScenario.push(dir);
+async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", args = [], objective = "test objective", seedArtifacts = [], stdinText = null, budgetMs = 90000, notify = null, reuseDir = null }) {
+  const dir = reuseDir ?? mkdtempSync(join(tmpdir(), `orca-flow-${name}-`));
+  if (!dirsOfCurrentScenario.includes(dir)) dirsOfCurrentScenario.push(dir);
   const wt = join(dir, "wt"); const home = join(dir, "home");
   mkdirSync(join(wt, ".orca", "artifacts"), { recursive: true });
   mkdirSync(home, { recursive: true });
@@ -226,6 +227,54 @@ scenario("E8 retry-exhaust (loop is finite)", async () => {
   eq("E8 exit code", r.code, 1);
   ok("E8 exhausted message", /exhausted 1 retries/.test(r.out + r.err));
   eq("E8 worker-start count bounded (2+2)", r.by("orchestration worker-start").length, 4);
+});
+
+// ---------------------------------------------------------------------------
+// E31 — parallel REVIEW group + onFailGoto: Security Review fails once inside
+// the [code-review ∥ security-review] group; the fix loop jumps back to the
+// Coder and the retry re-runs the WHOLE group — a second dispatch for BOTH
+// review members, not just the failed one. Expected worker-starts: coder,
+// both reviews (round 1), coder (fix), both reviews (round 2), testing = 7.
+// ---------------------------------------------------------------------------
+scenario("E31 parallel-review fail-retry (group re-runs both reviews after fix)", async () => {
+  const r = await runFlow({ name: "e31", config: "../test/configs/parallel-review.config.json",
+    scenario: "parallel-review-fail-once.cjs", budgetMs: 90000 });
+  ok("E31 not hung", !r.hung);
+  eq("E31 exit code", r.code, 0);
+  const starts = r.calls.map((c, i) => (c.cmd === "orchestration worker-start" ? i : -1)).filter((i) => i > -1);
+  const checkAfterFirstReview = r.calls.findIndex((c, i) => c.cmd === "orchestration check" && i > starts[1]);
+  ok("E31 both reviews launched before the group's first wait", starts[2] > -1 && checkAfterFirstReview > starts[2]);
+  ok("E31 fail jump logged", /\[fail\] Security Review FAILED( \(.*\))? -> back to "Coder" \(attempt 1\/1\)/.test(r.out + r.err));
+  eq("E31 one task-create per step (cached tasks reopened, not re-created)", r.by("orchestration task-create").length, 4);
+  eq("E31 worker-start total (coder x2, each review x2, testing x1)", r.by("orchestration worker-start").length, 7);
+  const reopens = r.by("orchestration task-update").filter((c) => c.flags.status === "ready");
+  ok("E31 coder reopened with fix note", reopens.some((c) => String(c.flags.result ?? "").includes("fix from security-review")));
+  eq("E31 security-review flagged parallel", r.status?.steps.find((s) => s.id === "security-review")?.parallel, true);
+  eq("E31 coder attempt 2", r.status?.steps.find((s) => s.id === "coder")?.attempt, 2);
+  eq("E31 security-review attempt 2", r.status?.steps.find((s) => s.id === "security-review")?.attempt, 2);
+  const joinCreate = r.calls.findIndex((c) => c.cmd === "orchestration task-create" && String(c.flags.spec ?? "").includes("# Testing"));
+  const checkAfterRetry = r.calls.findIndex((c, i) => c.cmd === "orchestration check" && i > starts[5]);
+  ok("E31 testing tasked only after the retry round settles", joinCreate > -1 && checkAfterRetry > -1 && joinCreate > checkAfterRetry);
+  ok("E31 testing ok line (join after both reviews)", /\[ok\] Testing done -> \.orca\/artifacts\/TEST_REPORT\.md/.test(r.out + r.err));
+  eq("E31 status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
+// E32 — per-step maxRetries: the reviewer declares maxRetries:3 over the
+// global 1; the fix loop must honor the STEP budget — attempts render n/3,
+// exhaustion lands at 3, and the coder is re-dispatched exactly 3 times.
+// ---------------------------------------------------------------------------
+scenario("E32 retry-per-step (step budget overrides global)", async () => {
+  const r = await runFlow({ name: "e32", config: "../test/configs/retry-per-step.config.json", scenario: "reviewer-fail-always.cjs", budgetMs: 90000 });
+  ok("E32 not hung", !r.hung);
+  eq("E32 exit code", r.code, 1);
+  const log = r.out + r.err;
+  ok("E32 attempt 1/3", /\[fail\] Reviewer FAILED( \(.*\))? -> back to "Coder" \(attempt 1\/3\)/.test(log));
+  ok("E32 attempt 2/3", /\(attempt 2\/3\)/.test(log));
+  ok("E32 attempt 3/3", /\(attempt 3\/3\)/.test(log));
+  ok("E32 exhausted at step budget", /exhausted 3 retries/.test(log));
+  ok("E32 never used the global budget", !/exhausted 1 retries/.test(log));
+  eq("E32 worker-start count bounded (4 coder + 4 reviewer)", r.by("orchestration worker-start").length, 8);
 });
 
 // ---------------------------------------------------------------------------
@@ -508,6 +557,112 @@ scenario("E26 re-nudge spared when terminal reparks", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E27 — run history: starting a NEW run snapshots the previous run's flat
+// artifacts into runs/<seq>-<ts>/ (copy, not move — flat files stay for
+// readiness/resume). A marker written between runs discriminates the
+// archived copy from the run-2 overwrite.
+// ---------------------------------------------------------------------------
+scenario("E27 archive previous run on new run", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e27", config: cfg });
+  ok("E27 run1 ok", r1.code === 0 && !r1.hung);
+  writeFileSync(join(r1.wt, ".orca", "artifacts", "A.md"), "RUN1 MARKER\n");
+  const r2 = await runFlow({ name: "e27", config: cfg, reuseDir: r1.dir });
+  ok("E27 run2 ok", r2.code === 0 && !r2.hung);
+  const runsRoot = join(r2.wt, ".orca", "artifacts", "runs");
+  const entries = existsSync(runsRoot) ? readdirSync(runsRoot) : [];
+  eq("E27 exactly one archive folder", entries.length, 1);
+  ok("E27 folder named seq-ts", /^0001-\d{8}-\d{6}$/.test(entries[0] ?? ""));
+  eq("E27 archived A.md holds the marker", readFileSync(join(runsRoot, entries[0], "A.md"), "utf8"), "RUN1 MARKER\n");
+  ok("E27 archived status.js exists", existsSync(join(runsRoot, entries[0], "status.js")));
+  ok("E27 flat A.md overwritten by run 2", !/RUN1 MARKER/.test(readFileSync(join(r2.wt, ".orca", "artifacts", "A.md"), "utf8")));
+});
+
+// ---------------------------------------------------------------------------
+// E28 — chooser defaults & bypass: with previous runs present the flow lists
+// them; EOF/Enter/0 starts a NEW run (archive created, no restore); --new
+// skips the prompt; dry-run lists read-only and archives nothing.
+// ---------------------------------------------------------------------------
+scenario("E28 chooser: EOF=new, --new bypass, dry-run lists only", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e28", config: cfg });
+  ok("E28 run1 ok (no prompt on empty worktree)", r1.code === 0 && !r1.hung);
+  const r2 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir });   // stdin=ignore => EOF => new
+  ok("E28 run2 ok (EOF chose new)", r2.code === 0 && !r2.hung);
+  ok("E28 run2 listed previous runs", /Previous runs in this worktree:/.test(r2.out + r2.err));
+  ok("E28 run2 archived run1", existsSync(join(r2.wt, ".orca", "artifacts", "runs")));
+  const r3 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, args: ["--new"] });
+  ok("E28 run3 --new ok", r3.code === 0 && !r3.hung);
+  ok("E28 run3 no prompt", !/Choose: <n>/.test(r3.out + r3.err));
+  const rJunk = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, stdinText: "1x\n" });
+  ok("E28 junk input '1x' starts a new run", rJunk.code === 0 && !/resuming|restored/.test(rJunk.out + rJunk.err));
+  const before = readdirSync(join(r3.wt, ".orca", "artifacts", "runs")).length;
+  const r4 = await runFlow({ name: "e28", config: cfg, reuseDir: r1.dir, args: ["--dry-run"] });
+  ok("E28 dry-run lists runs", /Previous runs in this worktree:/.test(r4.out));
+  eq("E28 dry-run archives nothing", readdirSync(join(r3.wt, ".orca", "artifacts", "runs")).length, before);
+});
+
+// ---------------------------------------------------------------------------
+// E28b — chooser: resuming the (current) incomplete run — no archive, no
+// restore, the succeeded producer is NOT re-dispatched, run resumes from
+// the failed step and completes.
+// ---------------------------------------------------------------------------
+scenario("E28b resume current incomplete run", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e28b", config: cfg, scenario: "chooser-fail-beta.cjs" });
+  eq("E28b run1 exit (beta failed)", r1.code, 1);
+  const taskCreateAfterRun1 = r1.by("orchestration task-create").length;
+  const r2 = await runFlow({ name: "e28b", config: cfg, reuseDir: r1.dir, stdinText: "1\n" });
+  ok("E28b run2 ok", r2.code === 0 && !r2.hung);
+  ok("E28b chose current", /resuming the current run from "beta"/.test(r2.out + r2.err));
+  eq("E28b only beta re-tasked", r2.by("orchestration task-create").length - taskCreateAfterRun1, 1);
+  ok("E28b no archive folder", !existsSync(join(r2.wt, ".orca", "artifacts", "runs")));
+});
+
+// ---------------------------------------------------------------------------
+// E29 — chooser: resuming an ARCHIVED run. Run 1 fails at beta; its flat
+// state (with a marker) is archived when run 2 starts fresh; run 3 picks the
+// archived entry: run-2 state archived first, run-1 artifacts RESTORED
+// (marker back), producer skipped, resume from beta.
+// ---------------------------------------------------------------------------
+scenario("E29 resume archived run restores and skips producer", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e29", config: cfg, scenario: "chooser-fail-beta.cjs" });
+  eq("E29 run1 exit", r1.code, 1);
+  // The marker must clear readinessMinBytes (200, cf. E15): the restore path
+  // SKIPS the producer, so beta reads this very file — an 11-byte marker
+  // would (correctly) be rejected as "too small" and stop the run.
+  const run1Marker = "RUN1 STATE\n" + "archived-run marker filler line to clear the readiness minimum\n".repeat(8);
+  writeFileSync(join(r1.wt, ".orca", "artifacts", "A.md"), run1Marker);
+  const r2 = await runFlow({ name: "e29", config: cfg, reuseDir: r1.dir });   // EOF => new; archives RUN1 STATE
+  ok("E29 run2 ok", r2.code === 0 && !r2.hung);
+  const taskCreateAfterRun2 = r2.by("orchestration task-create").length;      // 2 more (alpha+beta)
+  const r3 = await runFlow({ name: "e29", config: cfg, reuseDir: r1.dir, stdinText: "2\n" }); // 1=current(run2), 2=archived 0001
+  ok("E29 run3 ok", r3.code === 0 && !r3.hung);
+  ok("E29 restored run 0001", /restored run 0001-\d{8}-\d{6}/.test(r3.out + r3.err));
+  eq("E29 flat A.md restored to run-1 state", readFileSync(join(r3.wt, ".orca", "artifacts", "A.md"), "utf8"), run1Marker);
+  eq("E29 only beta re-tasked", r3.by("orchestration task-create").length - taskCreateAfterRun2, 1);
+  const runsEntries = readdirSync(join(r3.wt, ".orca", "artifacts", "runs"));
+  eq("E29 two archive folders (run1 then run2 states)", runsEntries.length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// E30 — chooser: picking a COMPLETED run notes it and runs fresh (archive of
+// the completed state + full re-dispatch from step 1).
+// ---------------------------------------------------------------------------
+scenario("E30 completed-run choice starts a new run", async () => {
+  const cfg = "../test/configs/cold.config.json";
+  const r1 = await runFlow({ name: "e30", config: cfg });
+  ok("E30 run1 ok", r1.code === 0 && !r1.hung);
+  const taskCreateAfterRun1 = r1.by("orchestration task-create").length;      // 2
+  const r2 = await runFlow({ name: "e30", config: cfg, reuseDir: r1.dir, stdinText: "1\n" }); // pick (current), completed
+  ok("E30 run2 ok", r2.code === 0 && !r2.hung);
+  ok("E30 already-completed note", /already completed — starting a new run/.test(r2.out + r2.err));
+  eq("E30 full fresh run (both steps re-tasked)", r2.by("orchestration task-create").length - taskCreateAfterRun1, 2);
+  eq("E30 completed state archived", readdirSync(join(r2.wt, ".orca", "artifacts", "runs")).length, 1);
+});
+
+// ---------------------------------------------------------------------------
 // E20 — nudge budget exhaustion: worker_done(succeeded) but no artifact and
 // the terminal never complies => exactly nudgeRetries nudges, then the step
 // settles FAILED (the artifact file is ground truth, not worker_done).
@@ -691,6 +846,8 @@ const BAD_CONFIGS = [
   ["F11 read of a writes-less step", "bad-reads-no-writes.json", /reads "ghost" which has no "writes" — nothing to read/],
   ["F12 negative nudgeRetries", "bad-nudge-negative.json", /nudgeRetries must be a non-negative integer/],
   ["F12b zero nudgeTimeoutMs", "bad-nudge-zero-timeout.json", /nudgeTimeoutMs must be a positive integer/],
+  ["F13 negative step maxRetries", "bad-retry-per-step.json", /step "reviewer": maxRetries must be a non-negative integer \(got -1\)/],
+  ["F13b fractional global maxRetries", "bad-retry-global.json", /config: maxRetries must be a non-negative integer \(got 1.5\)/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {
@@ -727,6 +884,15 @@ scenario("F9 --from must name an enabled step", async () => {
   ok("F9 not hung", !r.hung);
   eq("F9 exit code", r.code, 1);
   ok("F9 message", /is not among the enabled steps/.test(r.out + r.err));
+});
+
+scenario("F14 dry-run shows per-step retry budget", async () => {
+  const r = await runFlow({ name: "f14", config: "../test/configs/retry-per-step.config.json", args: ["--dry-run"], objective: "suite smoke", budgetMs: 30000 });
+  ok("F14 not hung", !r.hung);
+  eq("F14 exit code", r.code, 0);
+  ok("F14 step budget flag rendered", /\{onFail->coder x3\}/.test(r.out));
+  ok("F14 bare flag not left behind", !/\{onFail->coder\}/.test(r.out));
+  ok("F14 global budget not suffixed", !/x1\}/.test(r.out));
 });
 
 // ---------------------------------------------------------------------------
@@ -978,6 +1144,7 @@ scenario("D7 designer scaffolds a fresh project workspace", async () => {
       else { try { rmSync(d, { recursive: true, force: true }); } catch {} }
     }
   }
+  if (only && !total) { console.error(`FAIL - --only "${only}" matched no scenario`); process.exit(1); }
   const dt = Math.round((Date.now() - t0) / 1000);
   console.log(`\n${total - failed}/${total} assertions passed in ${dt}s`);
   if (failed) console.error(`${failed} FAILURE(S)`);

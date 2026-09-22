@@ -15,7 +15,7 @@ config field, with examples for common situations.
 ```jsonc
 {
   "artifactsDir": ".orca/artifacts",   // where step outputs are stored
-  "maxRetries": 2,                      // max retries per onFailGoto loop
+  "maxRetries": 2,                      // default retry budget per onFailGoto loop (a step's own "maxRetries" overrides)
   "autoRun": true,                      // fully automatic (default): no questions, no gates
   "defaults": { "timeoutMs": 900000 },  // default per-step timeout (ms)
   "pipeline": [ /* list of steps, run in array order */ ]
@@ -25,7 +25,7 @@ config field, with examples for common situations.
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `artifactsDir` | string | no (default `.orca/artifacts`) | Folder holding the artifact files steps write |
-| `maxRetries` | number | no (default 2) | Cap on how many times a `fail -> onFailGoto` pair may loop before stopping |
+| `maxRetries` | number | no (default 2) | Default cap on how many times a `fail -> onFailGoto` pair may loop before stopping; a step's own `maxRetries` overrides it for that step's loop |
 | `autoRun` | boolean | no (default `true`) | `true` = fully automatic: every step's spec carries an autonomy directive (never ask the user, decide and record assumptions in the artifact) and `gate` flags are ignored. `false` = manual mode: agents may ask questions and steps with `gate:true` block on an approval gate. In auto-run, claude agents also start with permission bypass (`--permission-mode bypassPermissions`) so their terminal never waits for an approval — Claude Code asks you to accept bypass mode once per machine on first use (see the README's troubleshooting); manual mode keeps default prompting. |
 | `defaults.gateTimeoutMs` | number | no (default 3600000 = 60 min) | Manual mode only: how long to wait for a decision gate to be resolved before continuing anyway |
 | `defaults.timeoutMs` | number | no (default 900000 = 15 min) | Max worker **silence** (no terminal output, no heartbeat). Silence is NOT a failure verdict: a worker deep in one long tool call can look quiet for most of an hour. A quiet-but-alive dispatch is waited on (with a warning) until it settles or the hard cap hits; only a positive failure (dispatch failed / worker report) fails the step |
@@ -105,6 +105,19 @@ Manual-mode `interactive` steps (interviews) sit quiet for minutes by design;
 the double idle-evidence gate usually excludes them, but for such steps
 consider a per-step `nudgeTimeoutMs` raise or `nudgeRetries: 0`.
 
+### Run history (per-run snapshots)
+
+Every NEW run snapshots the previous run's flat artifacts into
+`<worktree>/<artifactsDir>/runs/<seq>-<timestamp>/` before its own steps write
+anything — a **copy**, not a move: the flat files stay in place, so readiness
+checks and `--from` resumes see exactly what they always did. Each folder holds
+that run's artifact files plus its `status.js`, which records the objective,
+the per-step outcomes and the token usage — two runs can therefore be compared
+side by side, long after the second one overwrote the first. The snapshots sit
+under `artifactsDir`, so the usual `.gitignore` entry (`.orca/artifacts/`)
+already covers them; nothing is pruned automatically — delete folders you no
+longer need. Snapshot (copy) failures warn and never block a run.
+
 ## 2. Step structure
 
 ```jsonc
@@ -118,6 +131,7 @@ consider a per-step `nudgeTimeoutMs` raise or `nudgeRetries: 0`.
   "reads": ["detailed-design"],  // ids of steps whose output this step needs
   "spec": "...{reads}...{out}...",// prompt given to the agent
   "onFailGoto": "coding",        // (optional) loop back here on outcome=failed
+  "maxRetries": 20,              // (optional) retry budget for THIS step's onFailGoto loop (overrides global)
   "parallelWith": "",            // (optional) id of an EARLIER step to run concurrently with
   "gate": false,                 // (optional) true = wait for approval after the step
   "model": "default",            // (optional) "default"/missing = agent's own model; else passed as --model
@@ -178,7 +192,11 @@ the agent always knows the overall goal regardless of where the step sits.
 
 **`onFailGoto`** — (optional) the `id` of an earlier step. When the current step
 returns `outcome=failed`, the orchestrator loops back to that step to fix things,
-then resumes. Set to `null` or omit to disable. Loop count is bounded by `maxRetries`.
+then resumes. Set to `null` or omit to disable. Loop count is bounded by this
+step's `maxRetries` when set — declare it here, on the failing step, not on the
+step it jumps back to — else the global `maxRetries` (default 2). A budget
+of `0` means the first failure stops the run (fail fast, never loop). With a
+per-step budget declared, `--dry-run` shows the loop as `onFail-><id> xN`.
 
 **`parallelWith`** — (optional) id of an **earlier** step this step runs **concurrently**
 with. Both start together as one group; the first step *after* the group waits for
@@ -325,12 +343,19 @@ its hard cap. Raise the cap when a full implementation legitimately runs long:
 
 ### 3.9. Run two steps at the same time
 Independent steps that both depend on the same input can run concurrently — the
-shipped config does this for the two design passes (both read Architecture,
-Coding waits for both):
+shipped config does this twice: the two design passes (both read Architecture;
+Coding waits for both) and the two reviews (both read Coding; Testing waits
+for both):
 ```jsonc
-{ "id": "uiux-design", "parallelWith": "detailed-design", /* ... */ }
+{ "id": "uiux-design",     "parallelWith": "detailed-design", /* ... */ }
+{ "id": "security-review", "parallelWith": "code-review",     /* ... */ }
 ```
 Saves the length of the shorter step; verify the grouping with `--dry-run`.
+When one member of a parallel group FAILs, the `onFailGoto` retry re-runs the
+whole group — a fix can disturb either review, so both look again.
+To skip one member of a parallel pair (`enabled:false`), also remove the pair's
+`parallelWith` line — the loader dies if the line points at the disabled
+member; skipping the member that carries the line degrades to sequential.
 
 ---
 
@@ -360,6 +385,7 @@ handles it. Always verify with `--dry-run` to see the effective `reads` after fi
 | `--worktree <selector>` | Pin the worktree for this run (default: auto-detect from the invoking directory) | `--worktree name:lab2` |
 | `--from <id>` | Start from a step, drop earlier ones | `--from coding` |
 | `--only a,b,c` | Run only the listed steps | `--only planning,architecture` |
+| `--new` | Skip the startup run chooser, always start a NEW run (the run-history archive of the previous run still happens; see section 5.5) | `--new "x"` |
 | `--agent <id>=<agent>` | Override one step's agent, this run only | `--agent coding=claude` |
 | `--grill-me` | Enable the `grill` step for this run (see section 5.2) | `--grill-me --only grill` |
 | `--no-grill-me` | Disable the `grill` step for this run (see section 5.2) | `--no-grill-me` |
@@ -455,6 +481,33 @@ post-hoc: numbers appear when the run ends, never mid-run. Set
 `~/.codex` are then read under this directory instead of the OS home (testing).
 No config field enables/disables this — it is automatic and display-only.
 
+### 5.5. The startup run chooser (resume a previous run)
+
+When the worktree's artifacts dir holds previous runs — the current flat state
+and/or `runs/` snapshots (see "Run history") — and the command passed none of
+`--from` / `--only` / `--new`, the flow lists the 10 newest runs (newest first,
+the current flat state labeled `(current)`; each line shows the objective,
+steps succeeded and overall verdict) and asks before starting:
+
+- `<n>` — resume that run. For an archived entry the current flat state is
+  archived first, then the chosen run's artifacts are restored into the flat
+  dir (a copy-over, non-destructive restore — flat files that are not part
+  of the chosen run's snapshot are left in place; resuming the `(current)`
+  entry restores nothing — it just continues).
+  The resume point is the first enabled step not recorded as `succeeded` in
+  that run's `status.js` — an automatic `--from`.
+- `0`, plain Enter, or EOF — start a NEW run. Piped stdin (scripts, CI) closes
+  with EOF, so automated invocations never block on the prompt.
+- Picking a run that already completed starts a fresh run instead (noted in
+  the log).
+
+`--dry-run` never prompts — it prints the same list read-only above the plan.
+`--new` skips the chooser entirely (the run-history archive still happens).
+
+Note: with previous runs present, a config that fails load-time validation may
+show the chooser (and perform its restore) before the config error appears —
+nothing is lost, the pre-restore state is archived first.
+
 ---
 
 ## 6. Environment variables
@@ -485,6 +538,7 @@ entry. If `--dry-run` reports "Could not read flow.config.json", check those two
 - `enabled`: `true` · `false`
 - `gate`: `true` · `false`
 - `onFailGoto`: any `id` earlier in the pipeline, or `null`
+- `maxRetries` (step): non-negative integer — this step's `onFailGoto` loop budget; overrides the global `maxRetries`
 - `model`: `"default"` (agent's own model, nothing passed — also when missing/empty) or any model name string (passed as `--model`)
 - `parallelWith`: an earlier step `id` (members run concurrently; the next step waits for all)
 - `reads`: array of `id`s (empty `[]` for a starting step)

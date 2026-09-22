@@ -1,0 +1,6 @@
+{
+  "pipeline": [
+    { "id": "coder", "title": "Coder", "agent": "stub", "spec": "Write {out}.", "writes": "A.md" },
+    { "id": "reviewer", "title": "Reviewer", "agent": "stub", "reads": ["coder"], "onFailGoto": "coder", "maxRetries": -1, "spec": "Review {reads}.", "writes": "B.md" }
+  ]
+}

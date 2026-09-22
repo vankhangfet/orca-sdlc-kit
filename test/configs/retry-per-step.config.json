@@ -1,0 +1,14 @@
+{
+  "maxRetries": 1,
+  "defaults": {
+    "timeoutMs": 30000,
+    "hardTimeoutMs": 60000,
+    "startRetryDelayMs": 200,
+    "warmupTimeoutMs": 5000,
+    "startGraceMs": 3000
+  },
+  "pipeline": [
+    { "id": "coder", "title": "Coder", "agent": "stub", "spec": "Implement the checklist; update {out}.", "writes": "CODE.md" },
+    { "id": "reviewer", "title": "Reviewer", "agent": "stub", "reads": ["coder"], "onFailGoto": "coder", "maxRetries": 3, "spec": "Review {reads}; write the verdict to {out}.", "writes": "REVIEW.md" }
+  ]
+}
