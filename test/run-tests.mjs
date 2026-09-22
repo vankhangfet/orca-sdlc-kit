@@ -259,6 +259,24 @@ scenario("E31 parallel-review fail-retry (group re-runs both reviews after fix)"
 });
 
 // ---------------------------------------------------------------------------
+// E32 — per-step maxRetries: the reviewer declares maxRetries:3 over the
+// global 1; the fix loop must honor the STEP budget — attempts render n/3,
+// exhaustion lands at 3, and the coder is re-dispatched exactly 3 times.
+// ---------------------------------------------------------------------------
+scenario("E32 retry-per-step (step budget overrides global)", async () => {
+  const r = await runFlow({ name: "e32", config: "../test/configs/retry-per-step.config.json", scenario: "reviewer-fail-always.cjs", budgetMs: 90000 });
+  ok("E32 not hung", !r.hung);
+  eq("E32 exit code", r.code, 1);
+  const log = r.out + r.err;
+  ok("E32 attempt 1/3", /\[fail\] Reviewer FAILED( \(.*\))? -> back to "Coder" \(attempt 1\/3\)/.test(log));
+  ok("E32 attempt 2/3", /\(attempt 2\/3\)/.test(log));
+  ok("E32 attempt 3/3", /\(attempt 3\/3\)/.test(log));
+  ok("E32 exhausted at step budget", /exhausted 3 retries/.test(log));
+  ok("E32 never used the global budget", !/exhausted 1 retries/.test(log));
+  eq("E32 worker-start count bounded (4 coder + 4 reviewer)", r.by("orchestration worker-start").length, 8);
+});
+
+// ---------------------------------------------------------------------------
 // E2 — manual start path: warm the TUI, fetch the preamble, substitute
 // ctx_dryrun, paste + bare-Enter, verify consumption, close on settle.
 // Also pins the AUTO-RUN claude command wrap.
@@ -827,6 +845,8 @@ const BAD_CONFIGS = [
   ["F11 read of a writes-less step", "bad-reads-no-writes.json", /reads "ghost" which has no "writes" — nothing to read/],
   ["F12 negative nudgeRetries", "bad-nudge-negative.json", /nudgeRetries must be a non-negative integer/],
   ["F12b zero nudgeTimeoutMs", "bad-nudge-zero-timeout.json", /nudgeTimeoutMs must be a positive integer/],
+  ["F13 negative step maxRetries", "bad-retry-per-step.json", /step "reviewer": maxRetries must be a non-negative integer \(got -1\)/],
+  ["F13b fractional global maxRetries", "bad-retry-global.json", /config: maxRetries must be a non-negative integer \(got 1.5\)/],
 ];
 for (const [name, file, re] of BAD_CONFIGS) {
   scenario(name, async () => {
@@ -863,6 +883,15 @@ scenario("F9 --from must name an enabled step", async () => {
   ok("F9 not hung", !r.hung);
   eq("F9 exit code", r.code, 1);
   ok("F9 message", /is not among the enabled steps/.test(r.out + r.err));
+});
+
+scenario("F14 dry-run shows per-step retry budget", async () => {
+  const r = await runFlow({ name: "f14", config: "../test/configs/retry-per-step.config.json", args: ["--dry-run"], objective: "suite smoke", budgetMs: 30000 });
+  ok("F14 not hung", !r.hung);
+  eq("F14 exit code", r.code, 0);
+  ok("F14 step budget flag rendered", /\{onFail->coder x3\}/.test(r.out));
+  ok("F14 bare flag not left behind", !/\{onFail->coder\}/.test(r.out));
+  ok("F14 global budget not suffixed", !/x1\}/.test(r.out));
 });
 
 // ---------------------------------------------------------------------------

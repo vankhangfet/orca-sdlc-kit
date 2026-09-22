@@ -151,7 +151,7 @@ Everything lives in `.orca/flow.config.json` — no code edits, ever. The kit is
 | Skip a step (e.g. no UI/UX) | set `"enabled": false` on that step — later steps adjust automatically |
 | Change what a step does | edit its `"spec"` text; `{out}` / `{reads}` / `{tasks}` are filled in for you |
 | Add my own step (e.g. a lint gate) | add an entry to the `"pipeline"` array — array order is run order |
-| Retry harder on failures | raise `"maxRetries"` (how often review/test failures loop back to coding) |
+| Retry harder on failures | raise `"maxRetries"` (how often review/test failures loop back to coding); or give ONE loop-heavy step its own budget with `"maxRetries"` on that step (e.g. planning loops 20x while review/test keep the global 2) |
 | Give a step more time | raise its `"timeoutMs"` (max silence) / `"hardTimeoutMs"` (absolute cap) |
 | Run two steps at the same time | set `"parallelWith": "<earlier-step-id>"` on the later step — both start together; the next step waits for both |
 | Run just part of the pipeline | `--only planning,architecture "..."` |

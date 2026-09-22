@@ -134,7 +134,6 @@ if (opt.grillMe !== undefined) {
 }
 
 const ART_DIR = cfg.artifactsDir || ".orca/artifacts";
-const MAX_RETRIES = cfg.maxRetries ?? 2;
 // Fully automatic by default: every spec gets an AUTONOMY directive (never ask
 // the user, decide and record assumptions) and per-step "gate" flags are
 // ignored — the pipeline runs end-to-end unattended. Set "autoRun": false for
@@ -150,6 +149,7 @@ const READINESS_RETRIES = cfg.defaults?.readinessRetries ?? 3;
 const READINESS_MIN_BYTES = cfg.defaults?.readinessMinBytes ?? 200;
 const nudgeRetriesOf = (step) => step.nudgeRetries ?? cfg.defaults?.nudgeRetries ?? 0;
 const nudgeTimeoutOf = (step) => step.nudgeTimeoutMs ?? cfg.defaults?.nudgeTimeoutMs ?? 120000;
+const maxRetriesOf = (step) => step.maxRetries ?? cfg.maxRetries ?? 2;
 const outPath = (file) => `${ART_DIR}/${file}`;
 
 // --- Early bindings (TDZ): the Orca/worktree resolution + startup chooser
@@ -309,6 +309,18 @@ for (const g of groups) if (g.length > 1) for (const m of g) isParallel.add(m.id
   };
   nudgeFields(cfg.defaults || {}, "defaults:");
   for (const s of steps) nudgeFields(s, `step "${s.id}":`);
+}
+
+// Retry budgets: non-negative integers wherever declared — per step or at the
+// top level. Validated at load so a typo cannot silently change a fix loop's
+// budget (a non-numeric string disables the exhaust check entirely; a
+// fraction dies mid-budget with a fractional attempt count).
+{
+  if (cfg.maxRetries != null && (!Number.isInteger(cfg.maxRetries) || cfg.maxRetries < 0))
+    die(`config: maxRetries must be a non-negative integer (got ${JSON.stringify(cfg.maxRetries)}).`);
+  for (const s of steps)
+    if (s.maxRetries != null && (!Number.isInteger(s.maxRetries) || s.maxRetries < 0))
+      die(`step "${s.id}": maxRetries must be a non-negative integer (got ${JSON.stringify(s.maxRetries)}).`);
 }
 
 // A step's reads. Steps in this run always count. Steps NOT part of this run
@@ -1711,7 +1723,8 @@ function printPlan() {
     const reads = effectiveReads(s);
     const model = effectiveModel(s);
     const flags = [];
-    if (s.onFailGoto && enabledIds.has(s.onFailGoto)) flags.push(`onFail->${s.onFailGoto}`);
+    if (s.onFailGoto && enabledIds.has(s.onFailGoto))
+      flags.push(`onFail->${s.onFailGoto}${s.maxRetries != null ? ` x${s.maxRetries}` : ""}`);
     if (s.gate && !AUTO_RUN) flags.push("gate");
     if (s.interactive && !AUTO_RUN) flags.push("interactive");
     if (s.parallelWith) flags.push(`parallel-with ${s.parallelWith}`);
@@ -2438,12 +2451,13 @@ while (gi < groups.length) {
 
     const gotoId = r.step.onFailGoto;
     if (gotoId && enabledIds.has(gotoId)) {
+      const budget = maxRetriesOf(r.step);   // per-step override, else the global cap
       const key = `${r.step.id}->${gotoId}`;
       retriesUsed[key] = (retriesUsed[key] || 0) + 1;
-      if (retriesUsed[key] > MAX_RETRIES) {
-        die(`"${r.step.title}" failed and exhausted ${MAX_RETRIES} retries. See ${outPath(r.step.writes)}.`);
+      if (retriesUsed[key] > budget) {
+        die(`"${r.step.title}" failed and exhausted ${budget} retries. See ${outPath(r.step.writes)}.`);
       }
-      log(`[fail] ${r.step.title} FAILED${r.note ? ` (${r.note})` : ""} -> back to "${byId[gotoId].title}" (attempt ${retriesUsed[key]}/${MAX_RETRIES})`);
+      log(`[fail] ${r.step.title} FAILED${r.note ? ` (${r.note})` : ""} -> back to "${byId[gotoId].title}" (attempt ${retriesUsed[key]}/${budget})`);
       // Reopen the fix target for another attempt. task-update has no --spec
       // on this build, so we drop a fix note into the result the target's
       // next run reads (its spec + the failing report tell it what to fix).
