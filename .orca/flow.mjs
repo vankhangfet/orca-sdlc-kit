@@ -26,7 +26,10 @@
 //
 // Pin the worktree for one run (only when launching from OUTSIDE the target):
 //   node .orca/flow.mjs --worktree name:lab2 "..."
-//   --create-worktree    if auto-detect fails, create a flow-<slug>-<stamp> worktree
+//
+// Auto-create a worktree when auto-detect fails (never when a worktree is
+// pinned, never during --dry-run; uncommitted changes do not follow):
+//   node .orca/flow.mjs --create-worktree "add login page"
 //
 // Opt-in requirements interview before planning (step id "grill" in config):
 //   node .orca/flow.mjs --grill-me "..."
