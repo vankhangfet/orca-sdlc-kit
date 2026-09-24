@@ -74,6 +74,16 @@ function main(argv) {
     "worktree show": () => c.ok({ worktree: { path: env.ORCA_FAKE_WT || "." } }),
     "worktree list": () => c.ok({ worktrees: [] }),
     "worktree current": () => c.ok({ worktree: { path: env.ORCA_FAKE_WT || "." } }),
+    "worktree create": () => {
+      const name = String(flags.name ?? "");
+      if (!name) return c.fail("worktree create: --name required");
+      // Recorded for assertions (name / repo selector / base ref per call).
+      (state.extra.createdWorktrees ??= []).push({ name, repo: flags.repo ?? null, baseBranch: flags["base-branch"] ?? null });
+      // The created worktree IS the seeded fake worktree dir: everything the
+      // flow computes from WT_PATH (artifacts, status page, readiness files)
+      // then lands exactly where runFlow already reads them.
+      c.ok({ worktree: { name, path: env.ORCA_FAKE_WT || "." } });
+    },
 
     "orchestration run-create": () => c.ok({ run: { id: "run-" + c.id() } }),
     "orchestration task-create": () => {

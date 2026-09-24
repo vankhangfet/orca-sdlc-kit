@@ -116,6 +116,7 @@ async function runFlow({ name, config, scenario: scenarioFile = "default.cjs", a
   // worktreePin: null = no pin at all — the flow's auto-detect path runs.
   // (Must be assigned AFTER extraEnv so the harness default wins over stray env.)
   if (worktreePin !== null) env.ORCA_FLOW_WORKTREE = worktreePin;
+  else delete env.ORCA_FLOW_WORKTREE;
   // notify template, when given, is handed to the child via its file's path — the
   // only source, since every inherited ORCA_* key was stripped above.
   if (notify) env.ORCA_FLOW_NOTIFY_FILE = join(dir, "notify.json");
