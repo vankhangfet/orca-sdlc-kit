@@ -195,13 +195,17 @@ scenario("E1a auto-create worktree (--create-worktree, non-TTY)", async () => {
   const created = r.by("worktree create");
   eq("E1a exactly one create call", created.length, 1);
   ok("E1a name = slug + stamp", /^flow-them-trang-dang-nhap-\d{8}-\d{6}$/.test(created[0].flags.name));
-  ok("E1a create pinned the repo", /^path:/.test(created[0].flags.repo ?? ""));
+  ok("E1a repo selector targets this checkout", (created[0].flags.repo ?? "").split("\\").join("/") === "path:" + REPO.split("\\").join("/"));
   ok("E1a create based on HEAD sha", /^[0-9a-f]{40}$/.test(created[0].flags["base-branch"] ?? ""));
   ok("E1a create used --no-parent", created[0].flags["no-parent"] === true);
   ok("E1a agents run in created worktree", r.calls.some((c) => c.flags && c.flags.worktree === "name:" + created[0].flags.name));
   ok("E1a created log line", /\[worktree\] created /.test(r.out));
   ok("E1a summary cleanup hint", /remove later with: orca worktree rm name:flow-/.test(r.out));
   eq("E1a status overall", r.status?.overall, "succeeded");
+  // Second short run locking the diacritic slug: đ (U+0111, no NFD
+  // decomposition) must map to "d", not collapse into a dash.
+  const d = await runFlow({ name: "e1ad", config: "../test/configs/cold.config.json", scenario: "no-wt.cjs", worktreePin: null, args: ["--create-worktree"], objective: "Thêm trang đăng nhập" });
+  ok("E1a đ slug maps to d", /^flow-them-trang-dang-nhap-\d{8}-\d{6}$/.test((d.by("worktree create")[0] || {}).flags?.name ?? ""));
 });
 
 // ---------------------------------------------------------------------------

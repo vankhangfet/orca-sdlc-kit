@@ -169,7 +169,8 @@ const res = (j) => (j && j.result) ? j.result : (j || {});
 const WT_PIN = opt.worktree || process.env.ORCA_FLOW_WORKTREE || cfg.defaults?.worktree || null;
 const wtSource = () => opt.worktree ? "--worktree flag"
   : process.env.ORCA_FLOW_WORKTREE ? "ORCA_FLOW_WORKTREE env"
-  : cfg.defaults?.worktree ? "config defaults.worktree" : "auto-detect";
+  : cfg.defaults?.worktree ? "config defaults.worktree"
+  : CREATED_WORKTREE ? "created this run" : "auto-detect";
 let WT = null;
 let WT_WARNED = false;   // soft mode: report an unresolvable worktree only once
 // Filesystem path of the worktree (agents run THERE, so artifacts live there —
@@ -487,6 +488,7 @@ function slugify(text) {
   return String(text || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC")  // objectives may be Vietnamese
     .toLowerCase()
+    .replace(/đ/g, "d")                  // đ has no NFD decomposition — map before the ASCII filter
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 24)
@@ -508,12 +510,15 @@ function headSha() {
 async function ensureWorktree() {
   if (WT_PIN || WT || opt.dryRun) return;
   const w = orca(["worktree", "current"]);
-  const cur = w.ok ? pick(pick(res(w.json), ["worktree"]) || {}, ["path"]) : null;
-  if (cur) return;                       // auto-detect is fine — the resolver picks it up
+  const entry = pick(res(w.json), ["worktree"]) || res(w.json);
+  const cur = w.ok ? pick(entry, ["path"]) : null;
+  if (cur) { WT = `path:${cur}`; WT_PATH = cur; return; }   // auto-detect ok — pin like the resolver would
   const consent = opt.createWorktree || cfg.defaults?.autoCreateWorktree === true;
   const name = `flow-${slugify(objective)}-${wtStamp()}`;
   if (!consent) {
     if (!(process.stdin.isTTY && process.stdout.isTTY)) return;   // resolver die()s with the hint
+    const root = gitRoot();
+    if (!root) die("Cannot create a worktree: the invoking directory is not inside a git repository.");
     const sha = headSha();
     if (!sha) die("Cannot create a worktree: this git repository has no commits yet.");
     const a = await promptChoice(
@@ -527,7 +532,10 @@ async function ensureWorktree() {
   if (!sha) die("Cannot create a worktree: this git repository has no commits yet.");
   const c = orca(["worktree", "create", "--repo", `path:${root}`, "--name", name,
     "--base-branch", sha, "--no-parent"]);
-  if (!c.ok) die(`Could not create worktree "${name}": ${c.stderr || c.raw || "orca worktree create failed"}\n${wtFixHint()}`);
+  if (!c.ok) {
+    const detail = String(c.json?.error || c.stderr || c.raw || "orca worktree create failed").slice(0, 600);
+    die(`Could not create worktree "${name}": ${detail}\n${wtFixHint()}`);
+  }
   WT = `name:${name}`;                    // memoized by every later resolveWorktree() call
   const cp = pick(pick(res(c.json), ["worktree"]) || {}, ["path"]);
   if (cp) WT_PATH = cp;                   // else resolveWorktreePath() fills it via `worktree show`
@@ -1860,6 +1868,7 @@ if (opt.dryRun) { log("Dry-run — no agents called."); process.exit(0); }
 // =============================================================================
 resolveWorktree();          // hard-fail here if still unresolved
 const WT_DIR = resolveWorktreePath();
+if (!WT_DIR) die(`Could not resolve the path of worktree ${WT} (orca worktree show failed). Fix/remove it, then re-run.`);
 mkdirSync(join(WT_DIR || ".", ART_DIR), { recursive: true });
 if (!HISTORY_ARCHIVE_DONE) archiveCurrentRun();
 // Crash recovery: a previous run killed between materialize and restore leaves
