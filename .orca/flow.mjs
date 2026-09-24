@@ -93,7 +93,7 @@ const die = (m) => {
 
 // --- Parse argv: flags + objective ---
 const argv = process.argv.slice(2);
-const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined, worktree: null, noOpenStatus: false, statusPreview: false, newRun: false };
+const opt = { from: null, only: null, dryRun: false, config: null, agentOverrides: {}, grillMe: undefined, worktree: null, createWorktree: false, noOpenStatus: false, statusPreview: false, newRun: false };
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -107,6 +107,7 @@ for (let i = 0; i < argv.length; i++) {
   }
   else if (a === "--config") opt.config = argv[++i];
   else if (a === "--worktree") opt.worktree = argv[++i];
+  else if (a === "--create-worktree") opt.createWorktree = true;
   else if (a === "--no-open-status") opt.noOpenStatus = true;
   else if (a === "--status-preview") opt.statusPreview = true;
   else if (a === "--new") opt.newRun = true;
@@ -177,6 +178,7 @@ let WT_PATH = null;
 const wtFixHint = () =>
   "Fix one of:\n" +
   "  - run the flow from inside the target Orca worktree (auto-detect), or\n" +
+  '  - let the flow create one: re-run with --create-worktree (or set "defaults": { "autoCreateWorktree": true }), or\n' +
   "  - pass --worktree <selector> for this run, or\n" +
   "  - set ORCA_FLOW_WORKTREE for this machine/shell, or\n" +
   '  - set "defaults": { "worktree": "name:<displayName>" } in the config.';

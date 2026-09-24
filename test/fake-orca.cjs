@@ -77,7 +77,8 @@ function main(argv) {
     "worktree create": () => {
       const name = String(flags.name ?? "");
       if (!name) return c.fail("worktree create: --name required");
-      // Recorded for assertions (name / repo selector / base ref per call).
+      // Recorded for scenario handlers (shared via state) and for future
+      // name-conflict timelines; E2E assertions read the calls log instead.
       (state.extra.createdWorktrees ??= []).push({ name, repo: flags.repo ?? null, baseBranch: flags["base-branch"] ?? null });
       // The created worktree IS the seeded fake worktree dir: everything the
       // flow computes from WT_PATH (artifacts, status page, readiness files)

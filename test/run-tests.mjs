@@ -169,6 +169,19 @@ scenario("E1 happy-cold (2 steps, cold start, both succeed)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E1b — auto-detect fails, no create consent (non-TTY): old hard-fail kept,
+// and the fix hint now advertises --create-worktree / autoCreateWorktree.
+// ---------------------------------------------------------------------------
+scenario("E1b no auto-create without consent (non-TTY keeps old die)", async () => {
+  const r = await runFlow({ name: "e1b", config: "../test/configs/cold.config.json", scenario: "no-wt.cjs", worktreePin: null, env: { ORCA_FLOW_WORKTREE: "name:bogus" } });
+  ok("E1b not hung", !r.hung);
+  eq("E1b exit code", r.code, 1);
+  ok("E1b auto-detect error", /Could not auto-detect the worktree/.test(r.err + r.out));
+  eq("E1b no create call", r.by("worktree create").length, 0);
+  ok("E1b hint mentions --create-worktree", /--create-worktree/.test(r.err + r.out));
+});
+
+// ---------------------------------------------------------------------------
 // E4 — hard cap: silent, frozen-preview worker. Must settle as still-running
 // with the resume hint; the watchdog proves the process itself ends.
 // ---------------------------------------------------------------------------
