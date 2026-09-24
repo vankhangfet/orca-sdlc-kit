@@ -209,6 +209,18 @@ scenario("E1a auto-create worktree (--create-worktree, non-TTY)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E1c — config consent: defaults.autoCreateWorktree: true creates without the
+// flag (non-TTY), no pin.
+// ---------------------------------------------------------------------------
+scenario("E1c auto-create via defaults.autoCreateWorktree config", async () => {
+  const r = await runFlow({ name: "e1c", config: "../test/configs/autowt.config.json", scenario: "no-wt.cjs", worktreePin: null });
+  ok("E1c not hung", !r.hung);
+  eq("E1c exit code", r.code, 0);
+  eq("E1c one create call", r.by("worktree create").length, 1);
+  eq("E1c status overall", r.status?.overall, "succeeded");
+});
+
+// ---------------------------------------------------------------------------
 // E4 — hard cap: silent, frozen-preview worker. Must settle as still-running
 // with the resume hint; the watchdog proves the process itself ends.
 // ---------------------------------------------------------------------------
