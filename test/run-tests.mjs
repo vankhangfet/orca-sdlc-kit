@@ -173,12 +173,35 @@ scenario("E1 happy-cold (2 steps, cold start, both succeed)", async () => {
 // and the fix hint now advertises --create-worktree / autoCreateWorktree.
 // ---------------------------------------------------------------------------
 scenario("E1b no auto-create without consent (non-TTY keeps old die)", async () => {
+  // Stray pin via extraEnv: runFlow must DELETE it (worktreePin:null) — if it
+  // leaked, WT_PIN would resolve and the run would exit 0, failing this scenario.
   const r = await runFlow({ name: "e1b", config: "../test/configs/cold.config.json", scenario: "no-wt.cjs", worktreePin: null, env: { ORCA_FLOW_WORKTREE: "name:bogus" } });
   ok("E1b not hung", !r.hung);
   eq("E1b exit code", r.code, 1);
   ok("E1b auto-detect error", /Could not auto-detect the worktree/.test(r.err + r.out));
   eq("E1b no create call", r.by("worktree create").length, 0);
   ok("E1b hint mentions --create-worktree", /--create-worktree/.test(r.err + r.out));
+  ok("E1b hint mentions autoCreateWorktree", /autoCreateWorktree/.test(r.err + r.out));
+});
+
+// ---------------------------------------------------------------------------
+// E1a — auto-detect fails, --create-worktree given (non-TTY): the flow creates
+// a flow-<slug>-<stamp> worktree from HEAD and runs the whole pipeline in it.
+// ---------------------------------------------------------------------------
+scenario("E1a auto-create worktree (--create-worktree, non-TTY)", async () => {
+  const r = await runFlow({ name: "e1a", config: "../test/configs/cold.config.json", scenario: "no-wt.cjs", worktreePin: null, args: ["--create-worktree"], objective: "Them trang dang nhap" });
+  ok("E1a not hung", !r.hung);
+  eq("E1a exit code", r.code, 0);
+  const created = r.by("worktree create");
+  eq("E1a exactly one create call", created.length, 1);
+  ok("E1a name = slug + stamp", /^flow-them-trang-dang-nhap-\d{8}-\d{6}$/.test(created[0].flags.name));
+  ok("E1a create pinned the repo", /^path:/.test(created[0].flags.repo ?? ""));
+  ok("E1a create based on HEAD sha", /^[0-9a-f]{40}$/.test(created[0].flags["base-branch"] ?? ""));
+  ok("E1a create used --no-parent", created[0].flags["no-parent"] === true);
+  ok("E1a agents run in created worktree", r.calls.some((c) => c.flags && c.flags.worktree === "name:" + created[0].flags.name));
+  ok("E1a created log line", /\[worktree\] created /.test(r.out));
+  ok("E1a summary cleanup hint", /remove later with: orca worktree rm name:flow-/.test(r.out));
+  eq("E1a status overall", r.status?.overall, "succeeded");
 });
 
 // ---------------------------------------------------------------------------

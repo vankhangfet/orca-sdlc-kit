@@ -175,10 +175,13 @@ let WT_WARNED = false;   // soft mode: report an unresolvable worktree only once
 // Filesystem path of the worktree (agents run THERE, so artifacts live there —
 // not necessarily next to this config). Null until resolvable.
 let WT_PATH = null;
+// Name of the worktree THIS run created (null = none). Set only by
+// ensureWorktree(); the final summary prints the cleanup hint from it.
+let CREATED_WORKTREE = null;
 const wtFixHint = () =>
   "Fix one of:\n" +
   "  - run the flow from inside the target Orca worktree (auto-detect), or\n" +
-  '  - let the flow create one: re-run with --create-worktree (or set "defaults": { "autoCreateWorktree": true }), or\n' +
+  '  - let the flow create one (only when no worktree is pinned): re-run with --create-worktree (or set "defaults": { "autoCreateWorktree": true }), or\n' +
   "  - pass --worktree <selector> for this run, or\n" +
   "  - set ORCA_FLOW_WORKTREE for this machine/shell, or\n" +
   '  - set "defaults": { "worktree": "name:<displayName>" } in the config.';
@@ -192,6 +195,7 @@ const wtFixHint = () =>
 // before this block — exactly the pre-hoist ordering.
 if (!opt.statusPreview) {
   ORCA = resolveOrca();
+  await ensureWorktree();   // may create + pin a worktree when auto-detect fails
   resolveWorktree(opt.dryRun);
   resolveWorktreePath(opt.dryRun);
   // Startup chooser (may restore a previous run and set opt.from BEFORE the
@@ -473,6 +477,62 @@ function worktreeCandidates() {
   }) : [];
   return (same.length ? same : ws).slice(0, 8)
     .map((w) => `  name:${w.name}  ->  ${w.path}`).join("\n");
+}
+// --- Worktree auto-create (defaults.worktree: null + auto-detect failed) ---
+function wtStamp(d = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+function slugify(text) {
+  return String(text || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC")  // objectives may be Vietnamese
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24)
+    .replace(/-+$/g, "") || "run";
+}
+function gitRoot() {
+  const g = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  return !g.error && g.status === 0 ? (g.stdout || "").trim() : null;
+}
+function headSha() {
+  const g = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+  return !g.error && g.status === 0 ? (g.stdout || "").trim() : null;
+}
+// Runs BEFORE the sync resolution block: if auto-detect fails on a real run,
+// offer (TTY) or honor consent (flag / defaults.autoCreateWorktree) to create
+// a flow-<slug>-<stamp> worktree from current HEAD, then pin WT/WT_PATH so
+// every later sync resolveWorktree() call memoizes it. Never creates in
+// dry-run; a pin (WT_PIN) skips this entirely.
+async function ensureWorktree() {
+  if (WT_PIN || WT || opt.dryRun) return;
+  const w = orca(["worktree", "current"]);
+  const cur = w.ok ? pick(pick(res(w.json), ["worktree"]) || {}, ["path"]) : null;
+  if (cur) return;                       // auto-detect is fine — the resolver picks it up
+  const consent = opt.createWorktree || cfg.defaults?.autoCreateWorktree === true;
+  const name = `flow-${slugify(objective)}-${wtStamp()}`;
+  if (!consent) {
+    if (!(process.stdin.isTTY && process.stdout.isTTY)) return;   // resolver die()s with the hint
+    const sha = headSha();
+    if (!sha) die("Cannot create a worktree: this git repository has no commits yet.");
+    const a = await promptChoice(
+      `No Orca worktree detected here. Create "${name}" from HEAD ${sha.slice(0, 8)}? ` +
+      "Uncommitted changes will NOT follow. [y/N] ");
+    if (!/^(y|yes)$/i.test(a.trim())) return;                     // declined — resolver die()s with the hint
+  }
+  const root = gitRoot();
+  if (!root) die("Cannot create a worktree: the invoking directory is not inside a git repository.");
+  const sha = headSha();
+  if (!sha) die("Cannot create a worktree: this git repository has no commits yet.");
+  const c = orca(["worktree", "create", "--repo", `path:${root}`, "--name", name,
+    "--base-branch", sha, "--no-parent"]);
+  if (!c.ok) die(`Could not create worktree "${name}": ${c.stderr || c.raw || "orca worktree create failed"}\n${wtFixHint()}`);
+  WT = `name:${name}`;                    // memoized by every later resolveWorktree() call
+  const cp = pick(pick(res(c.json), ["worktree"]) || {}, ["path"]);
+  if (cp) WT_PATH = cp;                   // else resolveWorktreePath() fills it via `worktree show`
+  CREATED_WORKTREE = name;
+  log(`[worktree] created ${name}${cp ? " -> " + cp : ""}`);
 }
 function resolveWorktree(soft = false) {
   if (WT) return WT;
@@ -2498,4 +2558,6 @@ while (gi < groups.length) {
 finishStatus("succeeded");
 log("Pipeline COMPLETE. Artifacts in " + ART_DIR + ":");
 for (const s of steps) log(`  ${s.title.padEnd(26)} -> ${s.writes}`);
+if (CREATED_WORKTREE)
+  log(`[worktree] created by this run: name:${CREATED_WORKTREE} — remove later with: orca worktree rm name:${CREATED_WORKTREE}`);
 try { reportUsage(); } catch (e) { warn(`[usage] report skipped (${e.message})`); }
