@@ -38,6 +38,7 @@ config field, with examples for common situations.
 | `defaults.nudgeRetries` | number | no (default 0 = off) | Nudge budget per step per dispatch (per-step `nudgeRetries` overrides); nudging is opt-in — set > 0 to enable (see "Nudge" section) |
 | `defaults.nudgeTimeoutMs` | number | no (default 120000) | Idle threshold / post-nudge wait in ms (per-step `nudgeTimeoutMs` overrides; see "Nudge" section) |
 | `defaults.worktree` | string | no (default: auto-detect from the invoking directory) | Worktree selector where agents run. Leave unset for auto-detect (recommended — works whenever the flow is launched from inside an Orca-managed worktree). Pin (`name:lab2`, `path:C:\\...`) only when launching from OUTSIDE the target worktree. Per-run override: `--worktree <selector>`; per-machine: `ORCA_FLOW_WORKTREE` env. Precedence: flag > env > config > auto-detect. A pinned selector is validated before the run starts — a wrong pin fails fast with the available worktrees listed. |
+| `defaults.autoCreateWorktree` | boolean | no (default `false`) | When worktree auto-detect fails: `true` = create a new worktree (`flow-<slug>-<timestamp>`, based on current HEAD, uncommitted changes do not follow) and run there without asking; `false` = ask `[y/N]` at the terminal when interactive, fail with a hint otherwise. Never creates during `--dry-run` / `--status-preview`. Per-run override: `--create-worktree` |
 | `defaults.model` | string | no (default `"default"`) | Pipeline-wide model for every step; a step's own `model` overrides it. `"default"`/missing = keep each agent's own default model (no flag passed). See `model` under Step structure |
 | `defaults.openStatus` | boolean | no (default `true`) | Auto-open the run's live status page (`status.html` in the worktree's artifacts dir) in your browser when a real run starts. Dry-runs never write or open it. Per-run off-switch: `--no-open-status` (flag wins over config) |
 | `pipeline` | array | **yes** | The steps; **array order = run order** |
@@ -438,6 +439,7 @@ handles it. Always verify with `--dry-run` to see the effective `reads` after fi
 | `--dry-run` | Print the pipeline, do NOT call agents | `node .orca/flow.mjs --dry-run "x"` |
 | `--config <file>` | Use another pipeline config (default `flow.config.json`) | `--config fixbug.config.json` |
 | `--worktree <selector>` | Pin the worktree for this run (default: auto-detect from the invoking directory) | `--worktree name:lab2` |
+| `--create-worktree` | If worktree auto-detect fails, create a new Orca-managed worktree (`flow-<objective-slug>-<timestamp>`, based on current HEAD) and run the pipeline in it — same as `defaults.autoCreateWorktree: true`, for this run only. No effect when a worktree is pinned or auto-detect succeeds; never fires during `--dry-run` | `--create-worktree "x"` |
 | `--from <id>` | Start from a step, drop earlier ones | `--from coding` |
 | `--only a,b,c` | Run only the listed steps | `--only planning,architecture` |
 | `--new` | Skip the startup run chooser, always start a NEW run (the run-history archive of the previous run still happens; see section 5.5) | `--new "x"` |

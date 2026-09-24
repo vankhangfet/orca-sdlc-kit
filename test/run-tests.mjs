@@ -217,6 +217,7 @@ scenario("E1c auto-create via defaults.autoCreateWorktree config", async () => {
   ok("E1c not hung", !r.hung);
   eq("E1c exit code", r.code, 0);
   eq("E1c one create call", r.by("worktree create").length, 1);
+  ok("E1c name = slug + stamp", /^flow-test-objective-\d{8}-\d{6}$/.test((r.by("worktree create")[0] || {}).flags?.name ?? ""));
   eq("E1c status overall", r.status?.overall, "succeeded");
 });
 

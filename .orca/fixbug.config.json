@@ -7,11 +7,13 @@
   "//autoRun": "true (default) = fully automatic, no user confirmation; claude agents start with permission bypass. See flow.config.json for details.",
   "autoRun": true,
   "//worktree": "null (recommended) = auto-detect from the directory you run the flow in. Pin only when launching from OUTSIDE the target worktree. See flow.config.json for details.",
+  "//autoCreateWorktree": "true = when worktree auto-detect fails, create a new worktree (flow-<slug>-<timestamp>, based on current HEAD) and run there — without asking. false (default) = ask at the terminal when interactive, fail with a hint otherwise. One-off: --create-worktree.",
   "//model": "Optional \"model\" per step, or \"defaults.model\" for the whole pipeline. \"default\"/missing = the agent's own default model. See flow.config.json for details.",
   "//readiness": "Readiness gate (v2): declared 'reads' artifacts are verified (present, >= readinessMinBytes) before a step launches; unready inputs prompt [y/N] and can re-run the producers (readinessRetries). See flow.config.json / CONFIGURATION.md for details.",
   "defaults": {
     "timeoutMs": 900000,
     "worktree": null,
+    "autoCreateWorktree": false,
     "model": "default",
     "readinessRetries": 3,
     "nudgeRetries": 0,
