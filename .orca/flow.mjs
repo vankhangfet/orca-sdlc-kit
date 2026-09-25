@@ -1966,8 +1966,9 @@ if (opt.statusPreview) {
   const dir = join(HERE, "status-preview");
   try {
     mkdirSync(dir, { recursive: true });
+    const P = previewStatus();
     if (process.env.ORCA_STATUS_PREVIEW_RESUME) {
-      writeStatusTo(dir, previewStatus());
+      writeStatusTo(dir, P);
       // Pretend this run started --from the 5th step: earlier ones are
       // excluded ("skipped"), exactly like --from — the merge must then adopt
       // their previous terminal state for the page.
@@ -1978,7 +1979,18 @@ if (opt.statusPreview) {
       loadPreviousStatus(dir);
     }
     writeFileSync(join(dir, "status.html"), STATUS_HTML);
-    writeStatusTo(dir, process.env.ORCA_STATUS_PREVIEW_RESUME ? STATUS : previewStatus());
+    writeStatusTo(dir, process.env.ORCA_STATUS_PREVIEW_RESUME ? STATUS : P);
+    // Sample artifacts + JSONP snapshots so the offline preview demos the
+    // artifact viewer (click a step row / artifact chip). Succeeded steps get
+    // a finished sample; the running step a partial one (live tail look).
+    for (const s of P.steps) {
+      if (!s.writes || !(s.status === "succeeded" || s.status === "running")) continue;
+      const sample = "# " + s.title + "\n\nSample artifact for the --status-preview fixture" +
+        " (status: " + s.status + ").\n\n- deterministic text, written once per preview\n" +
+        (s.status === "running" ? "- the agent is still writing…\n" : "- click a step row or artifact chip to read it\n");
+      writeFileSync(join(dir, s.writes), sample);
+      try { writeArtifactSnapshotTo(dir, s); } catch { /* preview is best-effort */ }
+    }
     log(`Status preview: ${join(dir, "status.html")}` +
         (process.env.ORCA_STATUS_PREVIEW_RESUME ? " (resume merge exercised)" : ""));
   } catch (e) { warn(`status preview failed: ${e.message}`); }

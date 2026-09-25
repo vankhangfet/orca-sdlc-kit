@@ -371,6 +371,32 @@ scenario("E33 artifact viewer snapshots (per-step .md.js written)", async () => 
 });
 
 // ---------------------------------------------------------------------------
+// E33b — --status-preview demos the viewer offline: sample .md files, their
+// JSONP snapshots, and the viewer hooks present in the static page.
+// ---------------------------------------------------------------------------
+scenario("E33b status-preview includes artifact viewer fixtures", async () => {
+  const r = await runFlow({ name: "e33p", args: ["--status-preview"], objective: "" });
+  ok("E33b not hung", !r.hung);
+  eq("E33b exit code", r.code, 0);
+  const pv = join(REPO, ".orca", "status-preview");
+  try {
+    const html = readFileSync(join(pv, "status.html"), "utf8");
+    ok("E33b status.html mentions __ARTIFACTS", /__ARTIFACTS/.test(html));
+    ok("E33b status.html has viewer hooks", /data-file/.test(html) && /data-back/.test(html));
+    const snap = readdirSync(pv).filter((f) => /\.md\.js$/.test(f));
+    ok("E33b snapshot fixtures written", snap.length > 0);
+    for (const f of snap) {
+      const txt = readFileSync(join(pv, f), "utf8");
+      ok(`E33b ${f} JSONP shape`,
+        /^window\.__ARTIFACTS=window\.__ARTIFACTS\|\|\{\};window\.__ARTIFACTS\[/.test(txt) &&
+        /window\.__ON_ARTIFACT&&window\.__ON_ARTIFACT\(/.test(txt));
+    }
+  } finally {
+    rmSync(pv, { recursive: true, force: true });   // preview dir is repo-side — clean up
+  }
+});
+
+// ---------------------------------------------------------------------------
 // E2 — manual start path: warm the TUI, fetch the preamble, substitute
 // ctx_dryrun, paste + bare-Enter, verify consumption, close on settle.
 // Also pins the AUTO-RUN claude command wrap.
