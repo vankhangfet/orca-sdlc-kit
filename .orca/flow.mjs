@@ -1983,13 +1983,19 @@ if (opt.statusPreview) {
     // Sample artifacts + JSONP snapshots so the offline preview demos the
     // artifact viewer (click a step row / artifact chip). Succeeded steps get
     // a finished sample; the running step a partial one (live tail look).
+    // Samples derive from pre-merge P: in RESUME mode the merged page may
+    // relabel these rows (throwaway fixture — nothing machine-readable reads it).
     for (const s of P.steps) {
       if (!s.writes || !(s.status === "succeeded" || s.status === "running")) continue;
       const sample = "# " + s.title + "\n\nSample artifact for the --status-preview fixture" +
         " (status: " + s.status + ").\n\n- deterministic text, written once per preview\n" +
         (s.status === "running" ? "- the agent is still writing…\n" : "- click a step row or artifact chip to read it\n");
-      writeFileSync(join(dir, s.writes), sample);
-      try { writeArtifactSnapshotTo(dir, s); } catch { /* preview is best-effort */ }
+      // best-effort PER STEP: one locked sample file costs only its own
+      // fixture, never the rest of the preview
+      try {
+        writeFileSync(join(dir, s.writes), sample);
+        writeArtifactSnapshotTo(dir, s);
+      } catch { /* preview is best-effort */ }
     }
     log(`Status preview: ${join(dir, "status.html")}` +
         (process.env.ORCA_STATUS_PREVIEW_RESUME ? " (resume merge exercised)" : ""));
