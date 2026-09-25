@@ -1435,6 +1435,8 @@ const STATUS_HTML = `<!doctype html>
       if (va && va.exists) vbody = '<pre class="artdoc">' + esc(va.text || "") + "</pre>";
       else if (va && !va.exists && vst && !vlive) vbody = '<div class="artdoc none">artifact not produced</div>';
       else if (vlive) vbody = '<div class="artdoc none">waiting for ' + esc(VIEW) + " — the agent has not saved it yet</div>";
+      else if (vst && !vlive && (vst.status === "pending" || vst.status === "skipped"))
+        vbody = '<div class="artdoc none">artifact not produced yet</div>';
       else if (Date.now() - VIEW_AT > 6000) vbody = '<div class="artdoc none">snapshot unavailable</div>';
       else vbody = '<div class="artdoc none">loading…</div>';
       var vfresh = va && va.exists
