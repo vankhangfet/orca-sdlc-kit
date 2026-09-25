@@ -110,7 +110,7 @@ Full field reference: [`.orca/CONFIGURATION.md`](.orca/CONFIGURATION.md).
 
 ## Watch it run
 
-When a run starts, `.orca/artifacts/status.html` opens in your browser and keeps itself up to date. It shows which steps are running, done or next, along with timers, retries, a live task checklist, artifacts and token usage per step. There is no server and nothing to refresh.
+When a run starts, `.orca/artifacts/status.html` opens in your browser and keeps itself up to date. It shows which steps are running, done or next, along with timers, retries, a live task checklist, artifacts and token usage per step. Click any step row (or artifact chip) to read the Markdown file it produced right in the pane — it live-updates while the step is still writing. There is no server and nothing to refresh.
 
 ![Live status page](img/status_dashboard.png)
 
