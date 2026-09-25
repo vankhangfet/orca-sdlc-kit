@@ -1341,20 +1341,20 @@ const STATUS_HTML = `<!doctype html>
   // --- artifact viewer (pane mode) ---
   var VIEW = null;          // file name currently open (null = overview)
   var VIEW_AT = 0;          // when it was opened — spin guard for missing snapshots
-  var LAST_VIEW = "\u0000"; // last rendered viewer HTML — skip identical re-renders
+  var LAST_VIEW = "\\u0000"; // last rendered viewer HTML — skip identical re-renders
   function stepByFile(f) {
     for (var i = 0; i < S.steps.length; i++) if (S.steps[i].writes === f) return S.steps[i];
     return null;
   }
-  function openView(f) { VIEW = f; VIEW_AT = Date.now(); LAST_VIEW = "\u0000"; render(); loadArtifact(); }
-  function closeView() { VIEW = null; LAST_VIEW = "\u0000"; render(); }
+  function openView(f) { VIEW = f; VIEW_AT = Date.now(); LAST_VIEW = "\\u0000"; render(); loadArtifact(); }
+  function closeView() { VIEW = null; LAST_VIEW = "\\u0000"; render(); }
   function loadArtifact() {          // classic <script src> loads fine on file://
     if (!VIEW) return;
     var old = document.getElementById("aloader");
     if (old) old.remove();
     var sc = document.createElement("script");
     sc.id = "aloader";
-    sc.src = VIEW + ".js?ts=" + Date.now();
+    sc.src = encodeURIComponent(VIEW) + ".js?ts=" + Date.now();
     document.head.appendChild(sc);
   }
   window.__ON_ARTIFACT = function (f) { if (VIEW === f) render(); };
@@ -1437,19 +1437,25 @@ const STATUS_HTML = `<!doctype html>
       else if (vlive) vbody = '<div class="artdoc none">waiting for ' + esc(VIEW) + " — the agent has not saved it yet</div>";
       else if (Date.now() - VIEW_AT > 6000) vbody = '<div class="artdoc none">snapshot unavailable</div>';
       else vbody = '<div class="artdoc none">loading…</div>';
+      var vfresh = va && va.exists
+        ? "updated " + Math.max(0, Math.round((Date.now() - (va.mtime || Date.now())) / 1000)) + "s ago"
+        : "";
       var vhtml = '<div class="avhead"><button class="avback" data-back="1">← back to overview</button>' +
         '<span class="f">' + esc(VIEW) + "</span>" +
-        '<span class="m">' + (va && va.exists
-          ? va.bytes + " bytes · updated " + Math.max(0, Math.round((Date.now() - (va.mtime || Date.now())) / 1000)) + "s ago"
-          : "") +
+        '<span class="m">' + (va && va.exists ? va.bytes + " bytes · " : "") +
+        '<span id="avfresh"></span>' +
         (vst ? ' · <span class="a">' + esc(LABEL[vst.status] || String(vst.status)) + "</span>" : "") +
         "</span></div>" + vbody;
       // identical content → skip the re-render (keeps text selection alive
-      // across the 1s render tick)
+      // across the 1s render tick); the freshness leaf below is updated
+      // unconditionally — textContent on a leaf span never disturbs a
+      // selection living in the <pre>
       if (vhtml !== LAST_VIEW) {
         LAST_VIEW = vhtml;
         document.getElementById("pane").innerHTML = vhtml;
       }
+      var fr = document.getElementById("avfresh");
+      if (fr) fr.textContent = vfresh;
       return;
     }
     if (act.length) {
@@ -1565,6 +1571,11 @@ const STATUS_HTML = `<!doctype html>
     document.head.appendChild(sc);
     if (VIEW) {                     // live tail: re-fetch while the owning
       var st2 = stepByFile(VIEW);   // step is still running/waiting
+      // NB: isLive deliberately reads the PREVIOUS poll's S — the final
+      // fetch lands one cycle after settle, which is what picks up the
+      // settle-beat snapshot. Checking fresh S (e.g. in __ON_STATUS) would
+      // fetch before the final twin is written and park the viewer on stale
+      // text.
       if (st2 && isLive(st2)) loadArtifact();
     }
   }
