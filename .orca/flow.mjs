@@ -1291,6 +1291,17 @@ const STATUS_HTML = `<!doctype html>
   .artchip { display:inline-block; color:#d7dce4; background:#0d1017; border:1px solid #1c2330; border-radius:4px; padding:1px 6px; margin:2px 4px 2px 0; font-size:11.5px; word-break:break-all; }
   .artchip.dim { color:#6e7681; }
   .artdone { color:#3fb950; margin-right:4px; font-weight:700; }
+  .tstep.lnk, .artchip.lnk { cursor: pointer; }
+  .tstep.lnk:hover .tt b { color: #58a6ff; }
+  .artchip.lnk:hover { color: #58a6ff; border-color: #1f3a5f; }
+  .avhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .avhead .f { font-size: 14px; font-weight: 700; color: #fff; word-break: break-all; }
+  .avhead .m { color: #8b949e; font-size: 12px; }
+  .avhead .a { color: #58a6ff; }
+  .avback { display: inline-block; background: #0d1017; border: 1px solid #1c2330; color: #8b949e; border-radius: 4px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
+  .avback:hover { color: #d7dce4; border-color: #2c3646; }
+  .artdoc { font: 12.5px/1.55 ui-monospace, Consolas, "Cascadia Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; background: #0d1017; border: 1px solid #1c2330; border-radius: 8px; padding: 14px; }
+  .artdoc.none { color: #6e7681; font-style: italic; border-style: dashed; }
   @media (max-width:760px) {
     .main { flex-direction:column; }
     .rail { flex:none; border-right:none; border-bottom:1px solid #1c2330; }
@@ -1327,9 +1338,31 @@ const STATUS_HTML = `<!doctype html>
   function tok(n) { if (n == null) return ""; n = Number(n); if (!isFinite(n) || n < 0) return ""; if (n >= 1e6) return (n / 1e6).toFixed(1) + "M"; if (n >= 1e3) return (n / 1e3).toFixed(1) + "k"; return String(n); }
   function isLive(s) { return s.status === "running" || s.status === "waiting-approval"; }
 
+  // --- artifact viewer (pane mode) ---
+  var VIEW = null;          // file name currently open (null = overview)
+  var VIEW_AT = 0;          // when it was opened — spin guard for missing snapshots
+  var LAST_VIEW = "\u0000"; // last rendered viewer HTML — skip identical re-renders
+  function stepByFile(f) {
+    for (var i = 0; i < S.steps.length; i++) if (S.steps[i].writes === f) return S.steps[i];
+    return null;
+  }
+  function openView(f) { VIEW = f; VIEW_AT = Date.now(); LAST_VIEW = "\u0000"; render(); loadArtifact(); }
+  function closeView() { VIEW = null; LAST_VIEW = "\u0000"; render(); }
+  function loadArtifact() {          // classic <script src> loads fine on file://
+    if (!VIEW) return;
+    var old = document.getElementById("aloader");
+    if (old) old.remove();
+    var sc = document.createElement("script");
+    sc.id = "aloader";
+    sc.src = VIEW + ".js?ts=" + Date.now();
+    document.head.appendChild(sc);
+  }
+  window.__ON_ARTIFACT = function (f) { if (VIEW === f) render(); };
+
   function railStep(s, idx, nextIdx) {
     var d = isLive(s) ? dur(since(s.startedAt)) : (s.status === "skipped" ? "" : dur(s.durationMs));
-    return '<div class="tstep"><span class="tdot ' + (DOT[s.status] || "pend") + '"></span>' +
+    return '<div class="tstep' + (s.writes ? " lnk" : "") + '"' +
+      (s.writes ? ' data-file="' + esc(s.writes) + '"' : "") + '><span class="tdot ' + (DOT[s.status] || "pend") + '"></span>' +
       '<div class="tt"><b class="' + (TC[s.status] || "") + '">' + esc(s.title) +
       (s.parallel ? '<span class="chip par">∥</span>' : "") +
       (idx === nextIdx ? '<span class="chip">NEXT</span>' : "") +
@@ -1394,6 +1427,31 @@ const STATUS_HTML = `<!doctype html>
 
     // --- pane: now running / summary, up next, tasks, artifacts ---
     var pane = "";
+    if (VIEW) {
+      var vst = stepByFile(VIEW);
+      var va = (window.__ARTIFACTS || {})[VIEW];
+      var vlive = vst && isLive(vst);
+      var vbody;
+      if (va && va.exists) vbody = '<pre class="artdoc">' + esc(va.text || "") + "</pre>";
+      else if (va && !va.exists && vst && !vlive) vbody = '<div class="artdoc none">artifact not produced</div>';
+      else if (vlive) vbody = '<div class="artdoc none">waiting for ' + esc(VIEW) + " — the agent has not saved it yet</div>";
+      else if (Date.now() - VIEW_AT > 6000) vbody = '<div class="artdoc none">snapshot unavailable</div>';
+      else vbody = '<div class="artdoc none">loading…</div>';
+      var vhtml = '<div class="avhead"><button class="avback" data-back="1">← back to overview</button>' +
+        '<span class="f">' + esc(VIEW) + "</span>" +
+        '<span class="m">' + (va && va.exists
+          ? va.bytes + " bytes · updated " + Math.max(0, Math.round((Date.now() - (va.mtime || Date.now())) / 1000)) + "s ago"
+          : "") +
+        (vst ? ' · <span class="a">' + esc(LABEL[vst.status] || String(vst.status)) + "</span>" : "") +
+        "</span></div>" + vbody;
+      // identical content → skip the re-render (keeps text selection alive
+      // across the 1s render tick)
+      if (vhtml !== LAST_VIEW) {
+        LAST_VIEW = vhtml;
+        document.getElementById("pane").innerHTML = vhtml;
+      }
+      return;
+    }
     if (act.length) {
       pane += '<div class="label">Now running</div>';
       act.forEach(function (s) {
@@ -1490,7 +1548,7 @@ const STATUS_HTML = `<!doctype html>
     S.steps.forEach(function (s) {
       if (!s.writes) return;
       arts += (s.status === "succeeded" ? '<span class="artdone">✓</span>' : "") +
-        '<span class="artchip' + (s.status === "succeeded" ? "" : " dim") + '">' + esc(s.writes) + "</span>";
+        '<span class="artchip lnk' + (s.status === "succeeded" ? "" : " dim") + '" data-file="' + esc(s.writes) + '">' + esc(s.writes) + "</span>";
     });
     if (arts) pane += '<div class="label">Artifacts</div>' + arts;
 
@@ -1505,9 +1563,27 @@ const STATUS_HTML = `<!doctype html>
     sc.id = "sloader";
     sc.src = "status.js?ts=" + Date.now();
     document.head.appendChild(sc);
+    if (VIEW) {                     // live tail: re-fetch while the owning
+      var st2 = stepByFile(VIEW);   // step is still running/waiting
+      if (st2 && isLive(st2)) loadArtifact();
+    }
   }
   load();
   setInterval(load, 2000);
+  // Artifact viewer wiring: delegated clicks (rows, chips, back button) + Esc.
+  function onViewClick(e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var back = t.closest("[data-back]");
+    if (back) { closeView(); return; }
+    var lnk = t.closest("[data-file]");
+    if (lnk) openView(lnk.getAttribute("data-file"));
+  }
+  document.getElementById("rail").addEventListener("click", onViewClick);
+  document.getElementById("pane").addEventListener("click", onViewClick);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && VIEW) closeView();
+  });
 })();
 </script>
 </body>
