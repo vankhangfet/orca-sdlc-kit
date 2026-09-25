@@ -625,6 +625,39 @@ function writeStatus() {
   }
 }
 
+// --- Artifact viewer snapshots: a flat JSONP twin <writes>.js (e.g.
+// PLAN.md.js) next to each artifact, shaped exactly like status.js so the
+// page can lazy-load it with a classic <script> on file://. Rewritten on the
+// same beats as the status rows (init / per-slice while running / settle).
+// Fail-open like writeStatus: the first failure warns once, then snapshots
+// are abandoned — the status page itself is unaffected.
+let ART_FAILED = false;
+function artifactJsOf(name, payload) {
+  return `window.__ARTIFACTS=window.__ARTIFACTS||{};` +
+    `window.__ARTIFACTS[${JSON.stringify(name)}]=${JSON.stringify(payload)};` +
+    `window.__ON_ARTIFACT&&window.__ON_ARTIFACT(${JSON.stringify(name)});`;
+}
+function writeArtifactSnapshotTo(dir, step) {
+  if (!step.writes) return;
+  const payload = { file: step.writes, exists: false, bytes: 0, mtime: null, text: "" };
+  try {
+    const st = statSync(join(dir, step.writes));       // throws when not written yet
+    Object.assign(payload, {
+      exists: true, bytes: st.size, mtime: Math.round(st.mtimeMs),
+      text: readFileSync(join(dir, step.writes), "utf8"),
+    });
+  } catch { /* not written yet / unreadable mid-write — snapshot the miss */ }
+  writeFileSync(join(dir, step.writes + ".js"), artifactJsOf(step.writes, payload));
+}
+function writeArtifactSnapshot(step) {
+  if (ART_FAILED || STATUS_FAILED || !step.writes) return;
+  try { writeArtifactSnapshotTo(statusDir(), step); }
+  catch (e) {
+    ART_FAILED = true;
+    warn(`artifact snapshot write failed (${e.message}); viewer disabled for this run.`);
+  }
+}
+
 // --- Run history: each NEW run snapshots the previous run's flat artifacts
 // into <ART_DIR>/runs/<seq>-<timestamp>/ (COPY — flat files stay in place so
 // readiness/--from resume semantics are untouched). Failures warn and never
@@ -1098,6 +1131,10 @@ function initStatus() {
   // worktree) start with its checklist — a `--from` resume then shows the
   // final task list even for steps that will not run again.
   for (const st of STATUS.steps) refreshProgress(st);
+  // Snapshot artifacts that already exist (an earlier run in this worktree):
+  // a --from resume then has working viewer links for carried-over steps.
+  for (const st of STATUS.steps)
+    if (st.writes && existsSync(join(statusDir(), st.writes))) writeArtifactSnapshot(st);
   try {
     writeFileSync(join(statusDir(), "status.html"), STATUS_HTML);
   } catch (e) {
@@ -2156,6 +2193,7 @@ function settleMember(m, outcome, done) {
   m.outcome = outcome;
   m.done = done || null;
   refreshProgress(m.step);   // final snapshot: catch the last ticks
+  writeArtifactSnapshot(m.step);   // final artifact snapshot for the viewer
   statusEnd(m.step.id, outcome, m.note);
   notifyStep(m);
   if (!m.done) return;
@@ -2185,7 +2223,7 @@ function runGroup(members) {
     const open = M.filter((m) => !m.settled);
     if (!open.length) break;
     const slice = Math.min(...open.map((m) => m.sliceMs));
-    for (const m of open) refreshProgress(m.step);
+    for (const m of open) { refreshProgress(m.step); writeArtifactSnapshot(m.step); }
     writeStatus();   // heartbeat: keep the page's "updated Xs ago" fresh each slice
     const wait = orca(["orchestration", "check", "--run", RUN_ID, "--wait",
       "--types", "worker_done,escalation,question", "--timeout-ms", String(slice)],

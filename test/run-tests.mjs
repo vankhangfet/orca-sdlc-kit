@@ -345,6 +345,32 @@ scenario("E32 retry-per-step (step budget overrides global)", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// E33 — artifact viewer snapshots: every step's artifact gets a flat JSONP
+// twin <writes>.js next to it, so the page can lazy-load it via a classic
+// <script> on file:// (same trick as status.js).
+// ---------------------------------------------------------------------------
+scenario("E33 artifact viewer snapshots (per-step .md.js written)", async () => {
+  const r = await runFlow({ name: "e33", config: "../test/configs/cold.config.json" });
+  ok("E33 not hung", !r.hung);
+  eq("E33 exit code", r.code, 0);
+  for (const f of ["A.md", "B.md"]) {
+    const jsPath = join(r.wt, ".orca", "artifacts", f + ".js");
+    ok(`E33 ${f}.js exists`, existsSync(jsPath));
+    const txt = readFileSync(jsPath, "utf8");
+    const m = txt.match(/window\.__ARTIFACTS=window\.__ARTIFACTS\|\|\{\};window\.__ARTIFACTS\[.*?\]=([\s\S]*);window\.__ON_ARTIFACT&&window\.__ON_ARTIFACT\(/);
+    ok(`E33 ${f}.js JSONP shape`, !!m);
+    if (m) {
+      const payload = JSON.parse(m[1]);
+      eq(`E33 ${f} payload.file`, payload.file, f);
+      eq(`E33 ${f} exists flag`, payload.exists, true);
+      ok(`E33 ${f} bytes>0`, payload.bytes > 0);
+      ok(`E33 ${f} mtime set`, typeof payload.mtime === "number" && payload.mtime > 0);
+      eq(`E33 ${f} text round-trips`, payload.text, readFileSync(join(r.wt, ".orca", "artifacts", f), "utf8"));
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
 // E2 — manual start path: warm the TUI, fetch the preamble, substitute
 // ctx_dryrun, paste + bare-Enter, verify consumption, close on settle.
 // Also pins the AUTO-RUN claude command wrap.
